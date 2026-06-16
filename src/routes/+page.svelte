@@ -1,7 +1,7 @@
 <script lang="ts">
-    import Banner from "../components/ui/Banner.svelte";
+    import Banner from "$components/ui/Banner.svelte";
 </script>
 
 <main class="container">
-    <Banner />
+    <Banner hasMusic />
 </main>

@@ -1,8 +1,9 @@
 use std::{collections::VecDeque, fs::File, io::BufReader, time::Duration};
-
 use rodio::{decoder::Decoder, mixer::Mixer, Player};
-
 use crate::models::TrackDetails;
+use tauri::{AppHandle, Emitter};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PlaybackState {
@@ -10,16 +11,14 @@ pub struct PlaybackState {
     pub position_ms: u64,
     pub volume: f32,
     pub queue_len: usize,
+    pub current_track: Option<TrackDetails>,
 }
 
 pub struct AudioEngine {
     player: Player,
-
     queue: VecDeque<TrackDetails>,
     history: Vec<TrackDetails>,
-
     current_track: Option<TrackDetails>,
-
     volume: f32,
 }
 
@@ -36,16 +35,12 @@ impl AudioEngine {
 
     pub fn play(&mut self, track: &TrackDetails) -> anyhow::Result<()> {
         let path = track.path.as_str();
-
         let file = BufReader::new(File::open(path)?);
-
         let decoder = Decoder::try_from(file)?;
 
         self.player.clear();
         self.player.append(decoder);
-
         self.current_track = Some(track.clone());
-
         self.player.play();
 
         Ok(())
@@ -80,20 +75,12 @@ impl AudioEngine {
         self.player.volume()
     }
 
-    pub fn set_speed(&self, speed: f32) {
-        self.player.set_speed(speed);
-    }
-
-    pub fn speed(&self) -> f32 {
-        self.player.speed()
-    }
-
-    pub fn seek(&self, position: u64) -> Result<(), rodio::source::SeekError> {
+    pub fn seek(&self, position: u64) -> std::result::Result<(), rodio::source::SeekError> {
         self.player.try_seek(Duration::from_secs(position))
     }
 
-    pub fn position(&self) -> u64 {
-        self.player.get_pos().as_secs()
+    pub fn position_ms(&self) -> u64 {
+        self.player.get_pos().as_millis() as u64
     }
 
     pub fn play_next(&mut self) -> anyhow::Result<()> {
@@ -122,7 +109,6 @@ impl AudioEngine {
 
     pub fn skip_current(&mut self) -> anyhow::Result<()> {
         self.player.skip_one();
-
         self.play_next()
     }
 
@@ -134,12 +120,34 @@ impl AudioEngine {
         self.player.empty()
     }
 
-    pub fn playback_state(&self) -> PlaybackState {
+    pub fn get_playback_state(&self) -> PlaybackState {
         PlaybackState {
             is_playing: !self.player.is_paused(),
             position_ms: self.player.get_pos().as_millis() as u64,
             volume: self.player.volume(),
             queue_len: self.queue.len(),
+            current_track: self.current_track.clone(),
         }
     }
+}
+
+pub fn spawn_playback_monitor(app_handle: AppHandle, engine: Arc<Mutex<AudioEngine>>) {
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_millis(500));
+            
+            let state = {
+                let mut engine_lock = engine.lock();
+                
+                // Handle auto-play next if finished
+                if engine_lock.has_finished() && !engine_lock.is_paused() {
+                    let _ = engine_lock.play_next();
+                }
+                
+                engine_lock.get_playback_state()
+            };
+
+            let _ = app_handle.emit("playback-state", &state);
+        }
+    });
 }

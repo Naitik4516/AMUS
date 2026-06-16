@@ -2,8 +2,8 @@ pub mod engine;
 pub use engine::{AudioEngine, PlaybackState};
 
 use parking_lot::Mutex;
+use std::sync::Arc;
 
 pub struct Player {
-    pub playback_state: Mutex<PlaybackState>,
-    pub engine: Mutex<AudioEngine>,
+    pub engine: Arc<Mutex<AudioEngine>>,
 }

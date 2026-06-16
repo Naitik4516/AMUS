@@ -1,116 +1,43 @@
 <script lang="ts">
-    import { onMount } from "svelte";
-    import { invoke } from "@tauri-apps/api/core";
-    import { Play, Plus, RefreshCw } from "@lucide/svelte";
-    import { open } from '@tauri-apps/plugin-dialog';
-
-    import { player, type Track } from "../../lib/player.svelte";
-
-    let tracks = $state<Track[]>([]);
-    let loading = $state(true);
-
-    async function loadTracks() {
-        loading = true;
-        try {
-            tracks = await invoke("get_tracks");
-        } catch (e) {
-            console.error(e);
-        } finally {
-            loading = false;
-        }
-    }
-
-    async function scanLibrary() {
-        try {
-            await invoke("scan_library");
-            await loadTracks();
-        } catch (e) {
-            console.error(e);
-        }
-    }
-
-    async function playTrack(track: Track) {
-        try {
-            await player.play(track, tracks);
-        } catch (e) {
-            console.error(e);
-        }
-    }
-
-
-    async function addSource() {
-        // In a real app, use a file dialog. For now, prompt or hardcode.
-        const path = await open({
-          multiple: true,
-          directory: true,
-        });
-        if (path) {
-            try {
-              for (const p of Array.isArray(path) ? path : [path]) {
-                await invoke("add_source", { path: p });
-              }
-                await scanLibrary();
-            } catch (e) {
-                console.error(e);
-            }
-        }
-    }
-
-    onMount(loadTracks);
+    import LibraryCard from "$components/ui/LibraryCard.svelte";
+    import {
+        ListMusic,
+        Heart,
+        ChartNoAxesColumn,
+        Music2,
+        Disc,
+    } from "@lucide/svelte";
 </script>
 
-<div class="p-8 w-full overflow-y-auto h-[calc(100vh-120px)]">
-    <div class="flex justify-between items-center mb-8">
-        <h1 class="text-3xl font-bold">Your Library</h1>
-        <div class="flex gap-4">
-            <button
-                class="flex items-center gap-2 bg-secondary text-gray-900 px-4 py-2 rounded-full font-semibold hover:bg-gray-200"
-                onclick={addSource}
-            >
-                <Plus size={20} /> Add Source
-            </button>
-            <button
-                class="flex items-center gap-2 bg-gray-800 text-white px-4 py-2 rounded-full font-semibold hover:bg-gray-700"
-                onclick={scanLibrary}
-            >
-                <RefreshCw size={20} class={loading ? 'animate-spin' : ''} /> Scan
-            </button>
-        </div>
-    </div>
+{#snippet ArtistIcon()}
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        height="24px"
+        viewBox="0 -960 960 960"
+        width="24px"
+        fill="#e3e3e3"
+        ><path
+            d="M629-189q-29-29-29-71t29-71q29-29 71-29 8 0 18 1.5t22 6.5v-168q0-17 11.5-28.5T780-560h60q17 0 28.5 11.5T880-520q0 17-11.5 28.5T840-480h-40v220q0 42-29 71t-71 29q-42 0-71-29ZM327-527q-47-47-47-113t47-113q47-47 113-47t113 47q47 47 47 113t-47 113q-47 47-113 47t-113-47ZM160-160q-17 0-28.5-11.5T120-200v-72q0-35 17.5-63t46.5-43q62-31 126-46.5T440-440q28 0 55.5 3t55.5 9q17 4 21.5 21t-9.5 31q-21 25-31.5 54.5T521-260q0 13 1.5 25.5T528-209q5 18-4.5 33.5T497-160H160Z"
+        /></svg
+    >
+{/snippet}
 
-    {#if loading && tracks.length === 0}
-        <p class="text-gray-400">Loading tracks...</p>
-    {:else if tracks.length === 0}
-        <div class="text-center py-20">
-            <p class="text-xl text-gray-400 mb-4">No tracks found.</p>
-            <button class="text-secondary underline" onclick={addSource}>Add a source directory to get started.</button>
-        </div>
-    {:else}
-        <div class="grid gap-2">
-            <div class="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-4 px-4 py-2 text-gray-400 font-semibold border-b border-gray-800">
-                <div class="w-10">#</div>
-                <div>Title</div>
-                <div>Artist</div>
-                <div>Album</div>
-                <div class="w-20 text-right">Duration</div>
-            </div>
-            {#each tracks as track, i}
-                <div
-                    class="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-4 px-4 py-3 items-center hover:bg-white/5 rounded-lg group cursor-pointer"
-                    onclick={() => playTrack(track)}
-                >
-                    <div class="w-10 text-gray-500 group-hover:text-white">
-                        <span class="group-hover:hidden">{i + 1}</span>
-                        <Play size={16} class="hidden group-hover:block text-secondary" />
-                    </div>
-                    <div class="font-medium">{track.title}</div>
-                    <div class="text-gray-400">{track.artist}</div>
-                    <div class="text-gray-400">{track.album}</div>
-                    <div class="w-20 text-right text-gray-500">
-                        {Math.floor(track.duration_seconds / 60)}:{(track.duration_seconds % 60).toString().padStart(2, '0')}
-                    </div>
-                </div>
-            {/each}
-        </div>
-    {/if}
+<div
+    class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 w-full p-8 h-fit"
+>
+    <LibraryCard
+        label="All Tracks"
+        Icon={Music2}
+        href="/library/playlists/0?name=All%20Tracks"
+    />
+    <LibraryCard
+        label="Artists"
+        Icon={ArtistIcon}
+        href="/library/artists"
+        isSnippet={true}
+    />
+    <LibraryCard label="Albums" Icon={Disc} href="/library/albums" />
+    <LibraryCard label="Playlists" Icon={ListMusic} href="/library/playlists" />
+    <LibraryCard label="Favorites" Icon={Heart} href="/library/favourites" />
+    <LibraryCard label="Stats" Icon={ChartNoAxesColumn} href="/library/stats" />
 </div>

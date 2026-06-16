@@ -6,9 +6,9 @@ pub struct TrackDetails {
     pub id: i64,
     pub path: String,
     pub title: String,
-    pub artist: Option<String>,
-    pub album: Option<String>,
-    pub genre: Option<String>,
+    pub artists: Vec<Artist>,
+    pub album: Album,
+    pub genre: Vec<Genre>,
     pub duration_seconds: u32,
     pub is_favorite: bool,
     pub mtime: i64,
@@ -16,16 +16,19 @@ pub struct TrackDetails {
     pub last_played_at: Option<DateTime<Utc>>,
     pub skipped_count: i64,
     pub last_skipped_at: Option<DateTime<Utc>>,
+    pub cover_art: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Track {
     pub id: i64,
     pub title: String,
-    pub artist: Option<String>,
-    pub album: Option<String>,
+    pub artists: Vec<Artist>,
+    pub album: Album,
+    pub genre: Vec<Genre>,
     pub duration_seconds: u32,
     pub is_favorite: bool,
+    pub cover_art: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,16 +45,22 @@ pub struct Playlist {
     pub name: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Artist {
     pub id: i64,
     pub name: String,
     pub profile_picture: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Album {
     pub id: i64,
     pub name: String,
     pub cover_art: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Genre {
+    pub id: i64,
+    pub name: String,
 }
