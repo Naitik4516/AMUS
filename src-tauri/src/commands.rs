@@ -3,12 +3,19 @@ use crate::engine::Player;
 use crate::error::{Error, Result};
 use crate::models::*;
 use crate::scanner;
+use crate::sync::SyncManager;
 use tauri::State;
 
 #[tauri::command]
-pub async fn add_source(path: String, pool: State<'_, DbPool>) -> Result<()> {
+pub async fn add_source(
+    path: String,
+    pool: State<'_, DbPool>,
+    sync_manager: State<'_, SyncManager>,
+    app_handle: tauri::AppHandle,
+) -> Result<()> {
     let conn = pool.get().map_err(Error::Pool)?;
     db::add_source_dir(&conn, &path)?;
+    let _ = sync_manager.refresh_watcher(&app_handle);
     Ok(())
 }
 
@@ -19,10 +26,36 @@ pub async fn get_source_dirs(pool: State<'_, DbPool>) -> Result<Vec<String>> {
 }
 
 #[tauri::command]
-pub async fn remove_source(path: String, pool: State<'_, DbPool>) -> Result<()> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    db::remove_source_dir(&conn, &path)?;
+pub async fn remove_source(
+    path: String,
+    pool: State<'_, DbPool>,
+    sync_manager: State<'_, SyncManager>,
+    app_handle: tauri::AppHandle,
+) -> Result<()> {
+    let mut conn = pool.get().map_err(Error::Pool)?;
+    db::remove_source_dir(&mut conn, &path)?;
+    let _ = sync_manager.refresh_watcher(&app_handle);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn refresh_watcher(
+    sync_manager: State<'_, SyncManager>,
+    app_handle: tauri::AppHandle,
+) -> Result<()> {
+    sync_manager
+        .refresh_watcher(&app_handle)
+        .map_err(|e| Error::Unknown(e.to_string()))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn has_music(pool: State<'_, DbPool>) -> Result<bool> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))
+        .map_err(Error::Db)?;
+    Ok(count > 0)
 }
 
 #[tauri::command]
@@ -176,8 +209,11 @@ pub async fn remove_track_from_playlist(
 
 #[tauri::command]
 pub async fn delete_playlist(playlist_id: i64, pool: State<'_, DbPool>) -> Result<()> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    db::delete_playlist(&conn, playlist_id)
+    let mut conn = pool.get().map_err(Error::Pool)?;
+    let tx = conn.transaction().map_err(Error::Db)?;
+    db::delete_playlist(&tx, playlist_id)?;
+    tx.commit().map_err(Error::Db)?;
+    Ok(())
 }
 
 #[tauri::command]

@@ -22,5 +22,12 @@ export async function getSourceDirs(): Promise<string[]> {
 
 export async function removeSource(path: string): Promise<void> {
   await invoke("remove_source", { path });
+}
+
+export async function scanLibrary(): Promise<void> {
   await invoke("scan_library");
+}
+
+export async function refreshWatcher(): Promise<void> {
+  await invoke("refresh_watcher");
 }

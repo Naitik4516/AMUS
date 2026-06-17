@@ -16,19 +16,19 @@ use tauri::{AppHandle, Emitter, Manager};
 use walkdir::WalkDir;
 
 #[derive(Debug, Clone, serde::Serialize)]
-struct ScanProgress {
-    current: usize,
-    total: usize,
-    message: String,
+pub struct ScanProgress {
+    pub current: usize,
+    pub total: usize,
+    pub message: String,
 }
 
 pub(crate) struct TrackMetadata {
     pub(crate) path: String,
     pub(crate) title: String,
-    pub(crate) artist: String,
+    pub(crate) artists: Vec<String>,
     pub(crate) album: String,
-    pub(crate) album_artist: Option<String>,
     pub(crate) genre: String,
+    pub(crate) release_year: Option<u32>,
     pub(crate) duration: u32,
     pub(crate) mtime: i64,
     pub(crate) picture: Option<Picture>,
@@ -49,7 +49,7 @@ pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs() as i64;
 
-    let (title, artist, album, album_artist, genre, picture) = if let Some(t) = tag {
+    let (title, artists, album, genre, release_year, picture) = if let Some(t) = tag {
         (
             t.title().map(|s| s.into_owned()).unwrap_or_else(|| {
                 path.file_stem()
@@ -59,14 +59,18 @@ pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
             }),
             t.artist()
                 .map(|s| s.into_owned())
-                .unwrap_or_else(|| "Unknown Artist".to_string()),
+                .unwrap_or_else(|| "Unknown Artist".to_string())
+                .split(", ")
+                .collect(),
             t.album()
                 .map(|s| s.into_owned())
                 .unwrap_or_else(|| "Unknown Album".to_string()),
-            t.get_string(&ItemKey::AlbumArtist).map(|s| s.to_string()),
             t.genre()
                 .map(|s| s.into_owned())
                 .unwrap_or_else(|| "Unknown Genre".to_string()),
+            t.get_string(&ItemKey::RecordingDate)
+                .and_then(|s| s.parse::<u32>().ok())
+                .or_else(|| t.year().map(|y| y as u32)),
             t.pictures().first().cloned(),
         )
     } else {
@@ -75,10 +79,10 @@ pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
                 .and_then(|s| s.to_str())
                 .unwrap_or("Unknown")
                 .to_string(),
-            "Unknown Artist".to_string(),
+            "Unknown Artist".to_string().split(", ").collect(),
             "Unknown Album".to_string(),
-            None,
             "Unknown Genre".to_string(),
+            None,
             None,
         )
     };
@@ -86,10 +90,10 @@ pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
     Ok(TrackMetadata {
         path: path.to_string_lossy().to_string(),
         title,
-        artist,
+        artists,
         album,
-        album_artist,
         genre,
+        release_year,
         duration,
         mtime,
         picture,
@@ -125,14 +129,17 @@ fn save_picture(app_dir: &Path, picture: &Picture) -> anyhow::Result<String> {
 }
 
 pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result<()> {
-    let app_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| Error::Unknown(e.to_string()))?;
-
     let source_dirs = db::get_source_dirs(conn)?;
     let audio_extensions = ["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];
 
+    let _ = app_handle.emit(
+        "scan-progress",
+        ScanProgress {
+            current: 0,
+            total: 100,
+            message: "Starting scan...".to_string(),
+        },
+    );
 
     println!("Starting scan of source directories: {:?}", source_dirs);
     // 1. Discovery
@@ -142,6 +149,15 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
         if !root.exists() {
             continue;
         }
+
+        let _ = app_handle.emit(
+            "scan-progress",
+            ScanProgress {
+                current: 10,
+                total: 100,
+                message: format!("Searching: {}", dir),
+            },
+        );
 
         for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
             let path = entry.path();
@@ -162,6 +178,15 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
 
     println!("Discovered {} audio files on disk", files_on_disk.len());
     // 2. Differential Analysis
+    let _ = app_handle.emit(
+        "scan-progress",
+        ScanProgress {
+            current: 20,
+            total: 100,
+            message: "Analyzing changes...".to_string(),
+        },
+    );
+
     let db_tracks = db::get_all_track_paths_and_mtimes(conn)?;
 
     let mut to_scan = Vec::new();
@@ -196,11 +221,44 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
     }
 
     if !removed_paths.is_empty() {
-        db::delete_tracks_by_paths(conn, &removed_paths)?;
+        let _ = app_handle.emit(
+            "scan-progress",
+            ScanProgress {
+                current: 25,
+                total: 100,
+                message: format!("Cleaning up {} removed tracks...", removed_paths.len()),
+            },
+        );
+        let tx = conn.transaction().map_err(Error::Db)?;
+        db::delete_tracks_by_paths(&tx, &removed_paths)?;
+        tx.commit().map_err(Error::Db)?;
     }
 
+    scan_files(conn, app_handle, to_scan)?;
 
-    println!("Extracting metadata...");
+    let _ = app_handle.emit(
+        "scan-progress",
+        ScanProgress {
+            current: 100,
+            total: 100,
+            message: "Scan complete!".to_string(),
+        },
+    );
+    let _ = app_handle.emit("library-updated", ());
+
+    Ok(())
+}
+
+pub fn scan_files(
+    conn: &mut Connection,
+    app_handle: &AppHandle,
+    to_scan: Vec<std::path::PathBuf>,
+) -> Result<()> {
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| Error::Unknown(e.to_string()))?;
+
     // 3. Parallel Metadata Extraction
     let total = to_scan.len();
     if total == 0 {
@@ -216,14 +274,14 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
 
             let mut p = progress.lock().unwrap();
             *p += 1;
-            if *p % 10 == 0 || *p == total {
+            if *p % 5 == 0 || *p == total {
                 let _ = app_handle.emit(
                     "scan-progress",
                     ScanProgress {
-                        current: *p,
-                        total,
+                        current: 30 + (*p * 40 / total), // Map metadata to 30-70%
+                        total: 100,
                         message: format!(
-                            "Scanning: {}",
+                            "Processing: {}",
                             path.file_name().and_then(|n| n.to_str()).unwrap_or("")
                         ),
                     },
@@ -240,19 +298,32 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
         })
         .collect();
 
+    println!("Extracted metadata for {} files", metadata_results.len());
+
     // 4. Batch Database Update
     println!("Updating db...");
+    let _ = app_handle.emit(
+        "scan-progress",
+        ScanProgress {
+            current: 75,
+            total: 100,
+            message: "Saving to database...".to_string(),
+        },
+    );
+
     let pool = app_handle.state::<db::DbPool>();
 
     // Caches for lookups
     let mut artist_cache = HashMap::new();
+    let mut unique_artists_to_fetch = HashMap::new();
     let mut album_cache = HashMap::new();
     let mut genre_cache = HashMap::new();
 
     let tx = conn.transaction().map_err(Error::Db)?;
 
     for meta in metadata_results {
-        let artist_names: Vec<String> = meta.artist
+        let artist_names: Vec<String> = meta
+            .artist
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
@@ -268,6 +339,7 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
             } else {
                 let id = db::get_or_create_artist(&tx, name)?;
                 artist_cache.insert(cache_key, id);
+                unique_artists_to_fetch.insert(id, name.clone());
                 id
             };
             artist_ids.push(id);
@@ -288,6 +360,7 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
             } else {
                 let id = db::get_or_create_artist(&tx, aa)?;
                 artist_cache.insert(cache_key, id);
+                unique_artists_to_fetch.insert(id, aa.clone());
                 id
             }
         } else {
@@ -310,7 +383,8 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
         let album_id = if let Some(&id) = album_cache.get(&album_key) {
             id
         } else {
-            let id = db::get_or_create_album(&tx, &meta.album, album_artist_id, cover_url.as_deref())?;
+            let id =
+                db::get_or_create_album(&tx, &meta.album, album_artist_id, cover_url.as_deref())?;
             album_cache.insert(album_key, id);
             id
         };
@@ -324,7 +398,7 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
             id
         };
 
-        db::update_track(
+        let track_id = db::update_track(
             &tx,
             &meta.path,
             &meta.title,
@@ -336,33 +410,74 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
             cover_url.as_deref(),
         )?;
 
-        db::set_track_artists(&tx, db::get_track_id_by_path(&tx, &meta.path)?, &artist_ids)?;
+        db::set_track_artists(&tx, track_id, &artist_ids)?;
+    }
 
-        // Background artist pic fetch for all artists
-        for &aid in &artist_ids {
-            let artist_name = artist_cache.iter()
-                .find(|(_, id)| **id == aid)
-                .map(|(name, _)| name.clone())
-                .unwrap_or_default();
-            if artist_name.is_empty() || artist_name == "Unknown Artist" {
-                continue;
-            }
-            let app_dir_clone = app_dir.clone();
-            let pool_clone = pool.inner().clone();
-            tokio::spawn(async move {
-                match artist_pic_fetcher::fetch_artist_image(&artist_name, &app_dir_clone).await {
+    tx.commit().map_err(Error::Db)?;
+
+    let _ = app_handle.emit(
+        "scan-progress",
+        ScanProgress {
+            current: 100,
+            total: 100,
+            message: "Updates saved".to_string(),
+        },
+    );
+    let _ = app_handle.emit("library-updated", ());
+
+    // Background artist pic fetch for unique artists
+    if !unique_artists_to_fetch.is_empty() {
+        let total_artists = unique_artists_to_fetch.len();
+        let app_handle_clone = app_handle.clone();
+        let app_dir_clone = app_dir.clone();
+        let pool_clone = pool.inner().clone();
+
+        tokio::spawn(async move {
+            for (i, (aid, name)) in unique_artists_to_fetch.into_iter().enumerate() {
+                if name == "Unknown Artist" {
+                    continue;
+                }
+
+                // Check if artist already has a photo
+                let has_photo = if let Ok(conn) = pool_clone.get() {
+                    db::artist_has_photo(&conn, aid).unwrap_or(false)
+                } else {
+                    false
+                };
+
+                if has_photo {
+                    continue;
+                }
+
+                let _ = app_handle_clone.emit(
+                    "fetch-progress",
+                    ScanProgress {
+                        current: i + 1,
+                        total: total_artists,
+                        message: format!("Fetching artist: {}", name),
+                    },
+                );
+
+                match artist_pic_fetcher::fetch_artist_image(&name, &app_dir_clone).await {
                     Ok(filename) => {
                         if let Ok(conn) = pool_clone.get() {
                             let _ = db::update_artist_profile_picture(&conn, aid, &filename);
                         }
                     }
-                    Err(e) => eprintln!("Failed to fetch artist image for {}: {}", artist_name, e),
+                    Err(e) => eprintln!("Failed to fetch artist image for {}: {}", name, e),
                 }
-            });
-        }
+            }
+            // Emit 100% completion
+            let _ = app_handle_clone.emit(
+                "fetch-progress",
+                ScanProgress {
+                    current: total_artists,
+                    total: total_artists,
+                    message: "Artist photos updated".to_string(),
+                },
+            );
+        });
     }
-
-    tx.commit().map_err(Error::Db)?;
 
     Ok(())
 }

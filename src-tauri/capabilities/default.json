@@ -20,6 +20,7 @@
     "dialog:allow-open",
     "fs:default",
     "fs:scope-appdata",
-    "fs:allow-appdata-read-recursive"
+    "fs:allow-appdata-read-recursive",
+    "store:default"
   ]
 }

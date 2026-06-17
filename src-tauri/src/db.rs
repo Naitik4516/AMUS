@@ -141,9 +141,30 @@ pub fn get_source_dirs(conn: &Connection) -> Result<Vec<String>> {
         .map_err(Error::Db)
 }
 
-pub fn remove_source_dir(conn: &Connection, path: &str) -> Result<()> {
-    conn.execute("DELETE FROM source_dirs WHERE path = ?", params![path])
+pub fn remove_source_dir(conn: &mut Connection, path: &str) -> Result<()> {
+    let tx = conn.transaction().map_err(Error::Db)?;
+
+    // 1. Get all tracks that are inside this directory
+    let track_paths: Vec<String> = {
+        let mut stmt = tx
+            .prepare("SELECT path FROM tracks WHERE path LIKE ? || '%'")
+            .map_err(Error::Db)?;
+        stmt.query_map(params![path], |row| row.get(0))
+            .map_err(Error::Db)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Error::Db)?
+    };
+
+    // 2. Delete these tracks and perform cleanup
+    if !track_paths.is_empty() {
+        delete_tracks_by_paths(&tx, &track_paths)?;
+    }
+
+    // 3. Remove the source directory itself
+    tx.execute("DELETE FROM source_dirs WHERE path = ?", params![path])
         .map_err(Error::Db)?;
+
+    tx.commit().map_err(Error::Db)?;
     Ok(())
 }
 
@@ -170,44 +191,24 @@ pub fn delete_tracks_by_paths(conn: &Connection, paths: &[String]) -> Result<usi
         return Ok(0);
     }
 
-    conn.execute("BEGIN TRANSACTION", []).map_err(Error::Db)?;
-
     let mut total_deleted = 0;
     for chunk in paths.chunks(900) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!("DELETE FROM tracks WHERE path IN ({})", placeholders);
 
-        let mut stmt = match conn.prepare(&sql) {
-            Ok(s) => s,
-            Err(e) => {
-                let _ = conn.execute("ROLLBACK", []);
-                return Err(Error::Db(e));
-            }
-        };
-        let count = match stmt.execute(rusqlite::params_from_iter(chunk)) {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = conn.execute("ROLLBACK", []);
-                return Err(Error::Db(e));
-            }
-        };
+        let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
+        let count = stmt.execute(rusqlite::params_from_iter(chunk)).map_err(Error::Db)?;
         total_deleted += count;
     }
 
-    let cleanup_res = conn.execute_batch(
+    conn.execute_batch(
         "DELETE FROM track_artists WHERE track_id NOT IN (SELECT id FROM tracks);
          DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks WHERE album_id IS NOT NULL);
          DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM tracks WHERE artist_id IS NOT NULL) AND id NOT IN (SELECT DISTINCT artist_id FROM track_artists) AND profile_picture IS NULL;
          DELETE FROM genres WHERE id NOT IN (SELECT DISTINCT genre_id FROM tracks WHERE genre_id IS NOT NULL);
          DELETE FROM track_stats WHERE track_id NOT IN (SELECT id FROM tracks);"
-    );
+    ).map_err(Error::Db)?;
 
-    if let Err(e) = cleanup_res {
-        let _ = conn.execute("ROLLBACK", []);
-        return Err(Error::Db(e));
-    }
-
-    conn.execute("COMMIT", []).map_err(Error::Db)?;
     Ok(total_deleted)
 }
 
@@ -227,32 +228,18 @@ pub fn get_or_create_artist(conn: &Connection, name: &str) -> Result<i64> {
 }
 
 pub fn set_track_artists(conn: &Connection, track_id: i64, artist_ids: &[i64]) -> Result<()> {
-    conn.execute("BEGIN TRANSACTION", []).map_err(Error::Db)?;
-
-    let res = (|| -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM track_artists WHERE track_id = ?",
+        params![track_id],
+    ).map_err(Error::Db)?;
+    
+    for artist_id in artist_ids {
         conn.execute(
-            "DELETE FROM track_artists WHERE track_id = ?",
-            params![track_id],
-        )?;
-        for artist_id in artist_ids {
-            conn.execute(
-                "INSERT OR IGNORE INTO track_artists (track_id, artist_id) VALUES (?, ?)",
-                params![track_id, artist_id],
-            )?;
-        }
-        Ok(())
-    })();
-
-    match res {
-        Ok(_) => {
-            conn.execute("COMMIT", []).map_err(Error::Db)?;
-            Ok(())
-        }
-        Err(e) => {
-            let _ = conn.execute("ROLLBACK", []);
-            Err(Error::Db(e))
-        }
+            "INSERT OR IGNORE INTO track_artists (track_id, artist_id) VALUES (?, ?)",
+            params![track_id, artist_id],
+        ).map_err(Error::Db)?;
     }
+    Ok(())
 }
 
 pub fn update_artist_profile_picture(conn: &Connection, artist_id: i64, path: &str) -> Result<()> {
@@ -264,44 +251,41 @@ pub fn update_artist_profile_picture(conn: &Connection, artist_id: i64, path: &s
     Ok(())
 }
 
+pub fn artist_has_photo(conn: &Connection, artist_id: i64) -> Result<bool> {
+    let res: Option<String> = conn
+        .query_row(
+            "SELECT profile_picture FROM artists WHERE id = ?",
+            params![artist_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(Error::Db)?;
+    Ok(res.is_some())
+}
+
 pub fn get_or_create_album(
     conn: &Connection,
     title: &str,
     artist_id: i64,
     cover_art: Option<&str>,
 ) -> Result<i64> {
-    conn.execute("BEGIN TRANSACTION", []).map_err(Error::Db)?;
+    conn.execute(
+        "INSERT OR IGNORE INTO albums (title, artist_id, cover_art) VALUES (?, ?, ?)",
+        params![title, artist_id, cover_art],
+    ).map_err(Error::Db)?;
 
-    let res = (|| -> rusqlite::Result<i64> {
+    if let Some(art) = cover_art {
         conn.execute(
-            "INSERT OR IGNORE INTO albums (title, artist_id, cover_art) VALUES (?, ?, ?)",
-            params![title, artist_id, cover_art],
-        )?;
-
-        if let Some(art) = cover_art {
-            conn.execute(
-                "UPDATE albums SET cover_art = ? WHERE title = ? AND artist_id = ? AND cover_art IS NULL",
-                params![art, title, artist_id],
-            )?;
-        }
-
-        conn.query_row(
-            "SELECT id FROM albums WHERE title = ? AND artist_id = ?",
-            params![title, artist_id],
-            |row| row.get(0),
-        )
-    })();
-
-    match res {
-        Ok(id) => {
-            conn.execute("COMMIT", []).map_err(Error::Db)?;
-            Ok(id)
-        }
-        Err(e) => {
-            let _ = conn.execute("ROLLBACK", []);
-            Err(Error::Db(e))
-        }
+            "UPDATE albums SET cover_art = ? WHERE title = ? AND artist_id = ? AND cover_art IS NULL",
+            params![art, title, artist_id],
+        ).map_err(Error::Db)?;
     }
+
+    conn.query_row(
+        "SELECT id FROM albums WHERE title = ? AND artist_id = ?",
+        params![title, artist_id],
+        |row| row.get(0),
+    ).map_err(Error::Db)
 }
 
 pub fn get_or_create_genre(conn: &Connection, name: &str) -> Result<i64> {
@@ -329,7 +313,7 @@ pub fn update_track(
     duration: u32,
     mtime: i64,
     cover_art: Option<&str>,
-) -> Result<()> {
+) -> Result<i64> {
     conn.execute(
         "INSERT INTO tracks (path, title, album_id, artist_id, genre_id, duration_seconds, mtime, cover_art)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -343,7 +327,12 @@ pub fn update_track(
         cover_art = excluded.cover_art",
         params![path, title, album_id, artist_id, genre_id, duration, mtime, cover_art],
     ).map_err(Error::Db)?;
-    Ok(())
+    
+    conn.query_row(
+        "SELECT id FROM tracks WHERE path = ?",
+        params![path],
+        |row| row.get(0)
+    ).map_err(Error::Db)
 }
 
 pub fn get_track_mtime(conn: &Connection, path: &str) -> Result<Option<i64>> {
@@ -879,27 +868,13 @@ pub fn get_all_tracks(conn: &Connection, sort_by: Option<SortBy>) -> Result<Vec<
 }
 
 pub fn delete_playlist(conn: &Connection, playlist_id: i64) -> Result<()> {
-    conn.execute("BEGIN TRANSACTION", []).map_err(Error::Db)?;
-
-    let res = (|| -> rusqlite::Result<()> {
-        conn.execute(
-            "DELETE FROM playlist_tracks WHERE playlist_id = ?",
-            params![playlist_id],
-        )?;
-        conn.execute("DELETE FROM playlists WHERE id = ?", params![playlist_id])?;
-        Ok(())
-    })();
-
-    match res {
-        Ok(_) => {
-            conn.execute("COMMIT", []).map_err(Error::Db)?;
-            Ok(())
-        }
-        Err(e) => {
-            let _ = conn.execute("ROLLBACK", []);
-            Err(Error::Db(e))
-        }
-    }
+    conn.execute(
+        "DELETE FROM playlist_tracks WHERE playlist_id = ?",
+        params![playlist_id],
+    ).map_err(Error::Db)?;
+    
+    conn.execute("DELETE FROM playlists WHERE id = ?", params![playlist_id]).map_err(Error::Db)?;
+    Ok(())
 }
 
 pub fn remove_track_from_playlist(

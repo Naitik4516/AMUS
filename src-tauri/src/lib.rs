@@ -5,16 +5,19 @@ pub mod engine;
 pub mod error;
 pub mod models;
 pub mod scanner;
+pub mod sync;
 
 use engine::{AudioEngine, Player};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rodio::DeviceSinkBuilder;
+use sync::SyncManager;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::Builder::new().build())
@@ -47,6 +50,10 @@ pub fn run() {
                 engine: engine_arc.clone(),
             });
 
+            let sync_manager = SyncManager::new();
+            sync_manager.init(app_handle);
+            app.manage(sync_manager);
+
             engine::engine::spawn_playback_monitor(app_handle.clone(), engine_arc);
 
             Ok(())
@@ -55,6 +62,8 @@ pub fn run() {
             commands::add_source,
             commands::get_source_dirs,
             commands::remove_source,
+            commands::refresh_watcher,
+            commands::has_music,
             commands::scan_library,
             commands::get_all_tracks,
             commands::get_favorite_tracks,

@@ -1,14 +1,30 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { load } from "@tauri-apps/plugin-store";
     import {
         getSourceDirs,
         removeSource,
         importAudioLibrary,
+        scanLibrary,
+        refreshWatcher,
     } from "$lib/commands.svelte";
-    import { FolderOpen, Trash2, RefreshCw, Plus } from "@lucide/svelte";
+    import {
+        FolderOpen,
+        Trash2,
+        RefreshCw,
+        Plus,
+        Zap,
+        Power,
+        Settings2,
+    } from "@lucide/svelte";
 
     let sources = $state<string[]>([]);
     let loading = $state(true);
+    let syncing = $state(false);
+
+    let realtimeSync = $state(true);
+    let syncOnStartup = $state(true);
+    let store = $state<any>(null);
 
     async function loadSources() {
         loading = true;
@@ -18,6 +34,33 @@
             console.error("Failed to load sources", e);
         }
         loading = false;
+    }
+
+    async function loadSettings() {
+        try {
+            store = await load("settings.json", { autoSave: true });
+            const rs = await store.get("realtimeSync");
+            const ss = await store.get("syncOnStartup");
+            realtimeSync = rs === undefined ? true : rs;
+            syncOnStartup = ss === undefined ? true : ss;
+        } catch (e) {
+            console.error("Failed to load settings", e);
+        }
+    }
+
+    async function toggleRealtimeSync() {
+        realtimeSync = !realtimeSync;
+        if (store) {
+            await store.set("realtimeSync", realtimeSync);
+            await refreshWatcher();
+        }
+    }
+
+    async function toggleSyncOnStartup() {
+        syncOnStartup = !syncOnStartup;
+        if (store) {
+            await store.set("syncOnStartup", syncOnStartup);
+        }
     }
 
     async function handleRemoveSource(path: string) {
@@ -34,80 +77,153 @@
         await loadSources();
     }
 
-    onMount(loadSources);
+    async function handleManualSync() {
+        syncing = true;
+        try {
+            await scanLibrary();
+        } catch (e) {
+            console.error("Manual sync failed", e);
+        } finally {
+            syncing = false;
+        }
+    }
+
+    onMount(() => {
+        loadSources();
+        loadSettings();
+    });
 </script>
 
-<div class="p-8">
-    <div class="flex items-center justify-between mb-8">
-        <h1 class="text-3xl font-black text-white">Library Sources</h1>
-        <button
-            onclick={handleAddSource}
-            class="flex items-center gap-2 px-4 py-2 bg-secondary text-black font-bold rounded-full hover:scale-105 transition-transform"
-        >
-            <Plus size={20} /> Add Folder
-        </button>
+<div class="p-8 max-w-4xl mx-auto">
+    <div class="mb-12">
+        <div class="flex items-center justify-between mb-8">
+            <h1 class="text-3xl font-black text-white">Library Sources</h1>
+            <button
+                onclick={handleAddSource}
+                class="flex items-center gap-2 px-4 py-2 bg-secondary text-black font-bold rounded-full hover:scale-105 transition-transform"
+            >
+                <Plus size={20} /> Add Folder
+            </button>
+        </div>
+
+        <p class="text-gray-400 mb-6">
+            Manage the folders that Amus scans for audio files.
+        </p>
+
+        {#if loading}
+            <div class="flex items-center justify-center py-20">
+                <div
+                    class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-secondary"
+                ></div>
+            </div>
+        {:else if sources.length === 0}
+            <div
+                class="flex flex-col items-center justify-center py-20 text-gray-500"
+            >
+                <FolderOpen size={64} class="mb-4 opacity-20" />
+                <p class="text-xl font-medium">No sources configured</p>
+                <p class="text-sm mb-6">
+                    Add a folder to start scanning your music.
+                </p>
+                <button
+                    onclick={handleAddSource}
+                    class="flex items-center gap-2 px-6 py-3 bg-secondary text-black font-bold rounded-full hover:scale-105 transition-transform"
+                >
+                    <FolderOpen size={20} /> Select Folder
+                </button>
+            </div>
+        {:else}
+            <div class="space-y-3">
+                {#each sources as source}
+                    <div
+                        class="flex items-center justify-between bg-neutral-900/80 border border-neutral-800 rounded-xl px-5 py-4 group hover:border-neutral-700 transition-colors"
+                    >
+                        <div class="flex items-center gap-4 min-w-0">
+                            <FolderOpen size={20} class="text-secondary shrink-0" />
+                            <span class="text-white truncate" title={source}>
+                                {source}
+                            </span>
+                        </div>
+                        <button
+                            onclick={() => handleRemoveSource(source)}
+                            class="shrink-0 p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                            title="Remove source"
+                        >
+                            <Trash2 size={18} />
+                        </button>
+                    </div>
+                {/each}
+            </div>
+        {/if}
     </div>
 
-    <p class="text-gray-400 mb-6">
-        Manage the folders that Amus scans for audio files.
-    </p>
+    <div class="mb-12">
+        <div class="flex items-center gap-2 mb-8">
+            <Settings2 size={24} class="text-secondary" />
+            <h2 class="text-2xl font-black text-white">Sync Preferences</h2>
+        </div>
 
-    {#if loading}
-        <div class="flex items-center justify-center py-20">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div
-                class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-secondary"
-            ></div>
-        </div>
-    {:else if sources.length === 0}
-        <div
-            class="flex flex-col items-center justify-center py-20 text-gray-500"
-        >
-            <FolderOpen size={64} class="mb-4 opacity-20" />
-            <p class="text-xl font-medium">No sources configured</p>
-            <p class="text-sm mb-6">Add a folder to start scanning your music.</p>
-            <button
-                onclick={handleAddSource}
-                class="flex items-center gap-2 px-6 py-3 bg-secondary text-black font-bold rounded-full hover:scale-105 transition-transform"
+                class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-6"
             >
-                <FolderOpen size={20} /> Select Folder
-            </button>
-        </div>
-    {:else}
-        <div class="space-y-3">
-            {#each sources as source}
-                <div
-                    class="flex items-center justify-between bg-neutral-900/80 border border-neutral-800 rounded-xl px-5 py-4 group hover:border-neutral-700 transition-colors"
-                >
-                    <div class="flex items-center gap-4 min-w-0">
-                        <FolderOpen size={20} class="text-secondary shrink-0" />
-                        <span class="text-white truncate" title={source}>
-                            {source}
-                        </span>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-3">
+                        <Zap size={20} class={realtimeSync ? "text-yellow-400" : "text-gray-500"} />
+                        <h3 class="font-bold text-white text-lg">Real-time Sync</h3>
                     </div>
                     <button
-                        onclick={() => handleRemoveSource(source)}
-                        class="shrink-0 p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
-                        title="Remove source"
+                        onclick={toggleRealtimeSync}
+                        class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none {realtimeSync ? 'bg-secondary' : 'bg-neutral-700'}"
                     >
-                        <Trash2 size={18} />
+                        <span
+                            class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {realtimeSync ? 'translate-x-6' : 'translate-x-1'}"
+                        ></span>
                     </button>
                 </div>
-            {/each}
-        </div>
+                <p class="text-sm text-gray-400">
+                    Automatically update your library when files are added, modified, or removed from your source folders.
+                </p>
+            </div>
 
-        <div class="mt-8 flex items-center gap-4">
-            <button
-                onclick={handleAddSource}
-                class="flex items-center gap-2 px-4 py-2 bg-neutral-800 text-white font-bold rounded-full hover:bg-neutral-700 transition-colors"
+            <div
+                class="bg-neutral-900/80 border border-neutral-800 rounded-xl p-6"
             >
-                <Plus size={18} /> Add Folder
-            </button>
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-3">
+                        <Power size={20} class={syncOnStartup ? "text-green-400" : "text-gray-500"} />
+                        <h3 class="font-bold text-white text-lg">Sync on Startup</h3>
+                    </div>
+                    <button
+                        onclick={toggleSyncOnStartup}
+                        class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none {syncOnStartup ? 'bg-secondary' : 'bg-neutral-700'}"
+                    >
+                        <span
+                            class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {syncOnStartup ? 'translate-x-6' : 'translate-x-1'}"
+                        ></span>
+                    </button>
+                </div>
+                <p class="text-sm text-gray-400">
+                    Perform a full library scan every time you open Amus to ensure everything is up to date.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex items-center justify-center p-8 bg-neutral-900/40 rounded-2xl border border-dashed border-neutral-800">
+        <div class="text-center">
+            <h3 class="text-lg font-bold text-white mb-2">Manual Sync</h3>
+            <p class="text-sm text-gray-400 mb-6 max-w-md">
+                If you've disabled automatic syncing or want to force an update, you can manually trigger a full library scan.
+            </p>
             <button
-                onclick={() => importAudioLibrary().then(loadSources)}
-                class="flex items-center gap-2 px-4 py-2 bg-neutral-800 text-white font-bold rounded-full hover:bg-neutral-700 transition-colors"
+                onclick={handleManualSync}
+                disabled={syncing}
+                class="flex items-center gap-3 px-8 py-3 bg-white text-black font-black rounded-full hover:scale-105 transition-transform disabled:opacity-50 disabled:hover:scale-100"
             >
-                <RefreshCw size={18} /> Rescan All
+                <RefreshCw size={20} class={syncing ? "animate-spin" : ""} />
+                {syncing ? "Syncing..." : "Sync Now"}
             </button>
         </div>
-    {/if}
+    </div>
 </div>

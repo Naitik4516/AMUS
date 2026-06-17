@@ -10,7 +10,7 @@ export const load: PageLoad = async ({ params, url }) => {
     const [album, tracks] = await Promise.all([
       invoke<Album>("get_album", { id }),
       invoke<Track[]>("get_tracks_by_album", {
-        album_id: id,
+        albumId: id,
         sort_by: sortBy,
       }),
     ]);
