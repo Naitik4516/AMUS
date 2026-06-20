@@ -13,16 +13,20 @@
     "windows": [
       {
         "title": "Amus",
-        "width": 900,
-        "height": 600,
+        "width": 1000,
+        "height": 700,
         "decorations": false,
         "resizable": true,
         "minHeight": 700,
-        "minWidth": 600
+        "minWidth": 700
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/**/*"]
+      }
     }
   },
   "bundle": {
