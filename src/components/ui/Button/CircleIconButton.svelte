@@ -4,9 +4,9 @@
     let color = $derived.by(() => {
         switch (type) {
             case "primary":
-                return "bg-secondary text-black hover:bg-secondary/80";
+                return "bg-accent text-black hover:bg-accent/80";
             default:
-                return "bg-stone-800 text-text hover:bg-neutral-700/80";
+                return "bg-zinc-800 text-foreground hover:bg-neutral-700/80";
         }
     });
 </script>

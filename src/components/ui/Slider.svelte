@@ -22,7 +22,7 @@
 
 <div
     bind:this={slider}
-    class="w-full h-1.5 rounded-full bg-gray-400/40 relative cursor-pointer"
+    class="w-full max-w-96 h-1.5 rounded-full bg-gray-400/40 relative cursor-pointer"
     title="Seek"
     role="slider"
     aria-valuemin="0"
@@ -34,11 +34,10 @@
     {...props}
 >
     <div
-        class="h-full rounded-full bg-secondary absolute top-0 left-0 pl-1.5"
+        class="h-full rounded-full bg-accent absolute top-0 left-0 pl-1.5"
         style:width={`${value}%`}
     >
-        <span
-            class="absolute h-3 w-3 bg-secondary right-0 rounded-full -mt-0.75"
+        <span class="absolute h-3 w-3 bg-accent right-0 rounded-full -mt-0.75"
         ></span>
     </div>
 </div>

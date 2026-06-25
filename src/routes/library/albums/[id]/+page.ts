@@ -1,6 +1,7 @@
 import type { PageLoad } from "./$types";
 import { invoke } from "@tauri-apps/api/core";
 import type { Track, SortBy, Album } from "$lib/types";
+import { getImageUrl } from "$lib/utils";
 
 export const load: PageLoad = async ({ params, url }) => {
   const sortBy = (url.searchParams.get("sortBy") as SortBy) || "title";
@@ -15,10 +16,14 @@ export const load: PageLoad = async ({ params, url }) => {
       }),
     ]);
 
+    const coverArtUrl = album.cover_art
+      ? await getImageUrl(album.cover_art)
+      : null;
+
     return {
       data: tracks || [],
       name: album.name || "Album",
-      cover_art: album.cover_art || null,
+      cover_art: coverArtUrl,
     };
   } catch (e) {
     console.error("Failed to load album", e);

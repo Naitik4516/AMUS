@@ -1,8 +1,9 @@
 <script lang="ts">
     import { invoke } from "@tauri-apps/api/core";
-    import PlaylistCard from "$components/ui/PlaylistCard.svelte";
+    import PlaylistCard from "$components/ui/Card/PlaylistCard.svelte";
     import { Plus } from "@lucide/svelte";
     import type { PageProps } from "./$types";
+    import { fly } from "svelte/transition";
 
     let { data }: PageProps = $props();
     let playlists = $derived(data.playlists);
@@ -28,6 +29,7 @@
         <button
             onclick={() => (showCreateModal = true)}
             class="flex items-center gap-2 px-4 py-2 bg-neutral-800 text-white font-bold rounded-full hover:bg-neutral-700 transition-colors"
+            transition:fly={{ y: -20, duration: 300 }}
         >
             <Plus size={20} /> New Playlist
         </button>
@@ -36,7 +38,6 @@
     <div
         class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6"
     >
-        <PlaylistCard id={0} name="All Tracks" />
         {#each playlists as playlist}
             <PlaylistCard {...playlist} />
         {/each}
@@ -72,7 +73,7 @@
                     </button>
                     <button
                         onclick={createPlaylist}
-                        class="px-8 py-2 bg-secondary text-black font-bold rounded-full hover:scale-105 transition-transform"
+                        class="px-8 py-2 bg-accent text-black font-bold rounded-full hover:scale-105 transition-transform"
                     >
                         Create
                     </button>

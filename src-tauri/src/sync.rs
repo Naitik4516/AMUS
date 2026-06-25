@@ -122,10 +122,26 @@ impl SyncManager {
                             let pool = app_handle.state::<DbPool>();
                             if let Ok(mut conn) = pool.get() {
                                 let _ = (|| -> Result<(), crate::error::Error> {
-                                    let tx = conn.transaction().map_err(crate::error::Error::Db)?;
-                                    db::delete_tracks_by_paths(&tx, &paths_to_remove)?;
-                                    tx.commit().map_err(crate::error::Error::Db)?;
-                                    let _ = app_handle.emit("library-updated", ());
+                                    let mut tracks_to_delete = Vec::new();
+                                    for path in &paths_to_remove {
+                                        let mut stmt = conn.prepare(
+                                            "SELECT path FROM track WHERE path = ? OR path LIKE ? || '/%' OR path LIKE ? || '\\%'"
+                                        ).map_err(crate::error::Error::Db)?;
+                                        let rows = stmt.query_map(rusqlite::params![path, path, path], |row| row.get::<_, String>(0))
+                                            .map_err(crate::error::Error::Db)?;
+                                        for r in rows {
+                                            if let Ok(p) = r {
+                                                tracks_to_delete.push(p);
+                                            }
+                                        }
+                                    }
+
+                                    if !tracks_to_delete.is_empty() {
+                                        let tx = conn.transaction().map_err(crate::error::Error::Db)?;
+                                        db::delete_tracks_by_paths(&tx, &tracks_to_delete)?;
+                                        tx.commit().map_err(crate::error::Error::Db)?;
+                                        let _ = app_handle.emit("library-updated", ());
+                                    }
                                     Ok(())
                                 })();
                             }

@@ -1,402 +1,779 @@
 <script lang="ts">
-    import {
-        Music,
-        Trash2,
-        Pen,
-        Ellipsis,
-        Clock,
-        Play,
-        Plus,
-        User,
-    } from "@lucide/svelte";
-    import type { Track, Playlist } from "$lib/types.d.ts";
-    import Menu from "$components/ui/Menu.svelte";
-    import MenuItem from "$components/ui/MenuItem.svelte";
-    import CircleIconButton from "$components/ui/Button/CircleIconButton.svelte";
-    import { formatDuration, getCoverUrl } from "$lib/utils";
-    import { getPlaylists } from "$lib/data.svelte";
+    import Icon from "./Icon.svelte";
+    import DropdownMenu from "./DropdownMenu.svelte";
+    import TrackMenu from "./TrackMenu.svelte";
+    import type { Track } from "$lib/types";
+    import { getImageUrl } from "$lib/utils";
+    import { Heart } from "@lucide/svelte";
     import { player } from "$lib/player.svelte";
-    import type { Snippet } from "svelte";
-    import { goto } from "$app/navigation";
+    import { invoke } from "@tauri-apps/api/core";
+
+    type ColumnKey = (typeof COLUMN_ORDER)[number];
+
+    const COLUMN_ORDER = [
+        "index",
+        "title",
+        "album",
+        "dateAdded",
+        "duration",
+    ] as const;
+
+    type Context = "playlist" | "album" | "artist" | "liked";
+
+    type MenuItem = {
+        label: string;
+        icon?: string;
+        onClick?: () => void;
+        href?: string;
+        danger?: boolean;
+        disabled?: boolean;
+        type?: string;
+        items?: MenuItem[];
+    };
+
+    interface TrackTableProps {
+        tracks: Track[];
+        context?: Context;
+        visibleColumns?: ColumnKey[] | null;
+        canEdit?: boolean;
+        canSort?: boolean;
+        canToggleColumns?: boolean;
+        playlists?: { id: number; name: string }[];
+        extraActions?: MenuItem[];
+        playlistId?: number | null;
+    }
 
     let {
-        tracks,
-        name,
-        coverArt,
-        otherMenuItems,
-        coverSnippet,
-        subtitle,
-    }: {
-        tracks: Track[];
-        name: string;
-        coverArt: string | string[] | null;
-        otherMenuItems?: Snippet;
-        coverSnippet?: Snippet;
-        subtitle?: string;
-    } = $props();
+        tracks = [],
+        context = "playlist",
+        visibleColumns = null,
+        canEdit = false,
+        canSort = true,
+        canToggleColumns = true,
+        playlists = [],
+        extraActions = [],
+        playlistId = null,
+    }: TrackTableProps = $props();
 
-    // ── State ────────────────────────────────────────────────────────────────
+    let menuPlaylists = $state<{ id: number; name: string }[]>([]);
 
-    let playlists = $state<Playlist[]>([]);
-    let showTrackOptions = $state(-1);
-    let hovering = $state(-1);
-    let heroHidden = $state(false);
-    let scrollContainer = $state<HTMLDivElement | null>(null);
+    $effect(() => {
+        invoke("list_playlists")
+            .then((pl) => {
+                menuPlaylists = pl as { id: number; name: string }[];
+            })
+            .catch(() => {
+                menuPlaylists = [];
+            });
+    });
 
-    // ── Derived ──────────────────────────────────────────────────────────────
+    function onPlaylistsChanged() {
+        invoke("list_playlists")
+            .then((pl) => {
+                menuPlaylists = pl as { id: number; name: string }[];
+            })
+            .catch(() => {
+                menuPlaylists = [];
+            });
+    }
 
-    let totalDuration = $derived(
-        tracks.reduce((sum, track) => sum + track.duration_seconds, 0),
+    const COLUMN_META: Record<
+        ColumnKey,
+        {
+            label: string;
+            settingsLabel: string;
+            width: number;
+            minWidth: number;
+            maxWidth: number;
+            sortable: boolean;
+            locked: boolean;
+            resizable: boolean;
+            icon?: string;
+        }
+    > = {
+        index: {
+            label: "#",
+            settingsLabel: "Index",
+            width: 56,
+            minWidth: 44,
+            maxWidth: 44,
+            sortable: false,
+            locked: true,
+            resizable: false,
+        },
+        title: {
+            label: "Title",
+            settingsLabel: "Title",
+            width: 380,
+            minWidth: 220,
+            maxWidth: 640,
+            sortable: true,
+            locked: true,
+            resizable: true,
+        },
+        album: {
+            label: "Album",
+            settingsLabel: "Album",
+            width: 220,
+            minWidth: 120,
+            maxWidth: 420,
+            sortable: true,
+            locked: false,
+            resizable: true,
+        },
+        dateAdded: {
+            label: "Date added",
+            settingsLabel: "Date added",
+            width: 160,
+            minWidth: 110,
+            maxWidth: 280,
+            sortable: true,
+            locked: false,
+            resizable: true,
+        },
+        duration: {
+            label: "",
+            settingsLabel: "Duration",
+            width: 90,
+            minWidth: 64,
+            maxWidth: 64,
+            sortable: true,
+            locked: false,
+            resizable: false,
+            icon: "clock",
+        },
+    };
+
+    const CONTEXT_DEFAULT_COLUMNS: Record<string, ColumnKey[]> = {
+        playlist: ["index", "title", "album", "dateAdded", "duration"],
+        liked: ["index", "title", "album", "dateAdded", "duration"],
+        album: ["index", "title", "duration"],
+        artist: ["index", "title", "album", "duration"],
+    };
+
+    let columns = $state(
+        Object.fromEntries(
+            COLUMN_ORDER.map((key) => [
+                key,
+                {
+                    visible: (
+                        visibleColumns ??
+                        CONTEXT_DEFAULT_COLUMNS[context] ??
+                        COLUMN_ORDER
+                    ).includes(key),
+                    width: COLUMN_META[key].width,
+                },
+            ]),
+        ) as Record<ColumnKey, { visible: boolean; width: number }>,
+    );
+    let density = $state<"relaxed" | "compact">("relaxed");
+
+    let sortKey = $state<ColumnKey | null>(null);
+    let sortDir = $state<"asc" | "desc">("asc");
+
+    let settingsOpen = $state(false);
+    let settingsBtn = $state<HTMLButtonElement | null>(null);
+    let settingsPanel = $state<HTMLDivElement | null>(null);
+    let actionMenuOpen = $state(false);
+    let actionMenuBtn = $state<HTMLButtonElement | null>(null);
+    let openRowMenuId = $state<number | null>(null);
+    const rowMenuButtons: Record<number, HTMLButtonElement> = {};
+
+    function compareTracks(a: Track, b: Track, key: ColumnKey) {
+        if (key === "title") return a.title.localeCompare(b.title);
+        if (key === "album")
+            return (a.album?.name ?? "").localeCompare(b.album?.name ?? "");
+        if (key === "duration") return a.duration_seconds - b.duration_seconds;
+        if (key === "dateAdded")
+            return (
+                new Date(a.added_at).getTime() - new Date(b.added_at).getTime()
+            );
+        return 0;
+    }
+
+    let orderedTracks = $derived.by(() => {
+        if (!sortKey) return tracks;
+        const key = sortKey;
+        const sorted = [...tracks].sort((a, b) => compareTracks(a, b, key));
+        return sortDir === "desc" ? sorted.reverse() : sorted;
+    });
+
+    function toggleSort(key: ColumnKey) {
+        if (!COLUMN_META[key].sortable) return;
+        if (sortKey !== key) {
+            sortKey = key;
+            sortDir = "asc";
+        } else if (sortDir === "asc") {
+            sortDir = "desc";
+        } else {
+            sortKey = null;
+            sortDir = "asc";
+        }
+    }
+
+    let visibleColumnKeys = $derived(
+        COLUMN_ORDER.filter((key) => columns[key].visible),
     );
 
-    // ── Effects ──────────────────────────────────────────────────────────────
+    let gridTemplate = $derived(
+        visibleColumnKeys
+            .map((key) =>
+                key === "title"
+                    ? `minmax(${columns[key].width}px, 1fr)`
+                    : `${columns[key].width}px`,
+            )
+            .join(" ") + " 40px",
+    );
 
-    $effect(() => {
-        getPlaylists().then((data) => {
-            playlists = data.playlists;
+    function startResize(key: ColumnKey, event: PointerEvent) {
+        event.preventDefault();
+        const startX = event.clientX;
+        const startWidth = columns[key].width;
+        const meta = COLUMN_META[key];
+
+        function onMove(e: PointerEvent) {
+            const next = startWidth + (e.clientX - startX);
+            columns[key].width = Math.min(
+                meta.maxWidth,
+                Math.max(meta.minWidth, next),
+            );
+        }
+        function onUp() {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+        }
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+    }
+
+    function formatDuration(totalSeconds: number) {
+        const m = Math.floor(totalSeconds / 60);
+        const s = Math.floor(totalSeconds % 60)
+            .toString()
+            .padStart(2, "0");
+        return `${m}:${s}`;
+    }
+
+    function formatDateAdded(value: string) {
+        const date = new Date(value);
+        const diffDays = Math.floor((Date.now() - date.getTime()) / 86_400_000);
+        if (diffDays <= 0) return "Today";
+        if (diffDays === 1) return "Yesterday";
+        if (diffDays < 7) return `${diffDays} days ago`;
+        return date.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
         });
+    }
+
+    function sourceType(): string {
+        return context === "liked" ? "favorites" : context;
+    }
+
+    function handleMainPlay() {
+        const first = orderedTracks[0];
+        if (!first) return;
+        if (
+            player.isPlaying &&
+            orderedTracks.some((x) => player.currentTrack?.id === x.id)
+        )
+            player.togglePlay();
+        else player.play(first, orderedTracks, sourceType() as any);
+    }
+
+    function handleRowActivate(track: Track) {
+        if (player.currentTrack?.id === track.id && player.isPlaying)
+            player.togglePlay();
+        else player.play(track, orderedTracks, sourceType() as any);
+    }
+
+    let actionMenuItems = $derived.by(() => {
+        const items: any[] = [
+            {
+                label: "Add all to queue",
+                icon: "list-plus",
+                onClick: () => {
+                    for (const t of orderedTracks) {
+                        player.addToQueue(t);
+                    }
+                },
+            },
+        ];
+        if (extraActions.length) {
+            items.push({ type: "separator" }, ...extraActions);
+        }
+        return items;
     });
 
-    /**
-     * Attach scroll listener to the inner scrollable container.
-     * The container must have a fixed/max height for scrollTop to work —
-     * apply `h-full` or `max-h-[...]` via the parent layout.
-     */
+    // Click-outside / Escape for the column-settings popover
+    // (row & action menus handle this internally inside DropdownMenu)
     $effect(() => {
-        const el = scrollContainer;
-        if (!el) return;
-
-        const onScroll = () => {
-            const y = el.scrollTop;
-            if (!heroHidden && y > 50) heroHidden = true;
-            else if (heroHidden && y < 10) heroHidden = false;
+        if (!settingsOpen) return;
+        function handlePointerDown(e: PointerEvent) {
+            if (
+                settingsPanel?.contains(e.target as Node) ||
+                settingsBtn?.contains(e.target as Node)
+            )
+                return;
+            settingsOpen = false;
+        }
+        function handleKey(e: KeyboardEvent) {
+            if (e.key === "Escape") settingsOpen = false;
+        }
+        window.addEventListener("pointerdown", handlePointerDown, true);
+        window.addEventListener("keydown", handleKey);
+        return () => {
+            window.removeEventListener("pointerdown", handlePointerDown, true);
+            window.removeEventListener("keydown", handleKey);
         };
-
-        el.addEventListener("scroll", onScroll, { passive: true });
-        return () => el.removeEventListener("scroll", onScroll);
     });
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
-    function playTrack(track: Track) {
-        player.play(track, tracks);
-    }
-
-    function playFirst() {
-        if (tracks.length > 0) player.play(tracks[0], tracks);
-    }
-
-    function closeTrackOptions() {
-        showTrackOptions = -1;
-    }
+    const focusRing =
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
 </script>
 
-<div class="flex flex-col gap-10 p-8">
-    <!-- ── Hero ──────────────────────────────────────────────────────────── -->
-    <div
-        class="grid transition-all duration-300 ease-in-out"
-        style:grid-template-rows={heroHidden ? "0fr" : "1fr"}
-    >
-        <div class="overflow-hidden">
-            <div class="p-5 flex gap-15 rounded-2xl items-end">
-                <!-- Cover art -->
-                <div
-                    class="aspect-square w-50 rounded-xl overflow-hidden bg-neutral-800 relative shadow-2xl shrink-0"
+<div class="w-full rounded-b-2xl px-2 backdrop-blur-lg bg-black/5">
+    <!-- ============================== ACTION BAR ============================== -->
+    <div class="relative -mx-1 mb-2 sm:-mx-2">
+        <div class="pointer-events-none absolute inset-0"></div>
+        <div class="relative flex items-center gap-5 px-3 py-4 sm:px-4">
+            <button
+                type="button"
+                class="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-400 text-black shadow-lg shadow-emerald-400/20 transition-all hover:scale-105 hover:bg-emerald-300 active:scale-95 {focusRing}"
+                onclick={handleMainPlay}
+                aria-label={player.isPlaying && player.currentTrack
+                    ? "Pause"
+                    : "Play"}
+            >
+                <Icon
+                    name={player.isPlaying && player.currentTrack
+                        ? "pause"
+                        : "play"}
+                    size={24}
+                />
+            </button>
+
+            <button
+                type="button"
+                class="flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:text-white {focusRing}"
+                onclick={async () => {
+                    if (!player.shuffle) await player.toggleShuffle();
+                    await player.play(
+                        orderedTracks[0],
+                        orderedTracks,
+                        sourceType() as any,
+                    );
+                }}
+                aria-label="Shuffle play"
+            >
+                <Icon name="shuffle" size={22} />
+            </button>
+
+            <div>
+                <button
+                    bind:this={actionMenuBtn}
+                    type="button"
+                    class="flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:text-white {focusRing}"
+                    onclick={() => (actionMenuOpen = !actionMenuOpen)}
+                    aria-label="More options"
+                    aria-haspopup="menu"
+                    aria-expanded={actionMenuOpen}
                 >
-                    {#if coverSnippet}
-                        {@render coverSnippet()}
-                    {:else if !coverArt}
-                        <div
-                            class="absolute inset-0 flex items-center justify-center"
+                    <Icon name="more-horizontal" size={22} />
+                </button>
+                {#if actionMenuOpen}
+                    <DropdownMenu
+                        items={actionMenuItems}
+                        anchorEl={actionMenuBtn}
+                        placement="bottom-start"
+                        onClose={() => (actionMenuOpen = false)}
+                    />
+                {/if}
+            </div>
+
+            <div class="flex-1"></div>
+
+            <div class="relative">
+                <button
+                    bind:this={settingsBtn}
+                    type="button"
+                    class="flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors hover:bg-white/5 hover:text-white {focusRing}"
+                    onclick={() => (settingsOpen = !settingsOpen)}
+                    aria-label="Table view settings"
+                    aria-haspopup="true"
+                    aria-expanded={settingsOpen}
+                >
+                    <Icon name="sliders" size={15} />
+                    <span class="hidden sm:inline">View</span>
+                </button>
+
+                {#if settingsOpen}
+                    <div
+                        bind:this={settingsPanel}
+                        class="absolute right-0 top-full z-50 mt-2 w-60 rounded-xl border border-white/10 bg-zinc-900/95 p-3 shadow-2xl shadow-black/60 backdrop-blur-md"
+                        role="dialog"
+                        aria-label="Table view settings"
+                    >
+                        <p
+                            class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
                         >
-                            <Music size={48} class="text-neutral-700" />
-                        </div>
-                    {:else if typeof coverArt === "string"}
-                        {#await getCoverUrl(coverArt)}
-                            <div
-                                class="absolute inset-0 bg-neutral-800 animate-pulse"
-                            ></div>
-                        {:then url}
-                            <img
-                                src={url}
-                                alt={name}
-                                class="w-full h-full object-cover"
-                            />
-                        {/await}
-                    {:else}
-                        <!-- Mosaic for multiple covers (max 4) -->
-                        <div class="grid grid-cols-2 grid-rows-2 w-full h-full">
-                            {#each coverArt.slice(0, 4) as art}
-                                {#await getCoverUrl(art)}
-                                    <div
-                                        class="w-full h-full bg-neutral-800 animate-pulse"
-                                    ></div>
-                                {:then url}
-                                    <img
-                                        src={url}
-                                        alt=""
-                                        class="w-full h-full object-cover"
-                                    />
-                                {/await}
+                            Density
+                        </p>
+                        <div class="mb-4 flex gap-1 rounded-lg bg-white/5 p-1">
+                            {#each ["compact", "relaxed"] as mode}
+                                <button
+                                    type="button"
+                                    class="flex-1 rounded-md py-1.5 text-[13px] capitalize transition-colors {density ===
+                                    mode
+                                        ? 'bg-white text-zinc-900'
+                                        : 'text-zinc-300 hover:text-white'} {focusRing}"
+                                    onclick={() =>
+                                        (density = mode as
+                                            | "relaxed"
+                                            | "compact")}
+                                >
+                                    {mode}
+                                </button>
                             {/each}
                         </div>
-                    {/if}
-                </div>
 
-                <!-- Title + meta -->
-                <div class="flex flex-col gap-4 min-w-0">
-                    <h1
-                        class="text-3xl md:text-5xl lg:text-[6rem] font-black drop-shadow-lg truncate"
-                    >
-                        {name}
-                    </h1>
-                    <span class="text-gray-300">
-                        {#if subtitle}
-                            {subtitle}
-                        {:else}
-                            {tracks.length} songs, {formatDuration(
-                                totalDuration,
-                                true,
-                            )}
-                        {/if}
-                    </span>
-                </div>
+                        <p
+                            class="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
+                        >
+                            Columns
+                        </p>
+                        <div class="flex flex-col">
+                            {#each COLUMN_ORDER as key (key)}
+                                {#if !COLUMN_META[key].locked}
+                                    <label
+                                        class="flex cursor-pointer items-center justify-between rounded-md px-1.5 py-1.5 text-[13px] text-zinc-200 hover:bg-white/5"
+                                    >
+                                        <span
+                                            >{COLUMN_META[key]
+                                                .settingsLabel}</span
+                                        >
+                                        <input
+                                            type="checkbox"
+                                            class="h-4 w-4 rounded accent-emerald-400 {focusRing}"
+                                            checked={columns[key].visible}
+                                            onchange={() =>
+                                                (columns[key].visible =
+                                                    !columns[key].visible)}
+                                        />
+                                    </label>
+                                {/if}
+                            {/each}
+                        </div>
+                    </div>
+                {/if}
             </div>
         </div>
     </div>
 
-    <!-- ── Track list ────────────────────────────────────────────────────── -->
-    <!--
-        NOTE: This container needs a constrained height from the parent layout
-        (e.g. h-full or max-h-[calc(100vh-...)]) for inner scrolling to work.
-        Without it, the page scrolls instead and heroHidden never updates.
-    -->
-    <div
-        bind:this={scrollContainer}
-        role="list"
-        class="overflow-y-auto overflow-x-hidden p-5 pb-0 rounded-2xl shadow-2xl bg-gray-900/40"
-    >
-        <!-- Sticky mini-header (visible when hero is collapsed) -->
+    <!-- ================================ TABLE ================================= -->
+    <div role="table" aria-label="Track list">
+        <!-- header -->
         <div
-            class="sticky -top-5 z-10 -mx-5 px-5 py-5 bg-gray-900/80 backdrop-blur-md rounded-t-2xl flex items-center gap-5 transition-opacity"
-            class:opacity-0={!heroHidden}
-            class:pointer-events-none={!heroHidden}
+            role="row"
+            class="grid border-b border-white/10 px-2 font-medium uppercase tracking-wide text-zinc-300 text-sm sm:px-3"
+            style="grid-template-columns:{gridTemplate}"
         >
-            <CircleIconButton type="primary" size={4} onclick={playFirst}>
-                <Play size={23} fill="black" />
-            </CircleIconButton>
-            <span class="text-3xl font-extrabold truncate">{name}</span>
-        </div>
-
-        <!-- Action bar (visible when hero is expanded) -->
-        <div class="flex items-center gap-4 p-4 mb-2" class:hidden={heroHidden}>
-            <CircleIconButton type="primary" size={5} onclick={playFirst}>
-                <Play size={26} fill="black" />
-            </CircleIconButton>
-            <!--
-                TODO: wire up edit and overflow actions via props or events
-                once the parent pages implement them.
-            -->
-            <CircleIconButton type="secondary" onclick={() => {}}>
-                <Pen size={16} fill="white" />
-            </CircleIconButton>
-            <CircleIconButton type="secondary" onclick={() => {}}>
-                <Ellipsis size={16} fill="white" />
-            </CircleIconButton>
-        </div>
-
-        <!-- Column headers -->
-        <div
-            class="grid grid-cols-24 items-center p-4 pb-0 text-gray-300 border-b-2 border-gray-800/60 font-semibold mb-2"
-        >
-            <span class="col-span-1 font-mono">#</span>
-            <span class="col-span-13">Title</span>
-            <span class="col-span-6">Album</span>
-            <span class="col-span-4 font-mono text-right">Duration</span>
-        </div>
-
-        <!-- Empty state -->
-        {#if tracks.length === 0}
-            <div
-                class="flex flex-col items-center justify-center py-16 text-gray-500"
-            >
-                <Music size={48} class="mb-4 opacity-20" />
-                <p class="text-lg font-medium">No tracks yet</p>
-                <p class="text-sm">Add songs to see them here.</p>
-            </div>
-
-            <!-- Track rows -->
-        {:else}
-            {#each tracks as track, index}
+            {#each visibleColumnKeys as key (key)}
+                {@const meta = COLUMN_META[key]}
                 <div
-                    class="grid grid-cols-24 items-center p-4 hover:bg-gray-500/15 text-gray-300 group relative rounded-lg"
-                    onmouseenter={() => (hovering = index)}
-                    onmouseleave={() => (hovering = -1)}
-                    role="listitem"
+                    role="columnheader"
+                    aria-sort={sortKey === key
+                        ? sortDir === "asc"
+                            ? "ascending"
+                            : "descending"
+                        : "none"}
+                    class="group relative flex items-center py-2.5 pr-3 {key ===
+                    'duration'
+                        ? 'justify-end'
+                        : key === 'index'
+                          ? 'justify-center'
+                          : 'justify-start'}"
                 >
-                    <!-- Index / play button -->
-                    <div class="col-span-1 flex items-center">
-                        {#if hovering === index}
-                            <button
-                                class="w-5 transition-colors"
-                                aria-label="Play {track.title}"
-                                onclick={() => playTrack(track)}
-                            >
-                                <Play
-                                    size={24}
-                                    class="fill-secondary hover:fill-secondary/75"
-                                />
-                            </button>
-                        {:else}
-                            <span class="font-mono">{index + 1}</span>
-                        {/if}
-                    </div>
-
-                    <!-- Title + artists -->
-                    <div class="flex gap-4 items-center col-span-13 min-w-0">
-                        {#if track.cover_art}
-                            {#await getCoverUrl(track.cover_art)}
-                                <div
-                                    class="w-14 h-14 bg-neutral-800 animate-pulse rounded-lg shrink-0"
-                                ></div>
-                            {:then url}
-                                <img
-                                    src={url}
-                                    alt=""
-                                    class="w-14 h-14 object-cover rounded-lg shrink-0"
-                                />
-                            {/await}
-                        {:else}
-                            <div
-                                class="w-14 h-14 bg-neutral-800 flex items-center justify-center rounded-lg shrink-0"
-                            >
-                                <Music size={24} />
-                            </div>
-                        {/if}
-
-                        <div class="flex flex-col min-w-0">
-                            <button
-                                class="text-white font-bold hover:underline text-left truncate"
-                                onclick={(e) => {
-                                    e.stopPropagation();
-                                    goto(`/library/trackdetails/${track.id}`);
-                                }}
-                            >
-                                {track.title}
-                            </button>
-                            <span class="text-sm text-gray-400 truncate">
-                                {#each track.artists as artist, i}
-                                    {#if i > 0}{", "}{/if}<button
-                                        class="hover:underline hover:text-gray-300"
-                                        onclick={(e) => {
-                                            e.stopPropagation();
-                                            goto(
-                                                `/library/artists/${artist.id}`,
-                                            );
-                                        }}>{artist.name}</button
-                                    >
-                                {/each}
-                            </span>
-                        </div>
-                    </div>
-
-                    <!-- Album -->
-                    <div class="col-span-6 truncate text-sm">
-                        {track.album?.name ?? "Unknown Album"}
-                    </div>
-
-                    <!-- Duration -->
-                    <span class="col-span-3 font-mono text-right">
-                        {formatDuration(track.duration_seconds)}
-                    </span>
-
-                    <!-- Options button -->
-                    <div class="col-span-1 flex justify-end">
+                    {#if key === "index"}
+                        <span>#</span>
+                    {:else if key === "duration"}
                         <button
-                            class="text-gray-400 hover:text-white transition-colors invisible group-hover:visible"
-                            aria-label="More options for {track.title}"
-                            onclick={() => (showTrackOptions = index)}
+                            type="button"
+                            class="flex items-center {focusRing}"
+                            onclick={() => toggleSort(key)}
+                            aria-label="Sort by duration"
                         >
-                            <Ellipsis size={20} />
+                            <Icon name="clock" size={14} />
                         </button>
-                    </div>
+                    {:else}
+                        <button
+                            type="button"
+                            class="flex items-center gap-1 rounded {meta.sortable
+                                ? 'hover:text-zinc-200'
+                                : 'cursor-default'} {focusRing}"
+                            onclick={() => toggleSort(key)}
+                            disabled={!meta.sortable}
+                        >
+                            <span>{meta.label}</span>
+                            {#if sortKey === key}
+                                <Icon
+                                    name={sortDir === "asc"
+                                        ? "chevron-up"
+                                        : "chevron-down"}
+                                    size={13}
+                                />
+                            {/if}
+                        </button>
+                    {/if}
 
-                    <!-- Context menu -->
-                    {#if showTrackOptions === index}
-                        <!-- Backdrop to close menu -->
-                        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                    {#if meta.resizable}
                         <div
-                            class="fixed inset-0 z-10"
-                            onclick={closeTrackOptions}
-                        ></div>
-
-                        <Menu class="absolute right-12 top-12 z-20">
-                            <MenuItem
-                                Icon={Pen}
-                                label="Edit"
-                                onclick={() => {
-                                    closeTrackOptions();
-                                    // TODO: wire up edit action
-                                }}
-                            />
-                            <MenuItem
-                                Icon={Clock}
-                                label="Add to Queue"
-                                onclick={() => {
-                                    player.addToQueue(track);
-                                    closeTrackOptions();
-                                }}
-                            />
-                            <MenuItem Icon={Plus} label="Add to Playlist">
-                                {#snippet children()}
-                                    <Menu>
-                                        {#each playlists as playlist}
-                                            <MenuItem
-                                                label={playlist.name}
-                                                onclick={() => {
-                                                    // TODO: wire up add-to-playlist action
-                                                    closeTrackOptions();
-                                                }}
-                                            />
-                                        {/each}
-                                    </Menu>
-                                {/snippet}
-                            </MenuItem>
-                            <MenuItem Icon={User} label="Go to Artist">
-                                {#snippet children()}
-                                    <Menu>
-                                        {#each track.artists as artist}
-                                            <MenuItem
-                                                label={artist.name}
-                                                onclick={() => {
-                                                    goto(
-                                                        `/library/artists/${artist.id}`,
-                                                    );
-                                                    closeTrackOptions();
-                                                }}
-                                            />
-                                        {/each}
-                                    </Menu>
-                                {/snippet}
-                            </MenuItem>
-                            <MenuItem
-                                Icon={Trash2}
-                                label="Remove from Playlist"
-                                onclick={() => {
-                                    // TODO: wire up remove action
-                                    closeTrackOptions();
-                                }}
-                            />
-                            {@render otherMenuItems?.()}
-                        </Menu>
+                            class="absolute right-0 top-1/2 h-4 w-3 -translate-y-1/2 cursor-col-resize opacity-0 transition-opacity group-hover:opacity-100"
+                            onpointerdown={(e) => startResize(key, e)}
+                            role="presentation"
+                        >
+                            <div class="mx-auto h-full w-px bg-white/25"></div>
+                        </div>
                     {/if}
                 </div>
             {/each}
-        {/if}
+            <div></div>
+        </div>
 
-        <!-- Fade-out footer gradient -->
-        <div
-            class="w-[110%] -ml-5 h-15 bg-linera-to-t from-black/50 to-transparent sticky -bottom-2 z-2 pointer-events-none"
-        ></div>
+        <!-- rows -->
+        <div class="mt-1 flex flex-col gap-1">
+            {#each orderedTracks as track, i (track.id)}
+                {@const active = player.currentTrack?.id === track.id}
+                <div
+                    role="row"
+                    tabindex="0"
+                    class="group relative grid items-center rounded-lg px-2 transition-colors text-neutral-300 text-sm hover:bg-white/6 {density ===
+                    'compact'
+                        ? 'py-1.5'
+                        : 'py-3'}"
+                    style="grid-template-columns:{gridTemplate}"
+                    ondblclick={() => handleRowActivate(track)}
+                >
+                    {#each visibleColumnKeys as key (key)}
+                        <div
+                            role="gridcell"
+                            class="flex min-w-0 items-center pr-3 {key ===
+                            'duration'
+                                ? 'justify-end'
+                                : key === 'index'
+                                  ? 'justify-center'
+                                  : 'justify-start'}"
+                        >
+                            {#if key === "index"}
+                                <button
+                                    type="button"
+                                    class="relative flex h-8 w-8 items-center justify-center rounded {active
+                                        ? 'text-emerald-400'
+                                        : ''} {focusRing}"
+                                    onclick={() => handleRowActivate(track)}
+                                    aria-label={active && player.isPlaying
+                                        ? "Pause"
+                                        : "Play"}
+                                >
+                                    {#if active && player.isPlaying}
+                                        <span
+                                            class="flex items-end gap-0.5 group-hover:hidden"
+                                        >
+                                            <span
+                                                class="eq-bar"
+                                                style="animation-delay:0ms"
+                                            ></span>
+                                            <span
+                                                class="eq-bar"
+                                                style="animation-delay:160ms"
+                                            ></span>
+                                            <span
+                                                class="eq-bar"
+                                                style="animation-delay:300ms"
+                                            ></span>
+                                        </span>
+                                        <Icon
+                                            name="pause"
+                                            size={14}
+                                            class="hidden text-white group-hover:block"
+                                        />
+                                    {:else}
+                                        <span class="group-hover:hidden"
+                                            >{i + 1}</span
+                                        >
+                                        <Icon
+                                            name="play"
+                                            size={13}
+                                            class="hidden text-white group-hover:block"
+                                        />
+                                    {/if}
+                                </button>
+                            {:else if key === "title"}
+                                <div class="flex min-w-0 items-center gap-3">
+                                    {#if density !== "compact"}
+                                        {#if track.cover_art}
+                                            {#await getImageUrl(track.cover_art) then url}
+                                                <img
+                                                    src={url}
+                                                    alt=""
+                                                    class="h-11 w-11 shrink-0 rounded object-cover"
+                                                    loading="lazy"
+                                                />
+                                            {/await}
+                                        {:else}
+                                            <div
+                                                class="h-12 w-12 shrink-0 rounded bg-zinc-800"
+                                            ></div>
+                                        {/if}
+                                    {/if}
+                                    <div class="min-w-0">
+                                        <button
+                                            type="button"
+                                            class="block max-w-full truncate rounded text-left text-base font-medium {active
+                                                ? 'text-emerald-400'
+                                                : 'text-zinc-50'} hover:underline {focusRing}"
+                                            onclick={() =>
+                                                handleRowActivate(track)}
+                                        >
+                                            {track.title}
+                                        </button>
+                                        <div class="truncate text-stone-400">
+                                            {#each track.artists as artist, ai (artist.id)}
+                                                {#if ai > 0}
+                                                    <span>, </span>
+                                                {/if}
+                                                <a
+                                                    href="/library/artist/{artist.id}"
+                                                    class="rounded hover:text-white hover:underline {focusRing}"
+                                                    onclick={(e) =>
+                                                        e.stopPropagation()}
+                                                    >{artist.name}</a
+                                                >
+                                            {/each}
+                                        </div>
+                                    </div>
+                                </div>
+                            {:else if key === "album"}
+                                <a
+                                    href="/library/album/{track.album.id}"
+                                    class="truncate rounded hover:text-white hover:underline {focusRing}"
+                                    onclick={(e) => e.stopPropagation()}
+                                >
+                                    {track.album.name}
+                                </a>
+                            {:else if key === "dateAdded"}
+                                <span class="truncate"
+                                    >{formatDateAdded(track.added_at)}</span
+                                >
+                            {:else if key === "duration"}
+                                <div class="flex items-center gap-3">
+                                    <button
+                                        type="button"
+                                        class="hidden hover:text-white group-hover:flex {track.is_favorite
+                                            ? 'flex!'
+                                            : ''} {focusRing}"
+                                        onclick={(e) => {
+                                            e.stopPropagation();
+                                            player.toggleFavorite(track);
+                                        }}
+                                        aria-label={track.is_favorite
+                                            ? "Remove from Liked Songs"
+                                            : "Save to Liked Songs"}
+                                    >
+                                        <Heart
+                                            fill={track.is_favorite
+                                                ? "red"
+                                                : ""}
+                                            size={16}
+                                            class={track.is_favorite
+                                                ? "text-emerald-400"
+                                                : ""}
+                                        />
+                                    </button>
+                                    <span class="text-sm"
+                                        >{formatDuration(
+                                            track.duration_seconds,
+                                        )}</span
+                                    >
+                                </div>
+                            {/if}
+                        </div>
+                    {/each}
+
+                    <div
+                        role="gridcell"
+                        class="relative flex items-center justify-center"
+                    >
+                        <button
+                            bind:this={rowMenuButtons[track.id]}
+                            type="button"
+                            class="flex h-8 w-8 items-center justify-center rounded-full opacity-0 transition-all hover:bg-white/10 hover:text-white group-hover:opacity-100 {openRowMenuId ===
+                            track.id
+                                ? 'opacity-100'
+                                : ''} {focusRing}"
+                            onclick={() =>
+                                (openRowMenuId =
+                                    openRowMenuId === track.id
+                                        ? null
+                                        : track.id)}
+                            aria-label="More options for {track.title}"
+                            aria-haspopup="menu"
+                            aria-expanded={openRowMenuId === track.id}
+                        >
+                            <Icon name="more-horizontal" size={18} />
+                        </button>
+                        {#if openRowMenuId === track.id}
+                            <TrackMenu
+                                {track}
+                                {context}
+                                playlists={menuPlaylists}
+                                {playlistId}
+                                exclude={context !== "playlist"
+                                    ? ["removeFromPlaylist"]
+                                    : []}
+                                anchorEl={rowMenuButtons[track.id]}
+                                onClose={() => (openRowMenuId = null)}
+                                onPlaylistsChanged={onPlaylistsChanged}
+                            />
+                        {/if}
+                    </div>
+                </div>
+            {/each}
+
+            {#if orderedTracks.length === 0}
+                <div
+                    class="flex flex-col items-center gap-2 py-16 text-center text-zinc-500"
+                >
+                    <Icon name="disc" size={28} />
+                    <p class="text-sm">No tracks here yet.</p>
+                </div>
+            {/if}
+        </div>
     </div>
 </div>
+
+<style>
+    .eq-bar {
+        width: 3px;
+        height: 5px;
+        background: currentColor;
+        border-radius: 1px;
+        animation: eq-bounce 0.9s ease-in-out infinite;
+    }
+    @keyframes eq-bounce {
+        0%,
+        100% {
+            height: 4px;
+        }
+        50% {
+            height: 13px;
+        }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .eq-bar {
+            animation: none;
+            height: 9px;
+        }
+    }
+</style>

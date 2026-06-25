@@ -1,43 +1,56 @@
-import { open, BaseDirectory } from "@tauri-apps/plugin-fs";
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { appDataDir } from "@tauri-apps/api/path";
 
-export async function getCoverUrl(path: string) {
-  const file = await open("covers/" + path, {
-    read: true,
-    baseDir: BaseDirectory.AppData,
-  });
-  const stat = await file.stat();
-  const buf = new Uint8Array(stat.size);
-  await file.read(buf);
-  const blob = new Blob([buf], { type: "image/*" });
-  return URL.createObjectURL(blob);
+export function cn(...inputs: ClassValue[]) {
+	return twMerge(clsx(inputs));
 }
 
-export async function getArtistPicUrl(path: string) {
-  const file = await open("artists/" + path, {
-    read: true,
-    baseDir: BaseDirectory.AppData,
-  });
-  const stat = await file.stat();
-  const buf = new Uint8Array(stat.size);
-  await file.read(buf);
-  const blob = new Blob([buf], { type: "image/*" });
-  return URL.createObjectURL(blob);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type WithoutChild<T> = T extends { child?: any } ? Omit<T, "child"> : T;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type WithoutChildren<T> = T extends { children?: any } ? Omit<T, "children"> : T;
+export type WithoutChildrenOrChild<T> = WithoutChildren<WithoutChild<T>>;
+export type WithElementRef<T, U extends HTMLElement = HTMLElement> = T & { ref?: U | null };
+
+export async function getImageUrl(
+	filename: string | null | undefined,
+	type: "cover" | "artist" | "banner" = "cover"
+): Promise<string | null> {
+	if (!filename) return null;
+	try {
+		const appDir = await appDataDir();
+		const subdir = type === "artist" ? "artists" : type === "banner" ? "artist_banner" : "covers";
+		return convertFileSrc(`${appDir}/${subdir}/${filename}`);
+	} catch {
+		return null;
+	}
 }
 
-export function formatDuration(s: number, inWords = false) {
-  const hours = Math.floor(s / 3600);
-  const minutes = Math.floor((s % 3600) / 60);
-  const seconds = s % 60;
+export function formatDuration(seconds: number): string {
+	const h = Math.floor(seconds / 3600);
+	const m = Math.floor((seconds % 3600) / 60);
+	const s = seconds % 60;
+	if (h > 0) return `${h}h ${m}m`;
+	if (m > 0) return `${m}m ${s}s`;
+	return `${s}s`;
+}
 
-  if (inWords) {
-    const parts = [];
-    if (hours > 0) parts.push(`${hours} hour${hours > 1 ? "s" : ""}`);
-    if (minutes > 0) parts.push(`${minutes} minute${minutes > 1 ? "s" : ""}`);
-    if (seconds > 0) parts.push(`${seconds} second${seconds > 1 ? "s" : ""}`);
-    return parts.join(" ");
-  } else {
-    if (hours > 0)
-      return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-  }
+export function formatDurationShort(seconds: number): string {
+	const h = Math.floor(seconds / 3600);
+	const m = Math.floor((seconds % 3600) / 60);
+	if (h > 0) return `${h}h ${m}m`;
+	return `${m}m`;
+}
+
+export function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+	return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+export function formatPercentage(value: number): string {
+	return `${value.toFixed(1)}%`;
 }

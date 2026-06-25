@@ -22,7 +22,7 @@
         <h1 class="text-6xl font-black text-white">{title}</h1>
 
         <div
-            class="flex items-center gap-2 bg-neutral-800/70 rounded-full px-6 py-4 w-64 border border-transparent focus-within:border-secondary transition-colors"
+            class="flex items-center gap-2 bg-secondary/70 rounded-full px-6 py-4 w-50 border-2 border-transparent focus-within:border-border focus-within:w-70 hover:bg-secondary/80 transition-all duration-300 mr-10"
         >
             <Search size={18} class="text-gray-400" />
             <input
@@ -55,7 +55,7 @@
             class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6 px-10 container overflow-scroll"
         >
             {#each filteredItems as item}
-                <Card {...item} />
+                <Card data={item} />
             {/each}
         </div>
     {/if}

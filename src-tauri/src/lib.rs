@@ -12,7 +12,113 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rodio::DeviceSinkBuilder;
 use sync::SyncManager;
-use tauri::Manager;
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
+};
+
+fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let play_pause = MenuItem::with_id(app, "play_pause", "Play/Pause", true, None::<&str>)?;
+    let previous = MenuItem::with_id(app, "previous", "Previous", true, None::<&str>)?;
+    let next = MenuItem::with_id(app, "next", "Next", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let show = MenuItem::with_id(app, "show", "Show/Hide", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+
+    Menu::with_items(app, &[&play_pause, &previous, &next, &separator, &show, &separator, &quit])
+}
+
+fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
+    match event.id().as_ref() {
+        "play_pause" => {
+            let player = app.state::<Player>();
+            let engine = player.engine.lock();
+            if engine.is_paused() {
+                engine.resume();
+            } else {
+                engine.pause();
+            }
+        }
+        "next" => {
+            let player = app.state::<Player>();
+            let pool = app.state::<Pool<SqliteConnectionManager>>();
+            let mut engine = player.engine.lock();
+            let conn = pool.get().ok();
+            let _ = engine.play_next(conn.as_deref());
+            let state = engine.get_playback_state();
+            let _ = app.emit("track-changed", &state);
+        }
+        "previous" => {
+            let player = app.state::<Player>();
+            let mut engine = player.engine.lock();
+            let _ = engine.play_previous();
+            let state = engine.get_playback_state();
+            let _ = app.emit("track-changed", &state);
+        }
+        "show" => {
+            if let Some(window) = app.get_webview_window("main") {
+                if window.is_visible().unwrap_or(false) {
+                    let _ = window.hide();
+                } else {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        }
+        "quit" => {
+            app.exit(0);
+        }
+        _ => {}
+    }
+}
+
+fn toggle_popup(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("popup") {
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+        } else {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    } else if let Ok(window) = create_popup(app) {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn create_popup(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
+    let window = WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("popup".into()))
+        .title("Now Playing")
+        .inner_size(320.0, 210.0)
+        .resizable(false)
+        .decorations(false)
+        .skip_taskbar(true)
+        .build()?;
+
+    let app_clone = app.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            if let Some(w) = app_clone.get_webview_window("popup") {
+                let _ = w.hide();
+            }
+        }
+    });
+
+    if let Some(monitor) = window.current_monitor()? {
+        let screen = monitor.size();
+        let size = window.outer_size()?;
+        let x = (screen.width as i32 - size.width as i32).max(0) - 20;
+        let y = (screen.height as i32 - size.height as i32).max(0) - 80;
+        window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+            x.max(0),
+            y.max(0),
+        )))?;
+    }
+
+    Ok(window)
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -32,8 +138,10 @@ pub fn run() {
             std::fs::create_dir_all(&app_dir).expect("failed to create app data dir");
             let db_path = app_dir.join("music.db");
 
-            let manager = SqliteConnectionManager::file(db_path);
+            let manager = SqliteConnectionManager::file(db_path)
+                .with_init(|c| c.execute_batch("PRAGMA foreign_keys = ON;"));
             let pool = Pool::new(manager).expect("failed to create db pool");
+            let monitor_pool = pool.clone();
 
             {
                 let conn = pool.get().expect("failed to get db connection");
@@ -54,7 +162,40 @@ pub fn run() {
             sync_manager.init(app_handle);
             app.manage(sync_manager);
 
-            engine::engine::spawn_playback_monitor(app_handle.clone(), engine_arc);
+            engine::engine::spawn_playback_monitor(app_handle.clone(), engine_arc, monitor_pool);
+
+            // --- System Tray ---
+            let tray_menu = build_tray_menu(app_handle)?;
+
+            TrayIconBuilder::new()
+                .icon(app_handle.default_window_icon().cloned().unwrap())
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        toggle_popup(tray.app_handle());
+                    }
+                })
+                .on_menu_event(handle_tray_menu)
+                .build(app_handle)?;
+
+            // --- Main Window Close → Hide ---
+            let handle = app_handle.clone();
+            if let Some(main_win) = app_handle.get_webview_window("main") {
+                main_win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        if let Some(w) = handle.get_webview_window("main") {
+                            let _ = w.hide();
+                        }
+                    }
+                });
+            }
 
             Ok(())
         })
@@ -88,10 +229,43 @@ pub fn run() {
             commands::toggle_favorite,
             commands::get_similar_songs,
             commands::get_playlist_cover_arts,
-            commands::play_track,
+            commands::play_from_source,
             commands::toggle_playback,
             commands::set_volume,
             commands::seek,
+            commands::add_to_queue,
+            commands::insert_play_next_queue,
+            commands::remove_from_queue,
+            commands::reorder_queue,
+            commands::clear_queue,
+            commands::play_next_track,
+            commands::play_previous_track,
+            commands::skip_current_track,
+            commands::set_shuffle,
+            commands::set_repeat,
+            commands::regenerate_play_next,
+            commands::get_queue_state,
+            commands::get_current_track,
+            commands::save_queue,
+            commands::load_queue,
+            commands::get_top_artists,
+            commands::get_top_albums,
+            commands::get_forgotten_tracks,
+            commands::get_unplayed_tracks,
+            commands::get_recently_added,
+            commands::fetch_artist_images,
+            commands::get_stats_overview,
+            commands::get_top_tracks_with_stats,
+            commands::get_top_artists_with_stats,
+            commands::get_top_albums_with_stats,
+            commands::get_listening_time_trend,
+            commands::get_streak_data,
+            commands::get_library_growth,
+            commands::get_format_distribution,
+            commands::get_heatmap_hourly,
+            commands::get_heatmap_weekday,
+            commands::get_favorite_trends,
+            commands::get_playback_history_timeline,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

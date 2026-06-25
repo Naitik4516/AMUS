@@ -38,7 +38,7 @@
 
     async function loadSettings() {
         try {
-            store = await load("settings.json", { autoSave: true });
+            store = await load("settings.json", { autoSave: true, defaults: {} });
             const rs = await store.get("realtimeSync");
             const ss = await store.get("syncOnStartup");
             realtimeSync = rs === undefined ? true : rs;
@@ -100,7 +100,7 @@
             <h1 class="text-3xl font-black text-white">Library Sources</h1>
             <button
                 onclick={handleAddSource}
-                class="flex items-center gap-2 px-4 py-2 bg-secondary text-black font-bold rounded-full hover:scale-105 transition-transform"
+                class="flex items-center gap-2 px-4 py-2 bg-accent text-black font-bold rounded-full hover:scale-105 transition-transform"
             >
                 <Plus size={20} /> Add Folder
             </button>
@@ -127,7 +127,7 @@
                 </p>
                 <button
                     onclick={handleAddSource}
-                    class="flex items-center gap-2 px-6 py-3 bg-secondary text-black font-bold rounded-full hover:scale-105 transition-transform"
+                    class="flex items-center gap-2 px-6 py-3 bg-accent text-black font-bold rounded-full hover:scale-105 transition-transform"
                 >
                     <FolderOpen size={20} /> Select Folder
                 </button>
@@ -174,7 +174,7 @@
                     </div>
                     <button
                         onclick={toggleRealtimeSync}
-                        class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none {realtimeSync ? 'bg-secondary' : 'bg-neutral-700'}"
+                        class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none {realtimeSync ? 'bg-accent' : 'bg-neutral-700'}"
                     >
                         <span
                             class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {realtimeSync ? 'translate-x-6' : 'translate-x-1'}"
@@ -196,7 +196,7 @@
                     </div>
                     <button
                         onclick={toggleSyncOnStartup}
-                        class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none {syncOnStartup ? 'bg-secondary' : 'bg-neutral-700'}"
+                        class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none {syncOnStartup ? 'bg-accent' : 'bg-neutral-700'}"
                     >
                         <span
                             class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform {syncOnStartup ? 'translate-x-6' : 'translate-x-1'}"

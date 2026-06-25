@@ -7,7 +7,12 @@ export const load: PageLoad = async ({ params }) => {
 
   if (!result) {
     return {
-      artist: { id, name: "Unknown Artist", profile_picture: null },
+      artist: {
+        id,
+        name: "Unknown Artist",
+        profile_image: null,
+        banner_image: null,
+      },
       tracks: [],
       albums: [],
     };

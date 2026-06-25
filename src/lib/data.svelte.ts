@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getCoverUrl } from "./utils";
+import { getImageUrl } from "./utils";
 import type { Album, Track, Artist } from "./types";
 
 export async function getPlaylistCoverArt(
@@ -10,7 +10,7 @@ export async function getPlaylistCoverArt(
       playlistId,
     });
 
-    return await Promise.all(coverArt.map(getCoverUrl));
+    return await Promise.all(coverArt.map((art) => getImageUrl(art)));
   } catch (error) {
     console.error("Error fetching playlist cover art:", error);
     return null;
@@ -65,10 +65,12 @@ export async function getArtists(): Promise<Artist[]> {
 export async function getArtistDetails(artistId: number) {
   try {
     const [artist, tracks, albums] = await Promise.all([
-      invoke<{ id: number; name: string; profile_picture: string | null }>(
-        "get_artist",
-        { id: artistId },
-      ),
+      invoke<{
+        id: number;
+        name: string;
+        profile_image: string | null;
+        banner_image: string | null;
+      }>("get_artist", { id: artistId }),
       invoke<Track[]>("get_tracks_by_artist", {
         artistId: artistId,
         sort_by: "title",
@@ -84,5 +86,13 @@ export async function getArtistDetails(artistId: number) {
   } catch (error) {
     console.error("Failed to load artist details:", error);
     return null;
+  }
+}
+
+export async function fetchArtistImages(artistId: number): Promise<void> {
+  try {
+    await invoke("fetch_artist_images", { artistId });
+  } catch (error) {
+    console.error("Failed to fetch artist images:", error);
   }
 }

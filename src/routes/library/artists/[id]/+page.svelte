@@ -2,48 +2,68 @@
     import type { PageProps } from "./$types";
     import TrackList from "$components/ui/TrackList.svelte";
     import AlbumRow from "$components/ui/AlbumRow.svelte";
-    import { getArtistPicUrl } from "$lib/utils";
     import { User } from "@lucide/svelte";
+    import { formatDuration, getImageUrl } from "$lib/utils";
 
     let { data }: PageProps = $props();
     let artist = $derived(data.artist);
     let tracks = $derived(data.tracks || []);
     let albums = $derived(data.albums || []);
 
-    let subtitle = $derived(
-        `${tracks.length} ${tracks.length === 1 ? "track" : "tracks"}, ${albums.length} ${albums.length === 1 ? "album" : "albums"}`
+    let totalDuration = $derived(
+        tracks.reduce((acc, track) => acc + track.duration_seconds, 0),
     );
 </script>
 
-{#snippet artistCover()}
-    {#if artist.profile_picture}
-        {#await getArtistPicUrl(artist.profile_picture)}
-            <div class="w-full h-full bg-neutral-800 animate-pulse rounded-full"></div>
-        {:then url}
-            <img
-                src={url}
-                alt={artist.name}
-                class="w-full h-full object-cover rounded-full"
-            />
-        {/await}
+<div
+    class="relative flex flex-col rounded-2xl h-full w-full overflow-y-scroll px-4 pb-10"
+>
+    <div class="flex gap-15 items-end p-5 pb-30 rounded-t-2xl">
+        <div class="aspect-square w-60 shrink-0">
+            {#if !artist.profile_image}
+                <div class="absolute inset-0 flex items-center justify-center">
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        height="48px"
+                        width="48px"
+                        viewBox="0 -960 960 960"
+                        fill="#e3e3e3"
+                        ><path
+                            d="M480-300q75 0 127.5-52.5T660-480q0-75-52.5-127.5T480-660q-75 0-127.5 52.5T300-480q0 75 52.5 127.5T480-300Zm-28.5-151.5Q440-463 440-480t11.5-28.5Q463-520 480-520t28.5 11.5Q520-497 520-480t-11.5 28.5Q497-440 480-440t-28.5-11.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"
+                        /></svg
+                    >
+                </div>
+            {:else}
+                <img
+                    src={await getImageUrl(artist.profile_image, "artist")}
+                    alt={artist.name}
+                    class="w-full h-full object-cover rounded-full shadow-2xl"
+                />
+            {/if}
+        </div>
+
+        <div class="flex flex-col gap-4 min-w-0">
+            <h1
+                class="text-3xl md:text-5xl lg:text-[5cqw] max-text-[6rem] font-bold  font-clash"
+            >
+                {artist.name}
+            </h1>
+            <span class="text-gray-300">
+                {tracks.length} songs, {formatDuration(totalDuration)}
+            </span>
+        </div>
+    </div>
+
+    {#if tracks.length > 0}
+        <div class="-translate-y-22">
+            <TrackList {tracks} />
+        </div>
     {:else}
-        <div class="w-full h-full flex items-center justify-center rounded-full">
-            <User size={64} class="text-neutral-700" />
+        <div
+            class="flex flex-col items-center justify-center py-20 text-gray-500 w-full"
+        >
+            <p class="text-xl font-medium">No tracks in this album</p>
+            <p class="text-sm">This album doesn't have any tracks yet.</p>
         </div>
     {/if}
-{/snippet}
-
-<TrackList
-    {tracks}
-    name={artist.name}
-    coverArt={null}
-    {subtitle}
-    coverSnippet={artistCover}
-/>
-
-{#if albums.length > 0}
-    <div class="px-8 pb-8">
-        <h2 class="text-2xl font-bold text-white mb-6">Albums</h2>
-        <AlbumRow {albums} />
-    </div>
-{/if}
+</div>

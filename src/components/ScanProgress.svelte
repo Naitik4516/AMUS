@@ -72,7 +72,7 @@
             <div class="flex items-center justify-between">
                 <div class="text-sm font-black text-light flex items-center gap-2">
                     {#if scanPercent < 100}
-                        <div class="w-2 h-2 bg-secondary rounded-full animate-pulse"></div>
+                        <div class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
                         Scanning Library...
                     {:else}
                         <div class="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -88,7 +88,7 @@
 
             <div class="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
                 <div
-                    class="bg-secondary h-full transition-all duration-500 ease-out shadow-[0_0_15px_rgba(var(--color-secondary),0.4)]"
+                    class="bg-accent h-full transition-all duration-500 ease-out shadow-[0_0_15px_rgba(var(--color-secondary),0.4)]"
                     style={`width: ${scanPercent}%`}
                 ></div>
             </div>
@@ -102,7 +102,7 @@
             <div class="flex items-center justify-between">
                 <div class="text-sm font-black text-light flex items-center gap-2">
                     {#if fetchPercent < 100}
-                        <div class="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
+                        <div class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
                         Updating Artist Photos...
                     {:else}
                         <div class="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -118,7 +118,7 @@
 
             <div class="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
                 <div
-                    class="bg-primary h-full transition-all duration-500 ease-out shadow-[0_0_15px_rgba(var(--color-primary),0.4)]"
+                    class="bg-accent h-full transition-all duration-500 ease-out shadow-[0_0_15px_rgba(var(--color-primary),0.4)]"
                     style={`width: ${fetchPercent}%`}
                 ></div>
             </div>

@@ -87,11 +87,11 @@
 
 <header
     data-tauri-drag-region
-    class="h-16 flex items-center justify-between p-3 select-none text-white relative z-20"
+    class="sticky top-1 flex items-center px-4 py-1 justify-between select-none text-white bg-transparent z-20"
 >
     <div class="w-16 flex justify-center shrink-0 mt-1 pointer-events-none">
         <img
-            src="/favicon.png?"
+            src="/icon.svg"
             alt="Avatar"
             class="w-10 h-10 object-contain select-none"
         />
@@ -99,7 +99,7 @@
 
     <div class="relative">
         <div
-            class="flex items-center gap-2 bg-stone-800/60 backdrop-blur-sm rounded-full px-4 mt-1 w-96 h-full border-2 border-transparent transition-colors duration-300 hover:border-neutral-600 focus-within:border-secondary/50"
+            class="flex items-center gap-2 bg-gray-900 backdrop-blur-sm rounded-full px-4 h-full border-2 border-transparent transition-colors duration-300 hover:border-zinc-700 focus-within:border-zinc-700 focus-within:bg-gray-800"
         >
             <Search size={16} class="text-gray-400" />
             <input
@@ -108,7 +108,7 @@
                 bind:value={searchQuery}
                 oninput={handleSearch}
                 onfocus={() => searchQuery.trim() && (showResults = true)}
-                class="w-full py-4 outline-none bg-transparent text-white placeholder-gray-400 text-sm"
+                class="w-60 py-4 outline-none bg-transparent text-white placeholder-gray-400 text-sm focus:w-120 transition-all duration-300"
             />
             {#if searchQuery}
                 <button
@@ -127,9 +127,10 @@
             <div
                 class="fixed inset-0"
                 onclick={() => (showResults = false)}
+                role="region"
             ></div>
             <div
-                class="absolute top-full left-0 right-0 mt-2 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden py-2 z-50"
+                class="absolute top-full left-0 right-0 mt-2 bg-gray-900/70 backdrop-blur-xl border-2 border-zinc-800 rounded-2xl shadow-2xl overflow-hidden py-2 z-50"
             >
                 {#each results as track}
                     <button
@@ -148,7 +149,8 @@
                                 {track.title}
                             </p>
                             <p class="text-xs text-gray-400 truncate">
-                                {track.artist.map((a) => a.name).join(", ") || "Unknown Artist"}
+                                {track.artists.map((a) => a.name).join(", ") ||
+                                    "Unknown Artist"}
                             </p>
                         </div>
                     </button>
@@ -157,7 +159,7 @@
         {/if}
     </div>
 
-    <div class="controls flex items-center">
+    <div class="controls flex align-top">
         <button id="titlebar-minimize" title="Minimize" onclick={minimize}>
             <Minus size={14} />
         </button>

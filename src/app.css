@@ -1,5 +1,9 @@
 @import "tailwindcss";
 @import "./styles/theme.css";
+@import "./styles/fonts.css";
+@import "tw-animate-css";
+@import "shadcn-svelte/tailwind.css";
+@import "@fontsource-variable/inter";
 
 *,
 *::before,
@@ -7,24 +11,28 @@
     box-sizing: border-box;
 }
 
+html {
+    scroll-behavior: smooth;
+}
+
 body {
     margin: 0;
     padding: 0;
     /*background-color: var(--color-dark);*/
-    color: var(--color-text);
+    color: var(--color-foreground);
     overflow: hidden;
-    background: hsla(269, 94%, 13%, 1);
+    background: var(--color-background);
     background: radial-gradient(
         circle,
-        var(--color-primary) 0%,
-        hsla(0, 0%, 0%, 1) 100%
+        var(--color-background) 0%,
+        rgb(0, 0, 0) 100%
     );
 }
 
 button {
     cursor: pointer;
 }
-/*
+
 ::-webkit-scrollbar {
     width: 0px;
     height: 6px;
@@ -41,30 +49,4 @@ button {
 
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.15);
-}*/
-
-@keyframes fade-in-down {
-    0% {
-        opacity: 0;
-        transform: translateY(-20px) scale(0.95);
-    }
-    100% {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
-}
-
-.animate-fade-in-down {
-    animation: fade-in-down 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-@layer components {
-    .surface {
-        background: rgba(0.11, 0.1, 0.1, 0.1);
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border-color: rgba(100, 100, 100, 0.4);
-        border-width: 1.5px;
-    }
 }
