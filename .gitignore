@@ -12,3 +12,4 @@ find-skills/
 .vscode/
 skills-lock.json
 .agents/
+AGENTS.md
