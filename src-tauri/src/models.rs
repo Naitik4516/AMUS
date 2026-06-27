@@ -18,6 +18,8 @@ pub struct TrackDetails {
     pub last_skipped_at: Option<DateTime<Utc>>,
     pub cover_art: Option<String>,
     pub added_at: DateTime<Utc>,
+    pub track_number: Option<u32>,
+    pub year: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -30,6 +32,7 @@ pub struct Track {
     pub is_favorite: bool,
     pub cover_art: Option<String>,
     pub added_at: DateTime<Utc>,
+    pub track_number: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -59,6 +62,8 @@ pub struct Album {
     pub id: i64,
     pub name: String,
     pub cover_art: Option<String>,
+    pub album_artist: Option<Vec<Artist>>,
+    pub year: Option<u32>
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]

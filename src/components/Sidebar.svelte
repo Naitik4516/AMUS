@@ -1,5 +1,10 @@
 <script>
-    import { House, Bookmark, ChartNoAxesColumn, Settings } from "@lucide/svelte";
+    import {
+        House,
+        Bookmark,
+        ChartNoAxesColumn,
+        Settings,
+    } from "@lucide/svelte";
     import { goto } from "$app/navigation";
     import { page } from "$app/state";
     import { flip } from "svelte/animate";
@@ -12,16 +17,15 @@
     ];
 
     const currentRoute = $derived(page.url.pathname);
-    $inspect("Current route:", currentRoute);
 </script>
 
 <div
-    class="fixed h-full left-5 flex flex-col items-center align-middle justify-between py-4"
+    class="fixed h-full left-4 flex flex-col items-center align-middle justify-between py-4"
 >
     <div
         class="flex flex-col gap-3 p-6 rounded-full bg-zinc-900/20 border-zinc-700/30 border-2 text-white shadow-lg my-auto -translate-y-20 z-10 w-21"
     >
-        {#each menuItems as item, index (item)}
+        {#each menuItems as item (item)}
             <button
                 animate:flip
                 onclick={() => goto(item.route)}

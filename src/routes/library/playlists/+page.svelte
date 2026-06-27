@@ -3,7 +3,10 @@
     import PlaylistCard from "$components/ui/Card/PlaylistCard.svelte";
     import { Plus } from "@lucide/svelte";
     import type { PageProps } from "./$types";
-    import { fly } from "svelte/transition";
+    import { fly, blur } from "svelte/transition";
+    import { invalidateAll } from "$app/navigation";
+    import { Button } from "$components/ui/button/index.js";
+    import { Input } from "$components/ui/input/index.js";
 
     let { data }: PageProps = $props();
     let playlists = $derived(data.playlists);
@@ -17,6 +20,7 @@
             await invoke("create_playlist", { name: newPlaylistName });
             newPlaylistName = "";
             showCreateModal = false;
+            await invalidateAll();
         } catch (e) {
             console.error("Failed to create playlist", e);
         }
@@ -26,20 +30,23 @@
 <div class="p-8">
     <div class="flex items-center justify-between mb-8">
         <h1 class="text-3xl font-black text-white">Playlists</h1>
-        <button
+        <Button
             onclick={() => (showCreateModal = true)}
-            class="flex items-center gap-2 px-4 py-2 bg-neutral-800 text-white font-bold rounded-full hover:bg-neutral-700 transition-colors"
-            transition:fly={{ y: -20, duration: 300 }}
+            title="Create New Playlist"
+            size="lg"
         >
-            <Plus size={20} /> New Playlist
-        </button>
+            <Plus class="w-4 h-4" />
+            Create New Playlist
+        </Button>
     </div>
 
     <div
-        class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6"
+        class="flex flex-wrap w-full"
     >
         {#each playlists as playlist}
-            <PlaylistCard {...playlist} />
+            <div class="mx-5 my-4">
+            <PlaylistCard data={playlist} />
+            </div>
         {/each}
     </div>
 
@@ -51,32 +58,29 @@
 
     {#if showCreateModal}
         <div
-            class="fixed inset-0 z-10 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            class="fixed inset-0 z-10 flex items-center justify-center p-4 bg-black/20"
+            transition:blur={{ duration: 300 }}
         >
             <div
-                class="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 w-full max-w-md shadow-2xl"
+                class="bg-card border rounded-2xl p-5 w-full max-w-md shadow-2xl"
+                transition:fly={{ y: 600, duration: 300 }}
             >
                 <h2 class="text-2xl font-bold mb-6">Create New Playlist</h2>
-                <input
+                <Input
                     type="text"
                     placeholder="Playlist name"
                     bind:value={newPlaylistName}
-                    class="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-4 py-3 outline-none focus:border-secondary mb-8 text-lg"
+                    class="w-full mb-8"
                     onkeydown={(e) => e.key === "Enter" && createPlaylist()}
                 />
                 <div class="flex gap-4 justify-end">
-                    <button
+                    <Button
+                        variant="secondary"
                         onclick={() => (showCreateModal = false)}
-                        class="px-6 py-2 text-gray-400 hover:text-white transition-colors"
                     >
                         Cancel
-                    </button>
-                    <button
-                        onclick={createPlaylist}
-                        class="px-8 py-2 bg-accent text-black font-bold rounded-full hover:scale-105 transition-transform"
-                    >
-                        Create
-                    </button>
+                    </Button>
+                    <Button onclick={createPlaylist}>Create</Button>
                 </div>
             </div>
         </div>

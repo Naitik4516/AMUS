@@ -2,16 +2,27 @@
     import type { Track } from "$lib/types.d.ts";
     import type { PageProps } from "./$types";
     import TrackList from "$components/ui/TrackList.svelte";
-    import { formatDuration, getImageUrl } from "$lib/utils";
+    import { formatDuration } from "$lib/utils";
     import { Disc } from "@lucide/svelte";
-    import { getColorSync, type HSL, createColor } from "colorthief";
+    import {
+        getSwatchesSync,
+        type HSL,
+        type Color,
+    } from "colorthief";
+    import type { Attachment } from "svelte/attachments";
+    import Artist from "$components/icons/Artist.svelte";
+    import { getImageUrl } from "$lib/utils";
 
     let { data }: PageProps = $props();
     let tracks = $derived((data.data as Track[]) || []);
     let name = $derived(data.name || "Album");
+    let coverArtFilename = $derived(data.coverArtFilename ?? null);
+    let albumArtist = $derived(data.albumInfo?.album_artist || []);
     let coverArt = $derived(data?.cover_art || null);
-    let accentColorHsl = $state(createColor(0, 0, 0, 0, 0).hsl());
-    let coverImageEl: HTMLImageElement | null = $state(null);
+
+    let dominantColor = $state<Color>();
+    let color1 = $state<Color>();
+    let color2 = $state<Color>();
 
     let totalDuration = $derived(
         tracks.reduce((sum, track) => sum + track.duration_seconds, 0),
@@ -20,44 +31,37 @@
     function getDarkenedHslGradient(
         hsl: HSL,
         targetLightness: number = 15,
-        baseLightness: number = hsl.l,
     ): string {
         const darkenedL = Math.min(hsl.l, targetLightness);
 
         const darkColor = `hsl(${hsl.h}, ${hsl.s}%, ${darkenedL}%)`;
-        const baseColor = `hsl(${hsl.h}, ${hsl.s * 5}%, ${baseLightness}%)`;
+        const baseColor = `hsl(${hsl.h}, ${hsl.s }%, ${hsl.l}%)`;
 
         return `linear-gradient(to bottom, ${baseColor}, ${darkColor} 80%, transparent)`;
     }
 
-    $effect(() => {
-        if (!coverImageEl) return;
-
-        const handleColorExtraction = () => {
+    const CoverImage: Attachment = (e) => {
+        e.addEventListener("load", () => {
             try {
-                // getColorSync returns an array like [R, G, B]
-                const dominantColor = getColorSync(coverImageEl);
-                if (dominantColor) {
-                    accentColorHsl = dominantColor.hsl();
-                }
-            } catch (e) {
-                console.error("Failed to extract color from cover art", e);
+                const swatches = getSwatchesSync(e);
+                console.log("Extracted swatches:", swatches);
+                dominantColor = swatches.Vibrant
+                    ? swatches.Vibrant.color
+                    : swatches.Muted?.color;
+                color1 = swatches.LightVibrant
+                    ? swatches.LightVibrant.color
+                    : swatches.LightMuted?.color;
+                color2 = swatches.DarkVibrant
+                    ? swatches.DarkVibrant.color
+                    : swatches.DarkMuted?.color;
+            } catch (error) {
+                console.error(
+                    "Failed to extract color palette from cover art",
+                    error,
+                );
             }
-        };
-
-        // If the image is cached and already done loading, run it immediately
-        if (coverImageEl.complete) {
-            handleColorExtraction();
-        } else {
-            // Otherwise, wait for the network request to finish
-            coverImageEl.addEventListener("load", handleColorExtraction);
-        }
-
-        // Cleanup listener if coverImageEl changes or component unmounts
-        return () => {
-            coverImageEl?.removeEventListener("load", handleColorExtraction);
-        };
-    });
+        });
+    };
 </script>
 
 <div
@@ -65,49 +69,65 @@
 >
     <div
         class="flex gap-15 items-end p-5 pb-30 rounded-t-2xl"
-        style="background: {getDarkenedHslGradient(accentColorHsl, 10)}"
+        style="background: {dominantColor
+            ? getDarkenedHslGradient(dominantColor.hsl())
+            : 'linear-gradient(to bottom, #000000, #000000 80%, transparent)'}"
     >
         <div class="aspect-square w-60 shrink-0">
-            {#if !coverArt}
-                <div class="absolute inset-0 flex items-center justify-center">
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        height="48px"
-                        width="48px"
-                        viewBox="0 -960 960 960"
-                        fill="#e3e3e3"
-                        ><path
-                            d="M480-300q75 0 127.5-52.5T660-480q0-75-52.5-127.5T480-660q-75 0-127.5 52.5T300-480q0 75 52.5 127.5T480-300Zm-28.5-151.5Q440-463 440-480t11.5-28.5Q463-520 480-520t28.5 11.5Q520-497 520-480t-11.5 28.5Q497-440 480-440t-28.5-11.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"
-                        /></svg
-                    >
-                </div>
-            {:else}
-                <img
-                    src={coverArt}
-                    alt={name}
-                    class="w-full h-full object-cover rounded-lg shadow-2xl"
-                    crossorigin="anonymous"
-                    bind:this={coverImageEl}
-                />
-            {/if}
+            <img
+                src={coverArt ? coverArt : "/PhonographRecord.png"}
+                alt={name}
+                class="w-full h-full object-cover rounded-lg shadow-2xl"
+                crossorigin="anonymous"
+                {@attach CoverImage}
+            />
         </div>
 
-        <div class="flex flex-col gap-4 min-w-0">
+        <div class="flex flex-col gap-4 min-w-0 pb-2">
             <h1
                 class="text-3xl md:text-5xl lg:text-[4cqw] max-text-[6rem] font-black line-clamp-2"
             >
                 {name}
             </h1>
+            {#if albumArtist.length > 0}
+                {#each albumArtist as artist (artist.id)}
+                    <div class="flex gap-1 items-center font-medium">
+                        {#if artist.profile_image}
+                            <img
+                                src={await getImageUrl(
+                                    artist.profile_image,
+                                    "artist",
+                                )}
+                                alt={artist.name}
+                                class="w-6 h-6 rounded-full object-cover"
+                            />
+                        {:else}
+                            <Artist size={24} class="text-gray-400" />
+                        {/if}
+                        <a
+                            href={`/library/artists/${artist.id}`}
+                            class="hover:text-white text-sm transition-colors"
+                            >{artist.name}</a
+                        >
+                    </div>
+                {/each}
+            {/if}
             <span class="text-gray-300">
-                {tracks.length} songs, {formatDuration(totalDuration, true)}
+                {tracks.length} songs, {formatDuration(totalDuration)}
             </span>
         </div>
     </div>
 
     {#if tracks.length > 0}
-        {@const lightness = Math.min(accentColorHsl.l, 40)}
         <div class="-translate-y-22">
-            <TrackList {tracks} />
+            <TrackList
+                context="album"
+                {tracks}
+                albumId={Number(data.albumInfo?.id ?? 0)}
+                albumName={name}
+                albumCoverArt={coverArtFilename}
+                canEdit={true}
+            />
         </div>
     {:else}
         <div
@@ -120,9 +140,11 @@
     {/if}
 
     <div
-        class="fixed w-100 h-100 blur-[180px] bg-green-400/30 -bottom-40 left-30 rounded-full -z-15"
+        class="fixed w-100 h-100 blur-[180px] -bottom-40 left-30 rounded-full -z-15"
+        style:background="{color1?.hex()}4D"
     ></div>
     <div
-        class="absolute w-90 h-90 blur-[150px] bg-pink-400/30 bottom-10 right-20 rounded-full -z-15"
+        class="absolute w-90 h-90 blur-[150px] bottom-10 right-20 rounded-full -z-15"
+        style:background="{color2?.hex()}99"
     ></div>
 </div>

@@ -28,6 +28,7 @@ pub(crate) struct TrackMetadata {
     pub(crate) title: String,
     pub(crate) artists: Vec<String>,
     pub(crate) album: String,
+    pub(crate) album_artist: Option<String>,
     pub(crate) release_year: Option<u32>,
     pub(crate) duration: u32,
     pub(crate) mtime: i64,
@@ -53,48 +54,54 @@ pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
         .as_secs() as i64;
     let file_size = meta.len();
 
-    let (title, artists, album, release_year, picture, track_number) = if let Some(t) = tag {
-        (
-            t.title().map(|s| s.into_owned()).unwrap_or_else(|| {
+    let (title, artists, album, album_artist, release_year, picture, track_number) =
+        if let Some(t) = tag {
+            (
+                t.title().map(|s| s.into_owned()).unwrap_or_else(|| {
+                    path.file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("Unknown")
+                        .to_string()
+                }),
+                t.artist()
+                    .map(|s| s.into_owned())
+                    .unwrap_or_else(|| "Unknown Artist".to_string())
+                    .split(", ")
+                    .map(String::from)
+                    .collect(),
+                t.album()
+                    .map(|s| s.into_owned())
+                    .unwrap_or_else(|| "Unknown Album".to_string()),
+                t.get_string(&ItemKey::AlbumArtist)
+                    .map(|s| s.to_owned())
+                    .or_else(|| t.artist().map(|s| s.into_owned())),
+                t.get_string(&ItemKey::RecordingDate)
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .or_else(|| t.year().map(|y| y as u32)),
+                t.pictures().first().cloned(),
+                t.track(),
+            )
+        } else {
+            (
                 path.file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("Unknown")
-                    .to_string()
-            }),
-            t.artist()
-                .map(|s| s.into_owned())
-                .unwrap_or_else(|| "Unknown Artist".to_string())
-                .split(", ")
-                .map(String::from)
-                .collect(),
-            t.album()
-                .map(|s| s.into_owned())
-                .unwrap_or_else(|| "Unknown Album".to_string()),
-            t.get_string(&ItemKey::RecordingDate)
-                .and_then(|s| s.parse::<u32>().ok())
-                .or_else(|| t.year().map(|y| y as u32)),
-            t.pictures().first().cloned(),
-            t.track(),
-        )
-    } else {
-        (
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("Unknown")
-                .to_string(),
-            vec!["Unknown Artist".to_string()],
-            "Unknown Album".to_string(),
-            None,
-            None,
-            None,
-        )
-    };
+                    .to_string(),
+                vec!["Unknown Artist".to_string()],
+                "Unknown Album".to_string(),
+                None,
+                None,
+                None,
+                None,
+            )
+        };
 
     Ok(TrackMetadata {
         path: path.to_string_lossy().to_string(),
         title,
         artists,
         album,
+        album_artist,
         release_year,
         duration,
         mtime,
@@ -102,6 +109,30 @@ pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
         picture,
         track_number,
     })
+}
+
+pub fn save_image_to_app_dir(app_dir: &Path, source_path: &str, subdir: &str) -> Result<String> {
+    let img = image::open(source_path)
+        .map_err(|e| Error::Unknown(format!("Failed to open image: {e}")))?;
+
+    let data = std::fs::read(source_path).map_err(|e| Error::Io(e))?;
+    let mut hasher = Sha256::new();
+    hasher.update(&data);
+    let hash = hex::encode(hasher.finalize());
+
+    let filename = format!("{hash}.webp");
+    let dest_dir = app_dir.join(subdir);
+    if !dest_dir.exists() {
+        std::fs::create_dir_all(&dest_dir).map_err(Error::Io)?;
+    }
+
+    let dest_path = dest_dir.join(&filename);
+    if !dest_path.exists() {
+        img.save_with_format(&dest_path, ImageFormat::WebP)
+            .map_err(|e| Error::Unknown(format!("Failed to save image: {e}")))?;
+    }
+
+    Ok(filename)
 }
 
 fn save_picture(app_dir: &Path, picture: &Picture) -> anyhow::Result<String> {
@@ -300,14 +331,35 @@ pub fn scan_files(
     );
 
     let pool = app_handle.state::<db::DbPool>();
+
+    // Process all cover art in parallel before opening the DB transaction
+    let metadata_with_covers: Vec<(TrackMetadata, Option<String>)> = metadata_results
+        .into_par_iter()
+        .map(|meta| {
+            let cover_url = meta.picture.as_ref().and_then(|pic| {
+                save_picture(&app_dir, pic)
+                    .inspect_err(|e| eprintln!("Failed to save picture: {e}"))
+                    .ok()
+            });
+            (meta, cover_url)
+        })
+        .collect();
+
     let mut artist_cache = HashMap::new();
     let mut unique_artists_to_fetch = HashMap::new();
     let mut album_cache = HashMap::new();
 
+    let track_count = metadata_with_covers.len();
+    let progress_step = if track_count > 0 {
+        (track_count / 20).max(1)
+    } else {
+        1
+    };
+
     let tx = conn.transaction().map_err(Error::Db)?;
 
-    for meta in metadata_results {
-        let artist_names: Vec<String> = meta.artists;
+    for (i, (meta, cover_url)) in metadata_with_covers.iter().enumerate() {
+        let artist_names: Vec<String> = meta.artists.clone();
         let mut artist_ids = Vec::new();
 
         for name in &artist_names {
@@ -323,18 +375,6 @@ pub fn scan_files(
             artist_ids.push(id);
         }
 
-        let cover_url = if let Some(pic) = meta.picture {
-            match save_picture(&app_dir, &pic) {
-                Ok(filename) => Some(filename),
-                Err(e) => {
-                    eprintln!("Failed to save picture: {}", e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
         let album_key = meta.album.to_lowercase();
         let album_id = if let Some(&id) = album_cache.get(&album_key) {
             id
@@ -344,6 +384,7 @@ pub fn scan_files(
                 &meta.album,
                 cover_url.as_deref(),
                 meta.release_year.map(|y| y as i32),
+                meta.album_artist.as_deref(),
             )?;
             album_cache.insert(album_key, id);
             id
@@ -367,6 +408,18 @@ pub fn scan_files(
             album_id,
             meta.track_number.unwrap_or(1) as i32,
         )?;
+
+        if i % progress_step == 0 && i > 0 {
+            let pct = 75 + (i * 20 / track_count).min(20);
+            let _ = app_handle.emit(
+                "scan-progress",
+                ScanProgress {
+                    current: pct,
+                    total: 100,
+                    message: format!("Saving to database ({}/{})", i, track_count),
+                },
+            );
+        }
     }
 
     tx.commit().map_err(Error::Db)?;

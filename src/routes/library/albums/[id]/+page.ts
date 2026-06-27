@@ -4,7 +4,8 @@ import type { Track, SortBy, Album } from "$lib/types";
 import { getImageUrl } from "$lib/utils";
 
 export const load: PageLoad = async ({ params, url }) => {
-  const sortBy = (url.searchParams.get("sortBy") as SortBy) || "title";
+  const sortParam = url.searchParams.get("sortBy");
+  const sortBy: SortBy | null = sortParam ? (sortParam as SortBy) : null;
   const id = Number(params.id);
 
   try {
@@ -24,6 +25,11 @@ export const load: PageLoad = async ({ params, url }) => {
       data: tracks || [],
       name: album.name || "Album",
       cover_art: coverArtUrl,
+      coverArtFilename: album.cover_art ?? null,
+      albumInfo: {
+        id: album.id,
+        album_artist: album.album_artist,
+      },
     };
   } catch (e) {
     console.error("Failed to load album", e);
@@ -31,6 +37,7 @@ export const load: PageLoad = async ({ params, url }) => {
       data: [],
       name: "Album",
       cover_art: null,
+      albumInfo: null,
     };
   }
 };

@@ -185,9 +185,15 @@ pub async fn get_tracks_by_playlist(
 }
 
 #[tauri::command]
-pub async fn create_playlist(name: String, pool: State<'_, DbPool>) -> Result<()> {
+pub async fn create_playlist(name: String, pool: State<'_, DbPool>) -> Result<i64> {
     let conn = pool.get().map_err(Error::Pool)?;
     db::create_playlist(&conn, &name)
+}
+
+#[tauri::command]
+pub async fn get_track_playlist_ids(track_id: i64, pool: State<'_, DbPool>) -> Result<Vec<i64>> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::get_track_playlist_ids(&conn, track_id)
 }
 
 #[tauri::command]
@@ -250,35 +256,50 @@ pub async fn get_playlist_cover_arts(
     db::get_playlist_cover_arts(&conn, playlist_id)
 }
 
+#[tauri::command]
+pub async fn get_playlist(
+    playlist_id: i64,
+    pool: State<'_, DbPool>,
+) -> Result<(i64, String, Option<String>)> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::get_playlist(&conn, playlist_id)
+}
+
 // ---------------------------------------------------------------------------
 // Playback controls
 // ---------------------------------------------------------------------------
 
-fn record_current_track(
+fn record_current_track_async(
     pool: &State<'_, DbPool>,
     player: &State<'_, Player>,
-) -> Result<()> {
-    let (track_id, pos_ms, duration_sec, source_type) = {
+) {
+    let info = {
         let engine = player.engine.lock();
         let Some(track) = engine.current_track() else {
-            return Ok(());
+            return;
         };
-        (
+        Some((
             track.id,
             engine.position_ms(),
             track.duration_seconds,
             engine.session_source_type(),
-        )
+        ))
     };
 
-    let conn = pool.get().map_err(Error::Pool)?;
-    let duration_ms = (duration_sec as u64).saturating_mul(1000);
-    let completion = if duration_ms > 0 {
-        ((pos_ms as f64 / duration_ms as f64) * 100.0).clamp(0.0, 100.0)
-    } else {
-        100.0
-    };
-    db::record_playback(&conn, track_id, source_type.to_db_string(), completion)
+    if let Some((track_id, pos_ms, duration_sec, source_type)) = info {
+        let pool = pool.inner().clone();
+        std::thread::spawn(move || {
+            let duration_ms = (duration_sec as u64).saturating_mul(1000);
+            let completion = if duration_ms > 0 {
+                ((pos_ms as f64 / duration_ms as f64) * 100.0).clamp(0.0, 100.0)
+            } else {
+                100.0
+            };
+            if let Ok(conn) = pool.get() {
+                let _ = db::record_playback(&conn, track_id, source_type.to_db_string(), completion);
+            }
+        });
+    }
 }
 
 fn emit_state(app_handle: &tauri::AppHandle, engine: &crate::engine::engine::AudioEngine) {
@@ -296,8 +317,8 @@ pub async fn play_from_source(
     pool: State<'_, DbPool>,
     player: State<'_, Player>,
 ) -> Result<()> {
-    // Record current track before switching
-    record_current_track(&pool, &player)?;
+    // Record current track asynchronously (non-blocking)
+    record_current_track_async(&pool, &player);
 
     let conn = pool.get().map_err(Error::Pool)?;
     let track = db::get_track_details(&conn, track_id)?;
@@ -403,7 +424,7 @@ pub async fn play_next_track(
     player: State<'_, Player>,
 ) -> Result<()> {
     // Record current track before advancing
-    record_current_track(&pool, &player)?;
+    record_current_track_async(&pool, &player);
 
     let conn = pool.get().map_err(Error::Pool)?;
     let mut engine = player.engine.lock();
@@ -421,7 +442,7 @@ pub async fn play_previous_track(
     player: State<'_, Player>,
 ) -> Result<()> {
     // Record current track before going back
-    record_current_track(&pool, &player)?;
+    record_current_track_async(&pool, &player);
 
     let mut engine = player.engine.lock();
     engine
@@ -438,7 +459,7 @@ pub async fn skip_current_track(
     player: State<'_, Player>,
 ) -> Result<()> {
     // Record current track before skipping
-    record_current_track(&pool, &player)?;
+    record_current_track_async(&pool, &player);
 
     let conn = pool.get().map_err(Error::Pool)?;
     let mut engine = player.engine.lock();
@@ -696,5 +717,89 @@ pub async fn fetch_artist_images(
         .map_err(|e| Error::Unknown(e.to_string()))?;
     }
 
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn save_image(
+    source_path: String,
+    image_type: String,
+    app_handle: tauri::AppHandle,
+) -> Result<String> {
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| Error::Unknown(e.to_string()))?;
+
+    let subdir = match image_type.as_str() {
+        "cover" => "covers",
+        "artist" => "artists",
+        "banner" => "artist_banner",
+        _ => return Err(Error::Unknown(format!("Unknown image type: {image_type}"))),
+    };
+
+    scanner::save_image_to_app_dir(&app_dir, &source_path, subdir)
+}
+
+#[tauri::command]
+pub async fn update_artist(
+    id: i64,
+    name: Option<String>,
+    profile_image: Option<String>,
+    banner_image: Option<String>,
+    pool: State<'_, DbPool>,
+) -> Result<()> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    if let Some(n) = name {
+        db::rename_artist(&conn, id, &n)?;
+    }
+    if let Some(pi) = profile_image {
+        if pi.is_empty() {
+            db::clear_artist_profile_image(&conn, id)?;
+        } else {
+            db::update_artist_profile_image(&conn, id, &pi)?;
+        }
+    }
+    if let Some(bi) = banner_image {
+        if bi.is_empty() {
+            db::clear_artist_banner_image(&conn, id)?;
+        } else {
+            db::update_artist_banner_image(&conn, id, &bi)?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_album(
+    id: i64,
+    name: Option<String>,
+    cover_art: Option<String>,
+    pool: State<'_, DbPool>,
+) -> Result<()> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    if let Some(n) = name {
+        db::rename_album(&conn, id, &n)?;
+    }
+    if let Some(ca) = cover_art {
+        if ca.is_empty() {
+            db::update_album_cover(&conn, id, None)?;
+        } else {
+            db::update_album_cover(&conn, id, Some(&ca))?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_playlist(
+    id: i64,
+    name: Option<String>,
+    cover_art: Option<String>,
+    pool: State<'_, DbPool>,
+) -> Result<()> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    let ca = cover_art.as_deref();
+    db::update_playlist(&conn, id, name.as_deref(), ca)?;
     Ok(())
 }

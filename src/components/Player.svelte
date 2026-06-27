@@ -13,15 +13,16 @@
         VolumeX,
         ListMusic,
         Heart,
-        Music,
+        Music2,
         X,
     } from "@lucide/svelte";
     import Slider from "./ui/Slider.svelte";
     import { player } from "$lib/player.svelte";
     import { getImageUrl } from "$lib/utils";
+    import TrackListSmall from "./ui/TrackListSmall.svelte";
 
     let volumeValue = $state(player.volume);
-    let showQueue = $state(true);
+    let showQueue = $state(false);
 
     $effect(() => {
         player.setVolume(volumeValue);
@@ -50,46 +51,48 @@
                 class="w-14 h-14 rounded-lg bg-neutral-800 shadow-md flex items-center justify-center overflow-hidden shrink-0"
             >
                 {#if player.currentTrack?.cover_art}
-                    {#await getImageUrl(player.currentTrack.cover_art)}
-                        <div
-                            class="w-full h-full bg-neutral-800 animate-pulse"
-                        ></div>
-                    {:then url}
-                        <img
-                            src={url}
-                            alt=""
-                            class="w-full h-full object-cover"
-                        />
-                    {/await}
+                    <img
+                        src={await getImageUrl(player.currentTrack?.cover_art)}
+                        alt=""
+                        class="w-full h-full object-cover"
+                    />
                 {:else}
-                    <Music size={24} class="text-neutral-700" />
+                    <Music2 size={32} />
                 {/if}
             </div>
             <div class="overflow-hidden">
-                <p
+                <a
+                    href="/library/track/{player.currentTrack?.id}"
                     class="font-bold truncate text-white hover:underline cursor-pointer"
                 >
-                    {player.currentTrack.title}
-                </p>
-                <p
-                    class="text-xs text-gray-300 truncate hover:underline cursor-pointer"
-                >
-                    {player.currentTrack.artists
-                        .map((a) => a.name)
-                        .join(", ") || "Unknown Artist"}
+                    {player.currentTrack?.title}
+                </a>
+                <p class="text-xs text-gray-300 truncate">
+                    {#each player.currentTrack?.artists as artist, ai (artist.id)}
+                        {#if ai > 0}
+                            <span>, </span>
+                        {/if}
+                        <a
+                            href="/library/artists/{artist.id}"
+                            class=" hover:text-white font-medium"
+                            >{artist.name}</a
+                        >
+                    {/each}
                 </p>
             </div>
             <button
                 onclick={toggleFavorite}
-                class="ml-2 text-gray-300 hover:text-secondary transition-colors"
-                class:text-secondary={player.currentTrack.is_favorite}
+                class="ml-2 {player.currentTrack?.is_favorite
+                    ? 'text-rose-600 fill-rose-600'
+                    : 'text-gray-300'}  hover:text-secondary transition-colors"
+                class:text-secondary={player.currentTrack?.is_favorite}
             >
                 <Heart
                     size={18}
-                    fill={player.currentTrack.is_favorite
-                        ? "currentColor"
-                        : "none"}
-                />
+                    class={player.currentTrack?.is_favorite
+                        ? "text-rose-600 fill-rose-600"
+                        : "text-gray-300"}
+                ></Heart>
             </button>
         </div>
 
@@ -216,63 +219,12 @@
                         >
                             Now Playing
                         </h4>
-                        <div
-                            class="w-full flex items-center gap-3 p-2 rounded-xl py-2 bg-white/5 transition-colors text-left cursor-default"
-                            tabindex="-1"
-                            title={`${player.currentTrack.title} - ${player.currentTrack.artists.map((a: { name: string }) => a.name).join(", ") || "Unknown Artist"}`}
-                            role="button"
-                        >
-                            <div
-                                class="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center shrink-0 overflow-hidden relative"
-                            >
-                                {#if player.currentTrack.cover_art}
-                                    {#await getImageUrl(player.currentTrack.cover_art)}
-                                        <div
-                                            class="absolute inset-0 bg-neutral-800 animate-pulse"
-                                        ></div>
-                                    {:then url}
-                                        <img
-                                            src={url}
-                                            alt=""
-                                            class="w-full h-full object-cover"
-                                        />
-                                    {/await}
-                                {:else}
-                                    <Music size={14} class="text-neutral-600" />
-                                {/if}
-                                {#if player.isPlaying}
-                                    <div
-                                        class="absolute inset-0 bg-black/40 flex items-center justify-center"
-                                    >
-                                        <div class="flex gap-0.5 items-end h-3">
-                                            <div
-                                                class="w-0.5 bg-accent animate-bounce h-2"
-                                            ></div>
-                                            <div
-                                                class="w-0.5 bg-accent animate-bounce h-3"
-                                                style="animation-delay: 0.2s"
-                                            ></div>
-                                            <div
-                                                class="w-0.5 bg-accent animate-bounce h-1.5"
-                                                style="animation-delay: 0.4s"
-                                            ></div>
-                                        </div>
-                                    </div>
-                                {/if}
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p
-                                    class="text-sm font-bold truncate text-accent"
-                                >
-                                    {player.currentTrack.title}
-                                </p>
-                                <p class="text-xs text-gray-400 truncate">
-                                    {player.currentTrack.artists
-                                        .map((a: { name: string }) => a.name)
-                                        .join(", ") || "Unknown Artist"}
-                                </p>
-                            </div>
-                        </div>
+
+                        <TrackListSmall
+                            track={player.currentTrack}
+                            titleColor="text-accent"
+                            className="rounded-xl"
+                        />
                     {/if}
 
                     <!-- Next in Queue -->
@@ -283,58 +235,7 @@
                             Next in Queue
                         </h4>
                         {#each player.userQueue as track, i}
-                            <!-- svelte-ignore a11y_click_events_have_key_events -->
-                            <div
-                                class="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-white/10 transition-colors text-left group cursor-pointer"
-                                onclick={() => player.play(track)}
-                                tabindex="-1"
-                                title={`${track.title} - ${track.artists.map((a: { name: string }) => a.name).join(", ") || "Unknown Artist"}`}
-                                role="menuitem"
-                            >
-                                <div
-                                    class="w-10 h-10 rounded-lg bg-neutral-800 flex items-center justify-center shrink-0 overflow-hidden relative"
-                                >
-                                    {#if track.cover_art}
-                                        {#await getImageUrl(track.cover_art)}
-                                            <div
-                                                class="absolute inset-0 bg-neutral-800 animate-pulse"
-                                            ></div>
-                                        {:then url}
-                                            <img
-                                                src={url}
-                                                alt=""
-                                                class="w-full h-full object-cover"
-                                            />
-                                        {/await}
-                                    {:else}
-                                        <Music
-                                            size={14}
-                                            class="text-neutral-600"
-                                        />
-                                    {/if}
-                                </div>
-                                <div class="flex-1 min-w-0">
-                                    <p class="text-sm font-semibold truncate">
-                                        {track.title}
-                                    </p>
-                                    <p class="text-xs text-gray-400 truncate">
-                                        {track.artists
-                                            .map(
-                                                (a: { name: string }) => a.name,
-                                            )
-                                            .join(", ") || "Unknown Artist"}
-                                    </p>
-                                </div>
-                                <button
-                                    class="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all"
-                                    onclick={(e) => {
-                                        e.stopPropagation();
-                                        player.removeFromQueue(track.id);
-                                    }}
-                                >
-                                    <X size={14} />
-                                </button>
-                            </div>
+                            <TrackListSmall {track} className="rounded-xl" />
                         {/each}
                     {/if}
 
@@ -346,49 +247,7 @@
                             Next from Suggestions
                         </p>
                         {#each player.playNext.slice(0, 5) as track, i}
-                            <!-- svelte-ignore a11y_click_events_have_key_events -->
-                            <div
-                                class="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-white/10 transition-colors text-left group cursor-pointer opacity-90"
-                                onclick={() => player.play(track)}
-                                tabindex="-1"
-                                title={`${track.title} - ${track.artists.map((a: { name: string }) => a.name).join(", ") || "Unknown Artist"}`}
-                                role="button"
-                            >
-                                <div
-                                    class="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center shrink-0 overflow-hidden relative"
-                                >
-                                    {#if track.cover_art}
-                                        {#await getImageUrl(track.cover_art)}
-                                            <div
-                                                class="absolute inset-0 bg-neutral-800 animate-pulse"
-                                            ></div>
-                                        {:then url}
-                                            <img
-                                                src={url}
-                                                alt=""
-                                                class="w-full h-full object-cover"
-                                            />
-                                        {/await}
-                                    {:else}
-                                        <Music
-                                            size={14}
-                                            class="text-neutral-600"
-                                        />
-                                    {/if}
-                                </div>
-                                <div class="flex-1 min-w-0">
-                                    <p class="text-sm truncate font-semibold">
-                                        {track.title}
-                                    </p>
-                                    <p class="text-xs text-gray-400 truncate">
-                                        {track.artists
-                                            .map(
-                                                (a: { name: string }) => a.name,
-                                            )
-                                            .join(", ") || "Unknown Artist"}
-                                    </p>
-                                </div>
-                            </div>
+                            <TrackListSmall {track} className="rounded-xl" />
                         {/each}
                     {/if}
 
@@ -402,19 +261,3 @@
         {/if}
     </div>
 </div>
-
-<style>
-    @keyframes bounce {
-        0%,
-        100% {
-            transform: scaleY(0.5);
-        }
-        50% {
-            transform: scaleY(1);
-        }
-    }
-    .animate-bounce {
-        animation: bounce 0.6s infinite ease-in-out;
-        transform-origin: bottom;
-    }
-</style>

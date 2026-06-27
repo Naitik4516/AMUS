@@ -4,6 +4,8 @@
     import AlbumRow from "$components/ui/AlbumRow.svelte";
     import { User } from "@lucide/svelte";
     import { formatDuration, getImageUrl } from "$lib/utils";
+    import { fetchArtistImages, getArtistDetails } from "$lib/data.svelte";
+    import { onMount } from "svelte";
 
     let { data }: PageProps = $props();
     let artist = $derived(data.artist);
@@ -13,38 +15,89 @@
     let totalDuration = $derived(
         tracks.reduce((acc, track) => acc + track.duration_seconds, 0),
     );
+
+    let profileUrl = $state<string | null>(null);
+    let bgUrl = $state<string | null>(null);
+    let isBanner = $state(false);
+
+    $effect(() => {
+        getImageUrl(artist.profile_image, "artist").then(
+            (url) => (profileUrl = url),
+        );
+        if (artist.banner_image) {
+            getImageUrl(artist.banner_image, "banner").then((url) => {
+                bgUrl = url;
+                isBanner = true;
+            });
+        } else if (artist.profile_image) {
+            getImageUrl(artist.profile_image, "artist").then((url) => {
+                bgUrl = url;
+                isBanner = false;
+            });
+        } else {
+            bgUrl = null;
+            isBanner = false;
+        }
+    });
+
+    onMount(async () => {
+        if (!artist.banner_image) {
+            await fetchArtistImages(artist.id);
+            const result = await getArtistDetails(artist.id);
+            if (result?.artist?.banner_image) {
+                const url = await getImageUrl(
+                    result.artist.banner_image,
+                    "banner",
+                );
+                if (url) {
+                    bgUrl = url;
+                    isBanner = true;
+                }
+            }
+        }
+    });
 </script>
 
 <div
-    class="relative flex flex-col rounded-2xl h-full w-full overflow-y-scroll px-4 pb-10"
+    class="relative flex flex-col rounded-2xl h-full w-full overflow-y-scroll pb-10"
 >
-    <div class="flex gap-15 items-end p-5 pb-30 rounded-t-2xl">
-        <div class="aspect-square w-60 shrink-0">
-            {#if !artist.profile_image}
-                <div class="absolute inset-0 flex items-center justify-center">
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        height="48px"
-                        width="48px"
-                        viewBox="0 -960 960 960"
-                        fill="#e3e3e3"
-                        ><path
-                            d="M480-300q75 0 127.5-52.5T660-480q0-75-52.5-127.5T480-660q-75 0-127.5 52.5T300-480q0 75 52.5 127.5T480-300Zm-28.5-151.5Q440-463 440-480t11.5-28.5Q463-520 480-520t28.5 11.5Q520-497 520-480t-11.5 28.5Q497-440 480-440t-28.5-11.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"
-                        /></svg
-                    >
-                </div>
-            {:else}
+    <div
+        class="banner-wrapper relative max-h-80 w-full aspect-video overflow-hidden"
+    >
+        {#if bgUrl}
+            <img
+                src={bgUrl}
+                alt=""
+                class="w-full h-full object-cover banner"
+                class:blur-2xl={!isBanner}
+                class:scale-110={!isBanner}
+            />
+        {:else}
+            <div class="w-full h-full bg-surface/50"></div>
+        {/if}
+    </div>
+
+    <div class="flex items-end gap-6 px-6 -mt-32 relative z-10">
+        <div
+            class="w-48 h-48 rounded-full overflow-hidden ring-3 ring-black shadow-xl shrink-0"
+        >
+            {#if profileUrl}
                 <img
-                    src={await getImageUrl(artist.profile_image, "artist")}
+                    src={profileUrl}
                     alt={artist.name}
-                    class="w-full h-full object-cover rounded-full shadow-2xl"
+                    class="w-full h-full object-cover"
                 />
+            {:else}
+                <div
+                    class="w-full h-full flex items-center justify-center bg-surface"
+                >
+                    <User size={48} />
+                </div>
             {/if}
         </div>
-
-        <div class="flex flex-col gap-4 min-w-0">
+        <div class="flex flex-col gap-2 pb-2 min-w-0">
             <h1
-                class="text-3xl md:text-5xl lg:text-[5cqw] max-text-[6rem] font-bold  font-clash"
+                class="text-3xl md:text-5xl lg:text-[6cqw] max-text-[6rem] font-black font-clash bg-linear-to-b from-white from-50% to-neutral-600 bg-clip-text text-transparent truncate drop-shadow-lg drop-shadow-black py-4.5 -mb-4" 
             >
                 {artist.name}
             </h1>
@@ -55,15 +108,42 @@
     </div>
 
     {#if tracks.length > 0}
-        <div class="-translate-y-22">
-            <TrackList {tracks} />
+        <div class="mt-4 px-4">
+            <TrackList
+                context="artist"
+                {tracks}
+                artistId={artist.id}
+                artistName={artist.name}
+                artistProfileImage={artist.profile_image}
+                artistBannerImage={artist.banner_image}
+                canEdit={true}
+            />
         </div>
     {:else}
         <div
             class="flex flex-col items-center justify-center py-20 text-gray-500 w-full"
         >
-            <p class="text-xl font-medium">No tracks in this album</p>
-            <p class="text-sm">This album doesn't have any tracks yet.</p>
+            <p class="text-xl font-medium">No tracks found</p>
+            <p class="text-sm">This artist doesn't have any tracks yet.</p>
+        </div>
+    {/if}
+
+    {#if albums.length > 0}
+        <div class="px-4 mt-6">
+            <AlbumRow title="Albums" {albums} />
         </div>
     {/if}
 </div>
+
+<style>
+    .banner-wrapper {
+        position: relative;
+        /* Adjust the percentage to control where the fade begins */
+        mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+        -webkit-mask-image: linear-gradient(
+            to bottom,
+            black 60%,
+            transparent 100%
+        );
+    }
+</style>

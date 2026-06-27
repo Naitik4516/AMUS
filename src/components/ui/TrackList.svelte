@@ -1,12 +1,26 @@
 <script lang="ts">
-    import Icon from "./Icon.svelte";
-    import DropdownMenu from "./DropdownMenu.svelte";
-    import TrackMenu from "./TrackMenu.svelte";
+    import DropdownMenu from "./Menu/DropdownMenu.svelte";
+    import TrackMenu from "./Menu/TrackMenu.svelte";
     import type { Track } from "$lib/types";
     import { getImageUrl } from "$lib/utils";
-    import { Heart } from "@lucide/svelte";
+    import {
+        Heart,
+        Play,
+        Pause,
+        Ellipsis,
+        Shuffle,
+        Clock,
+        ChevronUp,
+        ChevronDown,
+        SlidersHorizontal,
+        Disc,
+        Edit,
+        Music2,
+    } from "@lucide/svelte";
     import { player } from "$lib/player.svelte";
-    import { invoke } from "@tauri-apps/api/core";
+    import EditPlaylistDialog from "./Dialog/EditPlaylistDialog.svelte";
+    import EditAlbumDialog from "./Dialog/EditAlbumDialog.svelte";
+    import EditArtistDialog from "./Dialog/EditArtistDialog.svelte";
 
     type ColumnKey = (typeof COLUMN_ORDER)[number];
 
@@ -41,6 +55,15 @@
         playlists?: { id: number; name: string }[];
         extraActions?: MenuItem[];
         playlistId?: number | null;
+        playlistName?: string;
+        playlistCoverArt?: string | null;
+        albumId?: number | null;
+        albumName?: string;
+        albumCoverArt?: string | null;
+        artistId?: number | null;
+        artistName?: string;
+        artistProfileImage?: string | null;
+        artistBannerImage?: string | null;
     }
 
     let {
@@ -50,32 +73,18 @@
         canEdit = false,
         canSort = true,
         canToggleColumns = true,
-        playlists = [],
         extraActions = [],
         playlistId = null,
+        playlistName = "",
+        playlistCoverArt = null,
+        albumId = null,
+        albumName = "",
+        albumCoverArt = null,
+        artistId = null,
+        artistName = "",
+        artistProfileImage = null,
+        artistBannerImage = null,
     }: TrackTableProps = $props();
-
-    let menuPlaylists = $state<{ id: number; name: string }[]>([]);
-
-    $effect(() => {
-        invoke("list_playlists")
-            .then((pl) => {
-                menuPlaylists = pl as { id: number; name: string }[];
-            })
-            .catch(() => {
-                menuPlaylists = [];
-            });
-    });
-
-    function onPlaylistsChanged() {
-        invoke("list_playlists")
-            .then((pl) => {
-                menuPlaylists = pl as { id: number; name: string }[];
-            })
-            .catch(() => {
-                menuPlaylists = [];
-            });
-    }
 
     const COLUMN_META: Record<
         ColumnKey,
@@ -104,8 +113,8 @@
         title: {
             label: "Title",
             settingsLabel: "Title",
-            width: 380,
-            minWidth: 220,
+            width: 320,
+            minWidth: 160,
             maxWidth: 640,
             sortable: true,
             locked: true,
@@ -114,7 +123,7 @@
         album: {
             label: "Album",
             settingsLabel: "Album",
-            width: 220,
+            width: 300,
             minWidth: 120,
             maxWidth: 420,
             sortable: true,
@@ -124,9 +133,9 @@
         dateAdded: {
             label: "Date added",
             settingsLabel: "Date added",
-            width: 160,
-            minWidth: 110,
-            maxWidth: 280,
+            width: 100,
+            minWidth: 80,
+            maxWidth: 150,
             sortable: true,
             locked: false,
             resizable: true,
@@ -134,7 +143,7 @@
         duration: {
             label: "",
             settingsLabel: "Duration",
-            width: 90,
+            width: 64,
             minWidth: 64,
             maxWidth: 64,
             sortable: true,
@@ -175,9 +184,9 @@
     let settingsBtn = $state<HTMLButtonElement | null>(null);
     let settingsPanel = $state<HTMLDivElement | null>(null);
     let actionMenuOpen = $state(false);
-    let actionMenuBtn = $state<HTMLButtonElement | null>(null);
+    let showEditDialog = $state(false);
     let openRowMenuId = $state<number | null>(null);
-    const rowMenuButtons: Record<number, HTMLButtonElement> = {};
+    let rowMenuButtons = $state<Record<number, HTMLButtonElement>>({});
 
     function compareTracks(a: Track, b: Track, key: ColumnKey) {
         if (key === "title") return a.title.localeCompare(b.title);
@@ -192,6 +201,14 @@
     }
 
     let orderedTracks = $derived.by(() => {
+        if (context === "album") {
+            const sorted = [...tracks].sort((a, b) => {
+                const aNum = a.track_number ?? Number.MAX_SAFE_INTEGER;
+                const bNum = b.track_number ?? Number.MAX_SAFE_INTEGER;
+                return aNum - bNum;
+            });
+            return sorted;
+        }
         if (!sortKey) return tracks;
         const key = sortKey;
         const sorted = [...tracks].sort((a, b) => compareTracks(a, b, key));
@@ -199,6 +216,7 @@
     });
 
     function toggleSort(key: ColumnKey) {
+        if (!canSort || context === "album") return;
         if (!COLUMN_META[key].sortable) return;
         if (sortKey !== key) {
             sortKey = key;
@@ -219,31 +237,66 @@
         visibleColumnKeys
             .map((key) =>
                 key === "title"
-                    ? `minmax(${columns[key].width}px, 1fr)`
+                    ? `minmax(${COLUMN_META.title.minWidth}px, 1fr)`
                     : `${columns[key].width}px`,
             )
             .join(" ") + " 40px",
     );
 
+    function isColumnResizable(key: ColumnKey) {
+        const meta = COLUMN_META[key];
+        if (!meta.resizable) return false;
+        if (key === "title") {
+            const titleIdx = visibleColumnKeys.indexOf("title");
+            if (titleIdx === -1) return false;
+            return visibleColumnKeys
+                .slice(titleIdx + 1)
+                .some((k) => COLUMN_META[k].resizable);
+        }
+        return true;
+    }
+
     function startResize(key: ColumnKey, event: PointerEvent) {
         event.preventDefault();
+        const resizer = event.currentTarget as HTMLElement;
+        resizer.setPointerCapture(event.pointerId);
+
+        let targetKey = key;
+        let direction = 1;
+
+        if (key === "title") {
+            const titleIdx = visibleColumnKeys.indexOf("title");
+            const rightKey = visibleColumnKeys
+                .slice(titleIdx + 1)
+                .find((k) => COLUMN_META[k].resizable);
+            if (!rightKey) return;
+            targetKey = rightKey;
+            direction = -1;
+        }
+
         const startX = event.clientX;
-        const startWidth = columns[key].width;
-        const meta = COLUMN_META[key];
+        const startWidth = columns[targetKey].width;
+        const meta = COLUMN_META[targetKey];
 
         function onMove(e: PointerEvent) {
-            const next = startWidth + (e.clientX - startX);
-            columns[key].width = Math.min(
+            const deltaX = e.clientX - startX;
+            const next = startWidth + deltaX * direction;
+            columns[targetKey].width = Math.min(
                 meta.maxWidth,
                 Math.max(meta.minWidth, next),
             );
         }
-        function onUp() {
-            window.removeEventListener("pointermove", onMove);
-            window.removeEventListener("pointerup", onUp);
+        function onUp(e: PointerEvent) {
+            try {
+                resizer.releasePointerCapture(e.pointerId);
+            } catch (err) {
+                // Ignore if pointer capture was already released or invalid
+            }
+            resizer.removeEventListener("pointermove", onMove);
+            resizer.removeEventListener("pointerup", onUp);
         }
-        window.addEventListener("pointermove", onMove);
-        window.addEventListener("pointerup", onUp);
+        resizer.addEventListener("pointermove", onMove);
+        resizer.addEventListener("pointerup", onUp);
     }
 
     function formatDuration(totalSeconds: number) {
@@ -300,14 +353,21 @@
                 },
             },
         ];
+        if (context !== "liked" && canEdit) {
+            items.push({
+                label: "Edit",
+                icon: "edit",
+                onClick: () => {
+                    showEditDialog = true;
+                },
+            });
+        }
         if (extraActions.length) {
             items.push({ type: "separator" }, ...extraActions);
         }
         return items;
     });
 
-    // Click-outside / Escape for the column-settings popover
-    // (row & action menus handle this internally inside DropdownMenu)
     $effect(() => {
         if (!settingsOpen) return;
         function handlePointerDown(e: PointerEvent) {
@@ -330,35 +390,38 @@
     });
 
     const focusRing =
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
 </script>
 
-<div class="w-full rounded-b-2xl px-2 backdrop-blur-lg bg-black/5">
+<div
+    class="w-full rounded-b-2xl px-2 pb-4 min-h-[45vh] backdrop-blur-lg bg-black/5"
+>
     <!-- ============================== ACTION BAR ============================== -->
-    <div class="relative -mx-1 mb-2 sm:-mx-2">
+    <div>
         <div class="pointer-events-none absolute inset-0"></div>
         <div class="relative flex items-center gap-5 px-3 py-4 sm:px-4">
             <button
                 type="button"
-                class="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-400 text-black shadow-lg shadow-emerald-400/20 transition-all hover:scale-105 hover:bg-emerald-300 active:scale-95 {focusRing}"
+                class="flex h-16 w-16 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-lg shadow-accent/20 transition-all hover:scale-105 hover:bg-accent/80 active:scale-95 {focusRing}"
                 onclick={handleMainPlay}
                 aria-label={player.isPlaying && player.currentTrack
                     ? "Pause"
                     : "Play"}
             >
-                <Icon
-                    name={player.isPlaying && player.currentTrack
-                        ? "pause"
-                        : "play"}
-                    size={24}
-                />
+                {#if player.isPlaying && player.currentTrack}
+                    <Pause size={24} fill="var(--color-accent-foreground)" />
+                {:else}
+                    <Play size={24} fill="var(--color-accent-foreground)" />
+                {/if}
             </button>
 
             <button
                 type="button"
-                class="flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:text-white {focusRing}"
+                class="flex h-14 w-14 items-center justify-center rounded-full transition-colors hover:text-white {focusRing} {player.shuffle
+                    ? 'text-accent'
+                    : ''}"
                 onclick={async () => {
-                    if (!player.shuffle) await player.toggleShuffle();
+                    await player.toggleShuffle();
                     await player.play(
                         orderedTracks[0],
                         orderedTracks,
@@ -367,26 +430,24 @@
                 }}
                 aria-label="Shuffle play"
             >
-                <Icon name="shuffle" size={22} />
+                <Shuffle size={30} />
             </button>
 
-            <div>
+            <div class="relative">
                 <button
-                    bind:this={actionMenuBtn}
                     type="button"
-                    class="flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:text-white {focusRing}"
+                    class="dropdown-trigger flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:text-white {focusRing}"
                     onclick={() => (actionMenuOpen = !actionMenuOpen)}
                     aria-label="More options"
                     aria-haspopup="menu"
                     aria-expanded={actionMenuOpen}
                 >
-                    <Icon name="more-horizontal" size={22} />
+                    <Ellipsis size={22} />
                 </button>
+
                 {#if actionMenuOpen}
                     <DropdownMenu
                         items={actionMenuItems}
-                        anchorEl={actionMenuBtn}
-                        placement="bottom-start"
                         onClose={() => (actionMenuOpen = false)}
                     />
                 {/if}
@@ -404,14 +465,14 @@
                     aria-haspopup="true"
                     aria-expanded={settingsOpen}
                 >
-                    <Icon name="sliders" size={15} />
+                    <SlidersHorizontal size={15} />
                     <span class="hidden sm:inline">View</span>
                 </button>
 
                 {#if settingsOpen}
                     <div
                         bind:this={settingsPanel}
-                        class="absolute right-0 top-full z-50 mt-2 w-60 rounded-xl border border-white/10 bg-zinc-900/95 p-3 shadow-2xl shadow-black/60 backdrop-blur-md"
+                        class="absolute right-0 top-full z-50 mt-2 w-60 rounded-2xl border border-white/10 bg-card/50 p-3 shadow-lg backdrop-blur-md"
                         role="dialog"
                         aria-label="Table view settings"
                     >
@@ -438,33 +499,35 @@
                             {/each}
                         </div>
 
-                        <p
-                            class="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
-                        >
-                            Columns
-                        </p>
-                        <div class="flex flex-col">
-                            {#each COLUMN_ORDER as key (key)}
-                                {#if !COLUMN_META[key].locked}
-                                    <label
-                                        class="flex cursor-pointer items-center justify-between rounded-md px-1.5 py-1.5 text-[13px] text-zinc-200 hover:bg-white/5"
-                                    >
-                                        <span
-                                            >{COLUMN_META[key]
-                                                .settingsLabel}</span
+                        {#if canToggleColumns}
+                            <p
+                                class="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
+                            >
+                                Columns
+                            </p>
+                            <div class="flex flex-col">
+                                {#each COLUMN_ORDER as key (key)}
+                                    {#if !COLUMN_META[key].locked}
+                                        <label
+                                            class="flex cursor-pointer items-center justify-between rounded-md px-1.5 py-1.5 text-[13px] text-zinc-200 hover:bg-white/5"
                                         >
-                                        <input
-                                            type="checkbox"
-                                            class="h-4 w-4 rounded accent-emerald-400 {focusRing}"
-                                            checked={columns[key].visible}
-                                            onchange={() =>
-                                                (columns[key].visible =
-                                                    !columns[key].visible)}
-                                        />
-                                    </label>
-                                {/if}
-                            {/each}
-                        </div>
+                                            <span
+                                                >{COLUMN_META[key]
+                                                    .settingsLabel}</span
+                                            >
+                                            <input
+                                                type="checkbox"
+                                                class="h-4 w-4 rounded accent-emerald-400 {focusRing}"
+                                                checked={columns[key].visible}
+                                                onchange={() =>
+                                                    (columns[key].visible =
+                                                        !columns[key].visible)}
+                                            />
+                                        </label>
+                                    {/if}
+                                {/each}
+                            </div>
+                        {/if}
                     </div>
                 {/if}
             </div>
@@ -504,7 +567,7 @@
                             onclick={() => toggleSort(key)}
                             aria-label="Sort by duration"
                         >
-                            <Icon name="clock" size={14} />
+                            <Clock size={14} />
                         </button>
                     {:else}
                         <button
@@ -517,19 +580,18 @@
                         >
                             <span>{meta.label}</span>
                             {#if sortKey === key}
-                                <Icon
-                                    name={sortDir === "asc"
-                                        ? "chevron-up"
-                                        : "chevron-down"}
-                                    size={13}
-                                />
+                                {#if sortDir === "asc"}
+                                    <ChevronUp size={13} />
+                                {:else}
+                                    <ChevronDown size={13} />
+                                {/if}
                             {/if}
                         </button>
                     {/if}
 
-                    {#if meta.resizable}
+                    {#if isColumnResizable(key)}
                         <div
-                            class="absolute right-0 top-1/2 h-4 w-3 -translate-y-1/2 cursor-col-resize opacity-0 transition-opacity group-hover:opacity-100"
+                            class="absolute right-0 top-0 h-full w-3 cursor-col-resize opacity-0 transition-opacity group-hover:opacity-100"
                             onpointerdown={(e) => startResize(key, e)}
                             role="presentation"
                         >
@@ -593,8 +655,7 @@
                                                 style="animation-delay:300ms"
                                             ></span>
                                         </span>
-                                        <Icon
-                                            name="pause"
+                                        <Pause
                                             size={14}
                                             class="hidden text-white group-hover:block"
                                         />
@@ -602,8 +663,7 @@
                                         <span class="group-hover:hidden"
                                             >{i + 1}</span
                                         >
-                                        <Icon
-                                            name="play"
+                                        <Play
                                             size={13}
                                             class="hidden text-white group-hover:block"
                                         />
@@ -617,14 +677,16 @@
                                                 <img
                                                     src={url}
                                                     alt=""
-                                                    class="h-11 w-11 shrink-0 rounded object-cover"
+                                                    class="h-12 w-12 shrink-0 rounded-lg object-cover"
                                                     loading="lazy"
                                                 />
                                             {/await}
                                         {:else}
                                             <div
-                                                class="h-12 w-12 shrink-0 rounded bg-zinc-800"
-                                            ></div>
+                                                class="h-12 w-12 shrink-0 rounded-lg bg-zinc-800 flex items-center justify-center"
+                                            >
+                                                <Music2 size={20} />
+                                            </div>
                                         {/if}
                                     {/if}
                                     <div class="min-w-0">
@@ -644,10 +706,8 @@
                                                     <span>, </span>
                                                 {/if}
                                                 <a
-                                                    href="/library/artist/{artist.id}"
+                                                    href="/library/artists/{artist.id}"
                                                     class="rounded hover:text-white hover:underline {focusRing}"
-                                                    onclick={(e) =>
-                                                        e.stopPropagation()}
                                                     >{artist.name}</a
                                                 >
                                             {/each}
@@ -656,9 +716,8 @@
                                 </div>
                             {:else if key === "album"}
                                 <a
-                                    href="/library/album/{track.album.id}"
+                                    href="/library/albums/{track.album.id}"
                                     class="truncate rounded hover:text-white hover:underline {focusRing}"
-                                    onclick={(e) => e.stopPropagation()}
                                 >
                                     {track.album.name}
                                 </a>
@@ -673,9 +732,11 @@
                                         class="hidden hover:text-white group-hover:flex {track.is_favorite
                                             ? 'flex!'
                                             : ''} {focusRing}"
-                                        onclick={(e) => {
-                                            e.stopPropagation();
-                                            player.toggleFavorite(track);
+                                        onclick={async (e) => {
+                                            track.is_favorite =
+                                                await player.toggleFavorite(
+                                                    track,
+                                                );
                                         }}
                                         aria-label={track.is_favorite
                                             ? "Remove from Liked Songs"
@@ -708,7 +769,7 @@
                         <button
                             bind:this={rowMenuButtons[track.id]}
                             type="button"
-                            class="flex h-8 w-8 items-center justify-center rounded-full opacity-0 transition-all hover:bg-white/10 hover:text-white group-hover:opacity-100 {openRowMenuId ===
+                            class="dropdown-trigger flex h-8 w-8 items-center justify-center rounded-full opacity-0 transition-all hover:bg-white/10 hover:text-white group-hover:opacity-100 {openRowMenuId ===
                             track.id
                                 ? 'opacity-100'
                                 : ''} {focusRing}"
@@ -721,20 +782,13 @@
                             aria-haspopup="menu"
                             aria-expanded={openRowMenuId === track.id}
                         >
-                            <Icon name="more-horizontal" size={18} />
+                            <Ellipsis size={18} />
                         </button>
                         {#if openRowMenuId === track.id}
                             <TrackMenu
                                 {track}
                                 {context}
-                                playlists={menuPlaylists}
-                                {playlistId}
-                                exclude={context !== "playlist"
-                                    ? ["removeFromPlaylist"]
-                                    : []}
-                                anchorEl={rowMenuButtons[track.id]}
                                 onClose={() => (openRowMenuId = null)}
-                                onPlaylistsChanged={onPlaylistsChanged}
                             />
                         {/if}
                     </div>
@@ -745,13 +799,44 @@
                 <div
                     class="flex flex-col items-center gap-2 py-16 text-center text-zinc-500"
                 >
-                    <Icon name="disc" size={28} />
+                    <Disc size={28} />
                     <p class="text-sm">No tracks here yet.</p>
                 </div>
             {/if}
         </div>
     </div>
 </div>
+
+{#if showEditDialog && context === "playlist"}
+    <EditPlaylistDialog
+        bind:open={showEditDialog}
+        playlistId={playlistId ?? 0}
+        name={playlistName}
+        coverArt={playlistCoverArt}
+        onClose={() => (showEditDialog = false)}
+    />
+{/if}
+
+{#if showEditDialog && context === "album"}
+    <EditAlbumDialog
+        bind:open={showEditDialog}
+        albumId={albumId ?? 0}
+        name={albumName}
+        coverArt={albumCoverArt}
+        onClose={() => (showEditDialog = false)}
+    />
+{/if}
+
+{#if showEditDialog && context === "artist"}
+    <EditArtistDialog
+        bind:open={showEditDialog}
+        artistId={artistId ?? 0}
+        name={artistName}
+        profileImage={artistProfileImage}
+        bannerImage={artistBannerImage}
+        onClose={() => (showEditDialog = false)}
+    />
+{/if}
 
 <style>
     .eq-bar {

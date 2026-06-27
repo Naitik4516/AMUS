@@ -6,6 +6,11 @@ use tauri::{AppHandle, Emitter};
 use std::sync::Arc;
 use parking_lot::Mutex;
 
+fn is_track_near_end(pos_ms: u64, duration_sec: u32) -> bool {
+    let near_end_threshold = std::cmp::min(5, (duration_sec as f64 * 0.05).ceil() as u32);
+    pos_ms > 0 && duration_sec > 0 && (pos_ms / 1000) >= duration_sec.saturating_sub(near_end_threshold) as u64
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PlaybackState {
     pub is_playing: bool,
@@ -49,7 +54,7 @@ impl AudioEngine {
 
     fn play_inner(&mut self, track: &TrackDetails) -> anyhow::Result<()> {
         let path = track.path.as_str();
-        let file = BufReader::new(File::open(path)?);
+        let file = BufReader::with_capacity(256 * 1024, File::open(path)?);
         let decoder = Decoder::try_from(file)?;
 
         self.player.clear();
@@ -84,11 +89,15 @@ impl AudioEngine {
     }
 
     pub fn add_to_queue(&mut self, track: &TrackDetails) {
-        self.user_queue.push_back(track.clone());
+        if !self.user_queue.iter().any(|t| t.id == track.id) {
+            self.user_queue.push_back(track.clone());
+        }
     }
 
     pub fn play_next_in_queue(&mut self, track: &TrackDetails) {
-        self.user_queue.push_front(track.clone());
+        if !self.user_queue.iter().any(|t| t.id == track.id) {
+            self.user_queue.push_front(track.clone());
+        }
     }
 
     pub fn remove_from_queue(&mut self, index: usize) -> Option<TrackDetails> {
@@ -276,8 +285,20 @@ impl AudioEngine {
                 .into_iter()
                 .filter_map(|t| db::get_track_details(conn, t.id).ok())
                 .collect();
-            if !details.is_empty() {
-                self.play_next = VecDeque::from(details);
+
+            let current_id = self.current_track.as_ref().map(|t| t.id);
+            let filtered: Vec<TrackDetails> = details
+                .into_iter()
+                .filter(|t| {
+                    t.id != track_id
+                        && current_id.map_or(true, |id| t.id != id)
+                        && !self.user_queue.iter().any(|qt| qt.id == t.id)
+                        && !self.play_next.iter().any(|pt| pt.id == t.id)
+                })
+                .collect();
+
+            if !filtered.is_empty() {
+                self.play_next = VecDeque::from(filtered);
                 self.tracks_played_this_gen = 0;
             }
         }
@@ -323,17 +344,36 @@ pub fn spawn_playback_monitor(
         loop {
             std::thread::sleep(Duration::from_millis(250));
 
+            // Phase 1: Check for completion under the lock, extract info, then drop lock
+            let (should_advance, rec_info): (bool, Option<(TrackDetails, SourceType)>) = {
+                let eng = engine.lock();
+
+                let finished = eng.has_finished() && !eng.is_paused();
+                let near_end = eng.current_track.as_ref().map_or(false, |track| {
+                    is_track_near_end(eng.position_ms(), track.duration_seconds)
+                });
+                let should = finished && near_end;
+                let info = should.then(|| {
+                    (eng.current_track.clone().unwrap(), eng.session_source_type())
+                });
+                (should, info)
+            };
+
+            // Phase 2: Record playback outside the lock (fire-and-forget)
+            if let Some((track, src)) = rec_info {
+                let pool = pool.clone();
+                std::thread::spawn(move || {
+                    if let Ok(conn) = pool.get() {
+                        let _ = db::record_playback(&conn, track.id, src.to_db_string(), 100.0);
+                    }
+                });
+            }
+
+            // Phase 3: Advance to next track under the lock (if still applicable)
             let (state, track_changed) = {
                 let mut eng = engine.lock();
 
-                if eng.has_finished() && !eng.is_paused() && eng.current_track.is_some() {
-                    // Record naturally completed track before advancing
-                    if let Some(track) = eng.current_track.clone() {
-                        let src = eng.session_source_type();
-                        if let Ok(conn) = pool.get() {
-                            let _ = db::record_playback(&conn, track.id, src.to_db_string(), 100.0);
-                        }
-                    }
+                if should_advance && eng.has_finished() && !eng.is_paused() {
                     let conn = pool.get().ok();
                     let _ = eng.play_next(conn.as_ref().map(|c| &**c));
                 }

@@ -7,22 +7,31 @@ export const load: PageLoad = async ({ params, url }) => {
   const id = Number(params.id);
   const name = url.searchParams.get("name") || "All Tracks";
 
-    try {
+  try {
     if (id === 0) {
       const data = await invoke("get_all_tracks", {
         sortBy: sortBy,
       });
-      return { data: data || [], name };
+      return { data: data || [], name, coverArtFilename: null };
     }
 
-    const data = await invoke("get_tracks_by_playlist", {
-      playlistId: id,
-      sortBy: sortBy,
-    });
+    const [data, playlist] = await Promise.all([
+      invoke<Track[]>("get_tracks_by_playlist", {
+        playlistId: id,
+        sortBy: sortBy,
+      }),
+      invoke<[number, string, string | null]>("get_playlist", {
+        playlistId: id,
+      }).catch(() => null),
+    ]);
 
-    return { data: data || [], name };
+    return {
+      data: data || [],
+      name: playlist?.[1] ?? name,
+      coverArtFilename: playlist?.[2] ?? null,
+    };
   } catch (e) {
     console.error("Failed to load playlist", e);
-    return { data: [], name };
+    return { data: [], name, coverArtFilename: null };
   }
 };

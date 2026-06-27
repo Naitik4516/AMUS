@@ -23,9 +23,6 @@ tauri-build = { version = "2.6.2", features = [] }
 tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
-rusqlite = { version = "0.31", features = ["bundled", "chrono"] }
-r2d2 = "0.8"
-r2d2_sqlite = "0.24"
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 lofty = "0.21"
@@ -48,9 +45,13 @@ thiserror = "2.0.18"
 rayon = "1.12.0"
 tauri-plugin-store = "2"
 notify = "8.0.0"
-image = {version = "0.25.10", features= ["avif-native"] }
+image = { version = "0.25.10" }
+r2d2 = "0.8"
+rusqlite = { version = "0.39", features = ["chrono"] }
+r2d2_sqlite = "0.34.0"
 
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "2"

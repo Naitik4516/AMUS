@@ -171,6 +171,16 @@ pub fn init_db(conn: &Connection) -> Result<()> {
         "ALTER TABLE track ADD COLUMN file_size INTEGER DEFAULT 0;",
     );
 
+    // Migration: add album_artist column if missing (pre-v3 databases)
+    let _ = conn.execute_batch(
+        "ALTER TABLE album ADD COLUMN album_artist TEXT;",
+    );
+
+    // Migration: add cover_art column to playlist if missing
+    let _ = conn.execute_batch(
+        "ALTER TABLE playlist ADD COLUMN cover_art TEXT;",
+    );
+
     Ok(())
 }
 
@@ -306,7 +316,7 @@ pub fn set_track_artists(conn: &Connection, track_id: i64, artist_ids: &[i64]) -
 
 pub fn update_artist_profile_image(conn: &Connection, artist_id: i64, path: &str) -> Result<()> {
     conn.execute(
-        "UPDATE artist SET profile_image = ? WHERE id = ? AND profile_image IS NULL",
+        "UPDATE artist SET profile_image = ? WHERE id = ?",
         params![path, artist_id],
     )
     .map_err(Error::Db)?;
@@ -315,8 +325,26 @@ pub fn update_artist_profile_image(conn: &Connection, artist_id: i64, path: &str
 
 pub fn update_artist_banner_image(conn: &Connection, artist_id: i64, path: &str) -> Result<()> {
     conn.execute(
-        "UPDATE artist SET banner_image = ? WHERE id = ? AND banner_image IS NULL",
+        "UPDATE artist SET banner_image = ? WHERE id = ?",
         params![path, artist_id],
+    )
+    .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn clear_artist_profile_image(conn: &Connection, artist_id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE artist SET profile_image = NULL WHERE id = ?",
+        params![artist_id],
+    )
+    .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn clear_artist_banner_image(conn: &Connection, artist_id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE artist SET banner_image = NULL WHERE id = ?",
+        params![artist_id],
     )
     .map_err(Error::Db)?;
     Ok(())
@@ -351,6 +379,7 @@ pub fn get_or_create_album(
     name: &str,
     cover_art: Option<&str>,
     year: Option<i32>,
+    album_artist: Option<&str>,
 ) -> Result<i64> {
     conn.execute(
         "INSERT OR IGNORE INTO album (name, cover_art, year) VALUES (?, ?, ?)",
@@ -358,13 +387,14 @@ pub fn get_or_create_album(
     )
     .map_err(Error::Db)?;
 
-    // if let Some(art) = cover_art {
-    //     conn.execute(
-    //         "UPDATE album SET cover_art = ? WHERE name = ? AND cover_art IS NULL",
-    //         params![art, name],
-    //     )
-    //     .map_err(Error::Db)?;
-    // }
+    // Update album_artist on first encounter
+    if let Some(aa) = album_artist {
+        conn.execute(
+            "UPDATE album SET album_artist = ? WHERE name = ? AND album_artist IS NULL",
+            params![aa, name],
+        )
+        .map_err(Error::Db)?;
+    }
 
     let album_id: i64 = conn
         .query_row(
@@ -473,24 +503,33 @@ pub fn record_playback(
 }
 
 pub fn get_all_albums(conn: &Connection) -> Result<Vec<Album>> {
-    let sql = "SELECT id, name, cover_art
+    let sql = "SELECT id, name, cover_art, album_artist, year
         FROM album
         ORDER BY name COLLATE NOCASE ASC";
 
     let mut stmt = conn.prepare(sql).map_err(Error::Db)?;
-    let album_iter = stmt
+    let raw: Vec<(Album, Option<String>)> = stmt
         .query_map([], |row| {
-            Ok(Album {
+            let album = Album {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 cover_art: row.get(2)?,
-            })
+                album_artist: None,
+                year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+            };
+            let aa: Option<String> = row.get(3)?;
+            Ok((album, aa))
         })
+        .map_err(Error::Db)?
+        .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::Db)?;
 
-    album_iter
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::Db)
+    let mut albums: Vec<Album> = Vec::with_capacity(raw.len());
+    for (mut album, aa) in raw {
+        album.album_artist = resolve_album_artist(conn, aa)?;
+        albums.push(album);
+    }
+    Ok(albums)
 }
 
 pub fn get_artist(conn: &Connection, artist_id: i64) -> Result<Artist> {
@@ -510,18 +549,24 @@ pub fn get_artist(conn: &Connection, artist_id: i64) -> Result<Artist> {
 }
 
 pub fn get_album(conn: &Connection, album_id: i64) -> Result<Album> {
-    conn.query_row(
-        "SELECT id, name, cover_art FROM album WHERE id = ?",
-        params![album_id],
-        |row| {
-            Ok(Album {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                cover_art: row.get(2)?,
-            })
-        },
-    )
-    .map_err(Error::Db)
+    let (mut album, aa): (Album, Option<String>) = conn
+        .query_row(
+            "SELECT id, name, cover_art, album_artist, year FROM album WHERE id = ?",
+            params![album_id],
+            |row| {
+                let album = Album {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    cover_art: row.get(2)?,
+                    album_artist: None,
+                    year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+                };
+                Ok((album, row.get::<_, Option<String>>(3)?))
+            },
+        )
+        .map_err(Error::Db)?;
+    album.album_artist = resolve_album_artist(conn, aa)?;
+    Ok(album)
 }
 
 pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
@@ -544,7 +589,7 @@ pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
 
 pub fn get_all_artists(conn: &Connection) -> Result<Vec<Artist>> {
     let mut stmt = conn
-        .prepare("SELECT id, name, profile_image FROM artist")
+        .prepare("SELECT id, name, profile_image, banner_image FROM artist")
         .map_err(Error::Db)?;
     let artist_iter = stmt
         .query_map([], |row| {
@@ -552,7 +597,7 @@ pub fn get_all_artists(conn: &Connection) -> Result<Vec<Artist>> {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 profile_image: row.get(2)?,
-                banner_image: None,
+                banner_image: row.get(3)?,
             })
         })
         .map_err(Error::Db)?;
@@ -565,32 +610,40 @@ pub fn get_all_artists(conn: &Connection) -> Result<Vec<Artist>> {
 pub fn get_albums_by_artist(conn: &Connection, artist_id: i64) -> Result<Vec<Album>> {
     let mut stmt = conn
         .prepare(
-            "SELECT DISTINCT al.id, al.name, al.cover_art
+            "SELECT DISTINCT al.id, al.name, al.cover_art, al.album_artist, al.year
              FROM album al
              JOIN album_track at2 ON al.id = at2.album_id
              JOIN track_artist ta ON at2.track_id = ta.track_id
              WHERE ta.artist_id = ?",
         )
         .map_err(Error::Db)?;
-    let album_iter = stmt
+    let raw: Vec<(Album, Option<String>)> = stmt
         .query_map(params![artist_id], |row| {
-            Ok(Album {
+            let album = Album {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 cover_art: row.get(2)?,
-            })
+                album_artist: None,
+                year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+            };
+            Ok((album, row.get::<_, Option<String>>(3)?))
         })
+        .map_err(Error::Db)?
+        .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::Db)?;
 
-    album_iter
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::Db)
+    let mut albums: Vec<Album> = Vec::with_capacity(raw.len());
+    for (mut album, aa) in raw {
+        album.album_artist = resolve_album_artist(conn, aa)?;
+        albums.push(album);
+    }
+    Ok(albums)
 }
 
-pub fn create_playlist(conn: &Connection, name: &str) -> Result<()> {
+pub fn create_playlist(conn: &Connection, name: &str) -> Result<i64> {
     conn.execute("INSERT INTO playlist (name) VALUES (?)", params![name])
         .map_err(Error::Db)?;
-    Ok(())
+    Ok(conn.last_insert_rowid())
 }
 
 pub fn add_track_to_playlist(conn: &Connection, playlist_id: i64, track_id: i64) -> Result<()> {
@@ -616,7 +669,7 @@ pub fn get_tracks_in_playlist(
     sort_by: Option<SortBy>,
 ) -> Result<Vec<Track>> {
     let sql =
-            "SELECT t.id, t.title, al.id, al.name, al.cover_art, NULL, NULL, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+            "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
         FROM track t
         JOIN playlist_track pt ON t.id = pt.track_id
         LEFT JOIN album_track alt ON t.id = alt.track_id
@@ -632,7 +685,7 @@ pub fn get_tracks_by_artist(
     sort_by: Option<SortBy>,
 ) -> Result<Vec<Track>> {
     let sql =
-            "SELECT t.id, t.title, al.id, al.name, al.cover_art, NULL, NULL, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+            "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
         FROM track t
         JOIN track_artist ta ON t.id = ta.track_id
         LEFT JOIN album_track alt ON t.id = alt.track_id
@@ -648,18 +701,23 @@ pub fn get_tracks_by_album(
     sort_by: Option<SortBy>,
 ) -> Result<Vec<Track>> {
     let sql =
-            "SELECT t.id, t.title, al.id, al.name, al.cover_art, NULL, NULL, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+            "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
         FROM track t
         JOIN album_track alt ON t.id = alt.track_id
         LEFT JOIN album al ON alt.album_id = al.id
         WHERE alt.album_id = ?";
 
-    prepare_sorted_tracks_list(conn, sql, params![album_id], sort_by)
+    if sort_by.is_some() {
+        prepare_sorted_tracks_list(conn, sql, params![album_id], sort_by)
+    } else {
+        let sql = format!("{} ORDER BY alt.track_number ASC", sql);
+        prepare_tracks_list(conn, &sql, params![album_id])
+    }
 }
 
 pub fn get_favorite_tracks(conn: &Connection, sort_by: Option<SortBy>) -> Result<Vec<Track>> {
     let sql =
-        "SELECT t.id, t.title, al.id, al.name, al.cover_art, NULL, NULL, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
         FROM track t
         LEFT JOIN album_track alt ON t.id = alt.track_id
         LEFT JOIN album al ON alt.album_id = al.id
@@ -670,7 +728,7 @@ pub fn get_favorite_tracks(conn: &Connection, sort_by: Option<SortBy>) -> Result
 
 pub fn get_recently_played_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>> {
     let sql =
-        "SELECT t.id, t.title, al.id, al.name, al.cover_art, NULL, NULL, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
         FROM track t
         LEFT JOIN album_track alt ON t.id = alt.track_id
         LEFT JOIN album al ON alt.album_id = al.id
@@ -679,7 +737,7 @@ pub fn get_recently_played_tracks(conn: &Connection, limit: usize) -> Result<Vec
         ORDER BY s.last_played_at DESC
         LIMIT ?";
 
-    prepare_tracks_list(conn, sql, params![limit])
+    prepare_tracks_list(conn, sql, params![limit as i64])
 }
 
 pub fn get_most_played_tracks(
@@ -690,7 +748,7 @@ pub fn get_most_played_tracks(
     let time_filter = timeframe_where_clause("s.last_played_at", timeframe);
 
     let sql = format!(
-        "SELECT t.id, t.title, al.id, al.name, al.cover_art, NULL, NULL, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
         FROM track t
         LEFT JOIN album_track alt ON t.id = alt.track_id
         LEFT JOIN album al ON alt.album_id = al.id
@@ -701,7 +759,7 @@ pub fn get_most_played_tracks(
         time_filter
     );
 
-    prepare_tracks_list(conn, &sql, params![limit])
+    prepare_tracks_list(conn, &sql, params![limit as i64])
 }
 
 pub fn get_top_artists(conn: &Connection, limit: usize) -> Result<Vec<Artist>> {
@@ -716,7 +774,7 @@ pub fn get_top_artists(conn: &Connection, limit: usize) -> Result<Vec<Artist>> {
 
     let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
     let artist_iter = stmt
-        .query_map(params![limit], |row| {
+        .query_map(params![limit as i64], |row| {
             Ok(Artist {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -732,7 +790,7 @@ pub fn get_top_artists(conn: &Connection, limit: usize) -> Result<Vec<Artist>> {
 }
 
 pub fn get_top_albums(conn: &Connection, limit: usize) -> Result<Vec<Album>> {
-    let sql = "SELECT al.id, al.name, al.cover_art, SUM(IFNULL(s.play_count, 0)) as total_plays
+    let sql = "SELECT al.id, al.name, al.cover_art, al.album_artist, al.year, SUM(IFNULL(s.play_count, 0)) as total_plays
         FROM album al
         JOIN album_track alt ON alt.album_id = al.id
         JOIN track t ON t.id = alt.track_id
@@ -742,24 +800,32 @@ pub fn get_top_albums(conn: &Connection, limit: usize) -> Result<Vec<Album>> {
         LIMIT ?";
 
     let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
-    let album_iter = stmt
-        .query_map(params![limit], |row| {
-            Ok(Album {
+    let raw: Vec<(Album, Option<String>)> = stmt
+        .query_map(params![limit as i64], |row| {
+            let album = Album {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 cover_art: row.get(2)?,
-            })
+                album_artist: None,
+                year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+            };
+            Ok((album, row.get::<_, Option<String>>(3)?))
         })
+        .map_err(Error::Db)?
+        .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::Db)?;
 
-    album_iter
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::Db)
+    let mut albums: Vec<Album> = Vec::with_capacity(raw.len());
+    for (mut album, aa) in raw {
+        album.album_artist = resolve_album_artist(conn, aa)?;
+        albums.push(album);
+    }
+    Ok(albums)
 }
 
 pub fn get_forgotten_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>> {
     let sql =
-        "SELECT t.id, t.title, al.id, al.name, al.cover_art, NULL, NULL, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
         FROM track t
         LEFT JOIN album_track alt ON t.id = alt.track_id
         LEFT JOIN album al ON alt.album_id = al.id
@@ -768,12 +834,12 @@ pub fn get_forgotten_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track
         ORDER BY s.last_played_at ASC
         LIMIT ?";
 
-    prepare_tracks_list(conn, sql, params![limit])
+    prepare_tracks_list(conn, sql, params![limit as i64])
 }
 
 pub fn get_unplayed_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>> {
     let sql =
-        "SELECT t.id, t.title, al.id, al.name, al.cover_art, NULL, NULL, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
         FROM track t
         LEFT JOIN album_track alt ON t.id = alt.track_id
         LEFT JOIN album al ON alt.album_id = al.id
@@ -782,23 +848,23 @@ pub fn get_unplayed_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>
         ORDER BY t.added_at DESC
         LIMIT ?";
 
-    prepare_tracks_list(conn, sql, params![limit])
+    prepare_tracks_list(conn, sql, params![limit as i64])
 }
 
 pub fn get_recently_added_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>> {
     let sql =
-        "SELECT t.id, t.title, al.id, al.name, al.cover_art, NULL, NULL, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
         FROM track t
         LEFT JOIN album_track alt ON t.id = alt.track_id
         LEFT JOIN album al ON alt.album_id = al.id
         ORDER BY t.added_at DESC
         LIMIT ?";
 
-    prepare_tracks_list(conn, sql, params![limit])
+    prepare_tracks_list(conn, sql, params![limit as i64])
 }
 
 pub fn get_track_details(conn: &Connection, track_id: i64) -> Result<TrackDetails> {
-    let sql = "SELECT t.id, t.path, t.title, al.id, al.name, al.cover_art, NULL, NULL, t.duration_sec, t.is_favorite, t.mtime,
+    let sql = "SELECT t.id, t.path, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.mtime,
         IFNULL(s.play_count, 0), s.last_played_at, IFNULL(s.skip_count, 0), s.last_skipped_at, t.cover_art, t.added_at
         FROM track t
         LEFT JOIN album_track alt ON t.id = alt.track_id
@@ -806,7 +872,7 @@ pub fn get_track_details(conn: &Connection, track_id: i64) -> Result<TrackDetail
         LEFT JOIN track_stats s ON t.id = s.track_id
         WHERE t.id = ?";
 
-    let result = conn
+    let (result, album_artist_name): (TrackDetails, Option<String>) = conn
         .query_row(sql, params![track_id], |row| {
             let album_id: Option<i64> = row.get(3)?;
             let album_title: Option<String> = row.get(4)?;
@@ -815,28 +881,39 @@ pub fn get_track_details(conn: &Connection, track_id: i64) -> Result<TrackDetail
                 id: album_id.unwrap_or(0),
                 name: album_title.unwrap_or_else(|| "Unknown Album".to_string()),
                 cover_art: album_art,
+                album_artist: None,
+                year: row.get::<_, Option<i32>>(8)?.map(|y| y as u32),
             };
 
-            Ok(TrackDetails {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                title: row.get(2)?,
-                artists: vec![],
-                album,
-                duration_seconds: row.get(8)?,
-                is_favorite: row.get(9)?,
-                mtime: row.get(10)?,
-                play_count: row.get(11)?,
-                last_played_at: row.get(12)?,
-                skipped_count: row.get(13)?,
-                last_skipped_at: row.get(14)?,
-                cover_art: row.get(15)?,
-                added_at: row.get(16)?,
-            })
+            Ok((
+                TrackDetails {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    title: row.get(2)?,
+                    artists: vec![],
+                    album,
+                    duration_seconds: row.get(9)?,
+                    is_favorite: row.get(10)?,
+                    mtime: row.get(11)?,
+                    play_count: row.get(12)?,
+                    last_played_at: row.get(13)?,
+                    skipped_count: row.get(14)?,
+                    last_skipped_at: row.get(15)?,
+                    cover_art: row.get(16)?,
+                    added_at: row.get(17)?,
+                    track_number: row.get::<_, Option<i32>>(6)?.map(|n| n as u32),
+                    year: row.get::<_, Option<i32>>(8)?.map(|y| y as u32),
+                },
+                row.get::<_, Option<String>>(7)?,
+            ))
         })
         .map_err(Error::Db)?;
 
     let mut details = result;
+    if let Some(aa) = album_artist_name {
+        details.album.album_artist = resolve_album_artist(conn, Some(aa))?;
+    }
+
     let artists_map = get_artists_for_tracks(conn, &[track_id])?;
     if let Some(artists) = artists_map.get(&track_id) {
         details.artists = artists.clone();
@@ -855,6 +932,7 @@ pub fn search_tracks(conn: &Connection, query: &str, limit: usize) -> Result<Vec
             al.id,
             al.name,
             al.cover_art,
+            NULL,
             NULL,
             NULL,
             t.duration_sec,
@@ -880,7 +958,7 @@ pub fn search_tracks(conn: &Connection, query: &str, limit: usize) -> Result<Vec
     prepare_tracks_list(
         conn,
         sql,
-        params![pattern, pattern, pattern, pattern, pattern, pattern, limit],
+        params![pattern, pattern, pattern, pattern, pattern, pattern, limit as i64],
     )
 }
 
@@ -890,7 +968,7 @@ pub fn get_similar_tracks(
     limit: usize,
 ) -> Result<Vec<Track>> {
     let sql = r#"
-    SELECT t.id, t.title, al.id, al.name, al.cover_art, NULL, NULL, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+    SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
     FROM track t
     JOIN track current ON current.id = ?
     LEFT JOIN album_track alt ON t.id = alt.track_id
@@ -933,12 +1011,12 @@ pub fn get_similar_tracks(
         ) DESC
     LIMIT ?
     "#;
-    prepare_tracks_list(conn, sql, params![current_track_id, limit])
+    prepare_tracks_list(conn, sql, params![current_track_id, limit as i64])
 }
 
 pub fn get_all_tracks(conn: &Connection, sort_by: Option<SortBy>) -> Result<Vec<Track>> {
     let sql =
-        "SELECT t.id, t.title, al.id, al.name, al.cover_art, NULL, NULL, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
         FROM track t
         LEFT JOIN album_track alt ON t.id = alt.track_id
         LEFT JOIN album al ON alt.album_id = al.id";
@@ -956,6 +1034,22 @@ pub fn delete_playlist(conn: &Connection, playlist_id: i64) -> Result<()> {
     conn.execute("DELETE FROM playlist WHERE id = ?", params![playlist_id])
         .map_err(Error::Db)?;
     Ok(())
+}
+
+pub fn get_track_playlist_ids(conn: &Connection, track_id: i64) -> Result<Vec<i64>> {
+    let mut stmt = conn
+        .prepare("SELECT playlist_id FROM playlist_track WHERE track_id = ?")
+        .map_err(Error::Db)?;
+
+    let rows = stmt
+        .query_map(params![track_id], |row| row.get(0))
+        .map_err(Error::Db)?;
+
+    let mut ids = Vec::new();
+    for row in rows {
+        ids.push(row.map_err(Error::Db)?);
+    }
+    Ok(ids)
 }
 
 pub fn remove_track_from_playlist(
@@ -978,6 +1072,85 @@ pub fn rename_playlist(conn: &Connection, playlist_id: i64, new_name: &str) -> R
     )
     .map_err(Error::Db)?;
     Ok(())
+}
+
+pub fn update_playlist(
+    conn: &Connection,
+    playlist_id: i64,
+    name: Option<&str>,
+    cover_art: Option<&str>,
+) -> Result<()> {
+    if let Some(n) = name {
+        conn.execute(
+            "UPDATE playlist SET name = ? WHERE id = ?",
+            params![n, playlist_id],
+        )
+        .map_err(Error::Db)?;
+    }
+    if let Some(ca) = cover_art {
+        if ca.is_empty() {
+            conn.execute(
+                "UPDATE playlist SET cover_art = NULL WHERE id = ?",
+                params![playlist_id],
+            )
+            .map_err(Error::Db)?;
+        } else {
+            conn.execute(
+                "UPDATE playlist SET cover_art = ? WHERE id = ?",
+                params![ca, playlist_id],
+            )
+            .map_err(Error::Db)?;
+        }
+    }
+    Ok(())
+}
+
+pub fn rename_artist(conn: &Connection, artist_id: i64, new_name: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE artist SET name = ? WHERE id = ?",
+        params![new_name, artist_id],
+    )
+    .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn rename_album(conn: &Connection, album_id: i64, new_name: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE album SET name = ? WHERE id = ?",
+        params![new_name, album_id],
+    )
+    .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn update_album_cover(conn: &Connection, album_id: i64, cover_art: Option<&str>) -> Result<()> {
+    match cover_art {
+        Some(path) => conn.execute(
+            "UPDATE album SET cover_art = ? WHERE id = ?",
+            params![path, album_id],
+        ),
+        None => conn.execute(
+            "UPDATE album SET cover_art = NULL WHERE id = ?",
+            params![album_id],
+        ),
+    }
+    .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn get_playlist(conn: &Connection, playlist_id: i64) -> Result<(i64, String, Option<String>)> {
+    conn.query_row(
+        "SELECT id, name, cover_art FROM playlist WHERE id = ?",
+        params![playlist_id],
+        |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        },
+    )
+    .map_err(Error::Db)
 }
 
 pub fn get_playlist_cover_arts(conn: &Connection, playlist_id: i64) -> Result<Vec<String>> {
@@ -1005,48 +1178,137 @@ pub fn get_playlist_cover_arts(conn: &Connection, playlist_id: i64) -> Result<Ve
 
 // Utils
 
+fn resolve_album_artist(
+    conn: &Connection,
+    album_artist_name: Option<String>,
+) -> Result<Option<Vec<Artist>>> {
+    match album_artist_name {
+        None => Ok(None),
+        Some(name) => {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, name, profile_image, banner_image FROM artist WHERE name = ?",
+                )
+                .map_err(Error::Db)?;
+            let artists: Vec<Artist> = stmt
+                .query_map(params![name], |row| {
+                    Ok(Artist {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        profile_image: row.get(2)?,
+                        banner_image: row.get(3)?,
+                    })
+                })
+                .map_err(Error::Db)?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(Error::Db)?;
+            if artists.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(artists))
+            }
+        }
+    }
+}
+
 fn prepare_tracks_list<P: Params>(conn: &Connection, sql: &str, params: P) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(sql).map_err(Error::Db)?;
+
+    struct RawTrack {
+        track: Track,
+        album_artist_name: Option<String>,
+    }
 
     let rows = stmt
         .query_map(params, |row| {
             let album_id: Option<i64> = row.get(2)?;
             let album_title: Option<String> = row.get(3)?;
             let album_art: Option<String> = row.get(4)?;
+            let album_artist_name: Option<String> = row.get(6)?;
+            let album_year: Option<i32> = row.get(7)?;
             let album = Album {
                 id: album_id.unwrap_or(0),
                 name: album_title.unwrap_or_else(|| "Unknown Album".to_string()),
                 cover_art: album_art,
+                album_artist: None,
+                year: album_year.map(|y| y as u32),
             };
 
-            Ok(Track {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                artists: vec![],
-                album,
-                duration_seconds: row.get(7)?,
-                is_favorite: row.get(8)?,
-                cover_art: row.get(9)?,
-                added_at: row.get(10)?,
+            Ok(RawTrack {
+                track: Track {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    artists: vec![],
+                    album,
+                    duration_seconds: row.get(8)?,
+                    is_favorite: row.get(9)?,
+                    cover_art: row.get(10)?,
+                    added_at: row.get(11)?,
+                    track_number: row.get::<_, Option<i32>>(5)?.map(|n| n as u32),
+                },
+                album_artist_name,
             })
         })
         .map_err(Error::Db)?;
 
-    let mut tracks: Vec<Track> = rows
+    let mut raw_tracks: Vec<RawTrack> = rows
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::Db)?;
 
-    if !tracks.is_empty() {
-        let track_ids: Vec<i64> = tracks.iter().map(|t| t.id).collect();
+    if !raw_tracks.is_empty() {
+        // Batch-resolve album artists
+        let names: Vec<&str> = raw_tracks
+            .iter()
+            .filter_map(|r| r.album_artist_name.as_deref())
+            .collect();
+        if !names.is_empty() {
+            let mut artist_map = std::collections::HashMap::<String, Vec<Artist>>::new();
+            let placeholders = names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "SELECT ar.name, ar.id, ar.name, ar.profile_image, ar.banner_image
+                 FROM artist ar
+                 WHERE ar.name IN ({})",
+                placeholders
+            );
+            if let Ok(mut stmt) = conn.prepare(&sql) {
+                if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(&names), |row| {
+                    let name: String = row.get(0)?;
+                    Ok((
+                        name,
+                        Artist {
+                            id: row.get(1)?,
+                            name: row.get(2)?,
+                            profile_image: row.get(3)?,
+                            banner_image: row.get(4)?,
+                        },
+                    ))
+                }) {
+                    for row in rows {
+                        if let Ok((name, artist)) = row {
+                            artist_map.entry(name).or_default().push(artist);
+                        }
+                    }
+                }
+            }
+            for rt in &mut raw_tracks {
+                if let Some(ref name) = rt.album_artist_name {
+                    if let Some(artists) = artist_map.get(name) {
+                        rt.track.album.album_artist = Some(artists.clone());
+                    }
+                }
+            }
+        }
+
+        let track_ids: Vec<i64> = raw_tracks.iter().map(|r| r.track.id).collect();
         let artists_map = get_artists_for_tracks(conn, &track_ids)?;
-        for track in &mut tracks {
-            if let Some(artists) = artists_map.get(&track.id) {
-                track.artists = artists.clone();
+        for rt in &mut raw_tracks {
+            if let Some(artists) = artists_map.get(&rt.track.id) {
+                rt.track.artists = artists.clone();
             }
         }
     }
 
-    Ok(tracks)
+    Ok(raw_tracks.into_iter().map(|r| r.track).collect())
 }
 
 fn get_artists_for_tracks(
@@ -1118,7 +1380,7 @@ pub fn save_user_queue(conn: &mut Connection, track_ids: &[i64]) -> Result<()> {
     for (i, id) in track_ids.iter().enumerate() {
         tx.execute(
             "INSERT INTO user_queue (track_id, position) VALUES (?, ?)",
-            params![id, i],
+            params![id, i as i64],
         )
         .map_err(Error::Db)?;
     }
@@ -1303,7 +1565,7 @@ pub fn get_top_tracks_with_stats(
 
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT t.id, t.title, al.id, al.name, al.cover_art, NULL, NULL,
+            "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year,
                     t.duration_sec, t.is_favorite, t.cover_art, t.added_at,
                     COUNT(ph.id) as play_count,
                     COALESCE(SUM(t.duration_sec * ph.completion_percent / 100.0), 0) as total_time,
@@ -1320,12 +1582,19 @@ pub fn get_top_tracks_with_stats(
         ))
         .map_err(Error::Db)?;
 
-    let mut top_tracks = Vec::new();
+    struct RawTopTrack {
+        top: TopTrack,
+        album_artist_name: Option<String>,
+    }
+
+    let mut raw_list = Vec::new();
     let rows = stmt
-        .query_map(params![limit], |row| {
+        .query_map(params![limit as i64], |row| {
             let album_id: Option<i64> = row.get(2)?;
             let album_title: Option<String> = row.get(3)?;
             let album_art: Option<String> = row.get(4)?;
+            let album_artist_name: Option<String> = row.get(6)?;
+            let album_year: Option<i32> = row.get(7)?;
 
             let track = Track {
                 id: row.get(0)?,
@@ -1335,42 +1604,87 @@ pub fn get_top_tracks_with_stats(
                     id: album_id.unwrap_or(0),
                     name: album_title.unwrap_or_else(|| "Unknown Album".to_string()),
                     cover_art: album_art,
+                    album_artist: None,
+                    year: album_year.map(|y| y as u32),
                 },
-                duration_seconds: row.get(7)?,
-                is_favorite: row.get(8)?,
-                cover_art: row.get(9)?,
-                added_at: row.get(10)?,
+                duration_seconds: row.get(8)?,
+                is_favorite: row.get(9)?,
+                cover_art: row.get(10)?,
+                added_at: row.get(11)?,
+                track_number: row.get::<_, Option<i32>>(5)?.map(|n| n as u32),
             };
 
-            let play_count: i64 = row.get(11)?;
-            let total_listening_time_sec: f64 = row.get(12)?;
-            let last_played_at: Option<DateTime<Utc>> = row.get(13)?;
+            let play_count: i64 = row.get(12)?;
+            let total_listening_time_sec: f64 = row.get(13)?;
+            let last_played_at: Option<DateTime<Utc>> = row.get(14)?;
 
-            Ok(TopTrack {
-                track,
-                play_count,
-                total_listening_time_sec: total_listening_time_sec as i64,
-                last_played_at,
+            Ok(RawTopTrack {
+                top: TopTrack {
+                    track,
+                    play_count,
+                    total_listening_time_sec: total_listening_time_sec as i64,
+                    last_played_at,
+                },
+                album_artist_name,
             })
         })
         .map_err(Error::Db)?;
 
     for row in rows {
-        top_tracks.push(row.map_err(Error::Db)?);
+        raw_list.push(row.map_err(Error::Db)?);
     }
 
-    // Attach artists
-    if !top_tracks.is_empty() {
-        let track_ids: Vec<i64> = top_tracks.iter().map(|t| t.track.id).collect();
+    // Resolve album artists
+    if !raw_list.is_empty() {
+        let names: Vec<&str> = raw_list
+            .iter()
+            .filter_map(|r| r.album_artist_name.as_deref())
+            .collect();
+        if !names.is_empty() {
+            let mut album_artist_map = std::collections::HashMap::<String, Vec<Artist>>::new();
+            let placeholders = names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            if let Ok(mut stmt) = conn.prepare(&format!(
+                "SELECT ar.name, ar.id, ar.name, ar.profile_image, ar.banner_image
+                 FROM artist ar WHERE ar.name IN ({})",
+                placeholders
+            )) {
+                if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(&names), |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        Artist {
+                            id: row.get(1)?,
+                            name: row.get(2)?,
+                            profile_image: row.get(3)?,
+                            banner_image: row.get(4)?,
+                        },
+                    ))
+                }) {
+                    for row in rows {
+                        if let Ok((name, artist)) = row {
+                            album_artist_map.entry(name).or_default().push(artist);
+                        }
+                    }
+                }
+            }
+            for rt in &mut raw_list {
+                if let Some(ref name) = rt.album_artist_name {
+                    if let Some(artists) = album_artist_map.get(name) {
+                        rt.top.track.album.album_artist = Some(artists.clone());
+                    }
+                }
+            }
+        }
+
+        let track_ids: Vec<i64> = raw_list.iter().map(|r| r.top.track.id).collect();
         let artists_map = get_artists_for_tracks(conn, &track_ids)?;
-        for tt in &mut top_tracks {
-            if let Some(artists) = artists_map.get(&tt.track.id) {
-                tt.track.artists = artists.clone();
+        for rt in &mut raw_list {
+            if let Some(artists) = artists_map.get(&rt.top.track.id) {
+                rt.top.track.artists = artists.clone();
             }
         }
     }
 
-    Ok(top_tracks)
+    Ok(raw_list.into_iter().map(|r| r.top).collect())
 }
 
 pub fn get_top_artists_with_stats(
@@ -1399,7 +1713,7 @@ pub fn get_top_artists_with_stats(
         .map_err(Error::Db)?;
 
     let rows = stmt
-        .query_map(params![limit], |row| {
+        .query_map(params![limit as i64], |row| {
             Ok(TopArtist {
                 artist: Artist {
                     id: row.get(0)?,
@@ -1428,7 +1742,7 @@ pub fn get_top_albums_with_stats(
 
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT al.id, al.name, al.cover_art,
+            "SELECT al.id, al.name, al.cover_art, al.album_artist, al.year,
                     COUNT(DISTINCT ph.id) as play_count,
                     COALESCE(SUM(t.duration_sec * ph.completion_percent / 100.0), 0) as total_time,
                     COUNT(DISTINCT ph.track_id) as tracks_played
@@ -1444,24 +1758,34 @@ pub fn get_top_albums_with_stats(
         ))
         .map_err(Error::Db)?;
 
-    let rows = stmt
-        .query_map(params![limit], |row| {
-            Ok(TopAlbum {
-                album: Album {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    cover_art: row.get(2)?,
+    let raw: Vec<(TopAlbum, Option<String>)> = stmt
+        .query_map(params![limit as i64], |row| {
+            Ok((
+                TopAlbum {
+                    album: Album {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        cover_art: row.get(2)?,
+                        album_artist: None,
+                        year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+                    },
+                    play_count: row.get(5)?,
+                    total_listening_time_sec: row.get::<_, f64>(6)? as i64,
+                    tracks_played: row.get(7)?,
                 },
-                play_count: row.get(3)?,
-                total_listening_time_sec: row.get::<_, f64>(4)? as i64,
-                tracks_played: row.get(5)?,
-            })
+                row.get::<_, Option<String>>(3)?,
+            ))
         })
         .map_err(Error::Db)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::Db)?;
 
-    Ok(rows)
+    let mut top_albums: Vec<TopAlbum> = Vec::with_capacity(raw.len());
+    for (mut ta, aa) in raw {
+        ta.album.album_artist = resolve_album_artist(conn, aa)?;
+        top_albums.push(ta);
+    }
+    Ok(top_albums)
 }
 
 pub fn get_listening_time_trend(
@@ -1946,7 +2270,7 @@ pub fn get_playback_history_timeline(
 
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT ph.played_at, t.id, t.title, al.id, al.name, al.cover_art, NULL, NULL,
+            "SELECT ph.played_at, t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year,
                     t.duration_sec, t.is_favorite, t.cover_art, t.added_at,
                     ph.completion_percent, ph.source_type
              FROM playback_history ph
@@ -1960,12 +2284,19 @@ pub fn get_playback_history_timeline(
         ))
         .map_err(Error::Db)?;
 
-    let mut events = Vec::new();
+    struct RawEvent {
+        event: PlaybackEvent,
+        album_artist_name: Option<String>,
+    }
+
+    let mut raw_events = Vec::new();
     let rows = stmt
-        .query_map(params![limit], |row| {
+        .query_map(params![limit as i64], |row| {
             let album_id: Option<i64> = row.get(3)?;
             let album_title: Option<String> = row.get(4)?;
             let album_art: Option<String> = row.get(5)?;
+            let album_artist_name: Option<String> = row.get(7)?;
+            let album_year: Option<i32> = row.get(8)?;
 
             let track = Track {
                 id: row.get(1)?,
@@ -1975,36 +2306,81 @@ pub fn get_playback_history_timeline(
                     id: album_id.unwrap_or(0),
                     name: album_title.unwrap_or_else(|| "Unknown Album".to_string()),
                     cover_art: album_art,
+                    album_artist: None,
+                    year: album_year.map(|y| y as u32),
                 },
-                duration_seconds: row.get(8)?,
-                is_favorite: row.get(9)?,
-                cover_art: row.get(10)?,
-                added_at: row.get(11)?,
+                duration_seconds: row.get(9)?,
+                is_favorite: row.get(10)?,
+                cover_art: row.get(11)?,
+                added_at: row.get(12)?,
+                track_number: row.get::<_, Option<i32>>(6)?.map(|n| n as u32),
             };
 
-            Ok(PlaybackEvent {
-                played_at: row.get(0)?,
-                track,
-                completion_percent: row.get(12)?,
-                source_type: row.get::<_, String>(13)?.to_lowercase(),
+            Ok(RawEvent {
+                event: PlaybackEvent {
+                    played_at: row.get(0)?,
+                    track,
+                    completion_percent: row.get(13)?,
+                    source_type: row.get::<_, String>(14)?.to_lowercase(),
+                },
+                album_artist_name,
             })
         })
         .map_err(Error::Db)?;
 
     for row in rows {
-        events.push(row.map_err(Error::Db)?);
+        raw_events.push(row.map_err(Error::Db)?);
     }
 
-    // Attach artists
-    if !events.is_empty() {
-        let track_ids: Vec<i64> = events.iter().map(|e| e.track.id).collect();
+    if !raw_events.is_empty() {
+        // Resolve album artists
+        let names: Vec<&str> = raw_events
+            .iter()
+            .filter_map(|r| r.album_artist_name.as_deref())
+            .collect();
+        if !names.is_empty() {
+            let mut album_artist_map = std::collections::HashMap::<String, Vec<Artist>>::new();
+            let placeholders = names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            if let Ok(mut stmt) = conn.prepare(&format!(
+                "SELECT ar.name, ar.id, ar.name, ar.profile_image, ar.banner_image
+                 FROM artist ar WHERE ar.name IN ({})",
+                placeholders
+            )) {
+                if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(&names), |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        Artist {
+                            id: row.get(1)?,
+                            name: row.get(2)?,
+                            profile_image: row.get(3)?,
+                            banner_image: row.get(4)?,
+                        },
+                    ))
+                }) {
+                    for row in rows {
+                        if let Ok((name, artist)) = row {
+                            album_artist_map.entry(name).or_default().push(artist);
+                        }
+                    }
+                }
+            }
+            for re in &mut raw_events {
+                if let Some(ref name) = re.album_artist_name {
+                    if let Some(artists) = album_artist_map.get(name) {
+                        re.event.track.album.album_artist = Some(artists.clone());
+                    }
+                }
+            }
+        }
+
+        let track_ids: Vec<i64> = raw_events.iter().map(|e| e.event.track.id).collect();
         let artists_map = get_artists_for_tracks(conn, &track_ids)?;
-        for event in &mut events {
-            if let Some(artists) = artists_map.get(&event.track.id) {
-                event.track.artists = artists.clone();
+        for re in &mut raw_events {
+            if let Some(artists) = artists_map.get(&re.event.track.id) {
+                re.event.track.artists = artists.clone();
             }
         }
     }
 
-    Ok(events)
+    Ok(raw_events.into_iter().map(|r| r.event).collect())
 }

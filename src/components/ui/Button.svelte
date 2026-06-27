@@ -5,15 +5,22 @@
         text: string;
         type?: "primary" | "secondary";
         children?: Snippet;
+        size?: "small" | "medium" | "large";
         [key: string]: any;
     }
-    let { text, type = "primary", children, ...props }: ButtonProps = $props();
+    let { text, type = "primary", children, size = "medium", ...props }: ButtonProps = $props();
 
     const buttonStyles = {
         primary:
             "bg-accent text-black shadow-[0_0_40px_rgba(var(--color-secondary),0.4)] hover:ring-2 focus:brightness-90",
         secondary:
             "bg-white/10 hover:bg-white/20 backdrop-blur-md text-light border border-white/10",
+    };
+
+    const buttonSizes = {
+        small: "px-4 py-2 text-sm",
+        medium: "px-6 py-3 text-base",
+        large: "px-8 py-4 text-lg",
     };
 
     const scale = new Spring(1);
@@ -30,8 +37,7 @@
 </script>
 
 <button
-    class={"font-bold p-4 md:px-8 md:py-4 rounded-full flex items-center gap-3 transition-colors cursor-pointer " +
-        buttonStyles[type]}
+    class="font-bold rounded-full flex items-center gap-3 transition-colors cursor-pointer {buttonSizes[size]} {buttonStyles[type]}"
     onmousedown={handleMouseDown}
     onmouseup={handleMouseUp}
     style:scale={scale.current}

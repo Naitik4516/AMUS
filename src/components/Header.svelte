@@ -5,14 +5,13 @@
         Square,
         Search,
         Music,
-        User,
-        Disc,
+        Maximize2,
+        Minimize2,
     } from "@lucide/svelte";
     import { getCurrentWindow } from "@tauri-apps/api/window";
     import { invoke } from "@tauri-apps/api/core";
-    import { player } from "$lib/player.svelte";
     import type { Track } from "$lib/types";
-    import { goto } from "$app/navigation";
+    import TrackListSmall from "./ui/TrackListSmall.svelte";
 
     let isMaximized = $state(false);
     let searchQuery = $state("");
@@ -77,17 +76,11 @@
         const appWindow = getCurrentWindow();
         appWindow.close();
     }
-
-    function playTrack(track: Track) {
-        player.play(track);
-        showResults = false;
-        searchQuery = "";
-    }
 </script>
 
 <header
     data-tauri-drag-region
-    class="sticky top-1 flex items-center px-4 py-1 justify-between select-none text-white bg-transparent z-20"
+    class="sticky top-0 flex items-center px-4 h-0 mt-10 justify-between select-none text-white z-20"
 >
     <div class="w-16 flex justify-center shrink-0 mt-1 pointer-events-none">
         <img
@@ -99,7 +92,7 @@
 
     <div class="relative">
         <div
-            class="flex items-center gap-2 bg-gray-900 backdrop-blur-sm rounded-full px-4 h-full border-2 border-transparent transition-colors duration-300 hover:border-zinc-700 focus-within:border-zinc-700 focus-within:bg-gray-800"
+            class="flex items-center gap-2 bg-card/40 backdrop-blur-md rounded-full px-4 h-full border-2 transition-colors duration-300 hover:bg-card/75 focus-within:bg-card"
         >
             <Search size={16} class="text-gray-400" />
             <input
@@ -125,41 +118,27 @@
 
         {#if showResults && results.length > 0}
             <div
-                class="fixed inset-0"
-                onclick={() => (showResults = false)}
-                role="region"
-            ></div>
-            <div
-                class="absolute top-full left-0 right-0 mt-2 bg-gray-900/70 backdrop-blur-xl border-2 border-zinc-800 rounded-2xl shadow-2xl overflow-hidden py-2 z-50"
+                class="absolute top-full left-0 right-0 mt-2 bg-card/40 backdrop-blur-xl border-2 border-border/60 rounded-4xl shadow-2xl overflow-hidden py-1 z-50"
+                onblur={() => (showResults = false)}
+
             >
                 {#each results as track}
-                    <button
-                        class="w-full flex items-center gap-4 px-4 py-3 hover:bg-neutral-800 transition-colors group text-left"
-                        onclick={() => playTrack(track)}
-                    >
-                        <div
-                            class="w-10 h-10 rounded bg-neutral-800 flex items-center justify-center overflow-hidden"
-                        >
-                            <Music size={20} class="text-neutral-700" />
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <p
-                                class="text-sm font-bold truncate text-white group-hover:text-secondary"
-                            >
-                                {track.title}
-                            </p>
-                            <p class="text-xs text-gray-400 truncate">
-                                {track.artists.map((a) => a.name).join(", ") ||
-                                    "Unknown Artist"}
-                            </p>
-                        </div>
-                    </button>
+                    <TrackListSmall
+                        {track}
+                        onclick={() => {
+                            searchQuery = "";
+                            results = [];
+                            showResults = false;
+                        }}
+                    />
                 {/each}
             </div>
         {/if}
     </div>
 
-    <div class="controls flex align-top">
+    <div
+        class="controls flex align-top bg-card/30 backdrop-blur-lg shadow-md rounded-full border p-1"
+    >
         <button id="titlebar-minimize" title="Minimize" onclick={minimize}>
             <Minus size={14} />
         </button>
@@ -170,28 +149,9 @@
             onclick={toggleMaximize}
         >
             {#if isMaximized}
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    class="icon icon-tabler icons-tabler-outline icon-tabler-squares"
-                >
-                    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
-                    <path
-                        d="M8 10a2 2 0 0 1 2 -2h9a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-9a2 2 0 0 1 -2 -2l0 -9"
-                    />
-                    <path
-                        d="M16 8v-3a2 2 0 0 0 -2 -2h-9a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h3"
-                    />
-                </svg>
+                <Minimize2 size={14} />
             {:else}
-                <Square size={13} />
+                <Maximize2 size={14} />
             {/if}
         </button>
 

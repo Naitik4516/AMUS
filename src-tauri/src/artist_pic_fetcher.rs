@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::sync::LazyLock;
 use tauri::{AppHandle, Emitter};
 use tokio::fs;
@@ -272,15 +274,17 @@ pub async fn fetch_artist_images(
     app_handle: &AppHandle,
 ) -> Result<()> {
     let total = artists.len();
-    let mut set = tokio::task::JoinSet::new();
+    let completed = Arc::new(AtomicUsize::new(0));
 
-    for (i, (aid, name)) in artists.iter().enumerate() {
+    for (aid, name) in artists.iter() {
         if name == "Unknown Artist" {
+            completed.fetch_add(1, Ordering::Relaxed);
             continue;
         }
 
         if let Ok(conn) = pool.get() {
             if db::artist_has_photo(&conn, *aid).unwrap_or(false) {
+                completed.fetch_add(1, Ordering::Relaxed);
                 continue;
             }
         }
@@ -288,37 +292,41 @@ pub async fn fetch_artist_images(
         let app_dir = app_dir.to_path_buf();
         let artist_name = name.clone();
         let artist_id = *aid;
-        let app_handle = app_handle.clone();
         let pool_clone = pool.clone();
-        let idx = i;
+        let app_handle_clone = app_handle.clone();
+        let completed_clone = completed.clone();
+        let total_clone = total;
 
-        set.spawn(async move {
-            let _ = app_handle.emit(
+        tokio::spawn(async move {
+            let result = download_and_save(&artist_name, &app_dir).await;
+
+            if let Ok(filename) = result {
+                if let Ok(conn) = pool_clone.get() {
+                    let _ = db::update_artist_profile_image(&conn, artist_id, &filename);
+                }
+            } else if let Err(e) = result {
+                eprintln!("[fetch] failed '{artist_name}': {e}");
+            }
+
+            let done = completed_clone.fetch_add(1, Ordering::Relaxed) + 1;
+            let _ = app_handle_clone.emit(
                 "fetch-progress",
                 ScanProgress {
-                    current: idx + 1,
-                    total,
+                    current: done,
+                    total: total_clone,
                     message: format!("Fetching artist: {artist_name}"),
                 },
             );
-
-            let result = download_and_save(&artist_name, &app_dir).await;
-
-            match result {
-                Ok(filename) => {
-                    if let Ok(conn) = pool_clone.get() {
-                        let _ = db::update_artist_profile_image(&conn, artist_id, &filename);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("[fetch] failed '{artist_name}': {e}");
-                }
-            }
         });
     }
 
-    while let Some(res) = set.join_next().await {
-        let _ = res;
+    // Wait for all tasks with a periodic progress emit to keep UI responsive
+    loop {
+        let done = completed.load(Ordering::Relaxed);
+        if done >= total {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
     let _ = app_handle.emit(

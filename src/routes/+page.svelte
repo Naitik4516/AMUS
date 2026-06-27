@@ -8,10 +8,6 @@
 
     let { data }: PageProps = $props();
 
-    const rootStyles = getComputedStyle(document.documentElement);
-    const primaryColor = rootStyles.getPropertyValue('--primary-color');
-    console.log(primaryColor); // "#336699"
-
 </script>
 
 <div class="container">

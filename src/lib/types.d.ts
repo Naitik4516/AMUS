@@ -2,13 +2,15 @@ export interface Artist {
   id: number;
   name: string;
   profile_image?: string;
-  cover_image?: string;
+  banner_image?: string;
 }
 
 export interface Album {
   id: number;
   name: string;
   cover_art?: string;
+  album_artist?: Artist[];
+  year?: number;
 }
 
 export interface Track {
@@ -20,6 +22,7 @@ export interface Track {
   is_favorite: boolean;
   cover_art?: string;
   added_at: string;
+  track_number?: number;
 }
 
 export interface TrackDetails extends Track {
@@ -29,6 +32,7 @@ export interface TrackDetails extends Track {
   last_played_at?: string;
   skipped_count: number;
   last_skipped_at?: string;
+  year: number;
 }
 
 export type SortBy =
@@ -39,6 +43,7 @@ export type SortBy =
   | "recently_added";
 
 export interface Playlist {
+  coverArts: string[];
   id: number;
   name: string;
 }
