@@ -47,7 +47,7 @@ tauri-plugin-store = "2"
 notify = "8.0.0"
 image = { version = "0.25.10" }
 r2d2 = "0.8"
-rusqlite = { version = "0.39", features = ["chrono"] }
+rusqlite = { version = "0.39", features = ["chrono", "bundled"] }
 r2d2_sqlite = "0.34.0"
 rusqlite_migration = "2.5"
 tauri-plugin-process = "2"
