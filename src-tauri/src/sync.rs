@@ -19,7 +19,7 @@ impl SyncManager {
 
     pub fn init(&self, app: &AppHandle) {
         let app_handle = app.clone();
-        
+
         // 1. Startup Sync
         tauri::async_runtime::spawn(async move {
             if let Ok(sync_on_startup) = get_setting(&app_handle, "syncOnStartup", true) {
@@ -39,7 +39,7 @@ impl SyncManager {
                     }
                 }
             }
-            
+
             // 2. Real-time Watcher
             if let Ok(realtime_sync) = get_setting(&app_handle, "realtimeSync", true) {
                 if realtime_sync {
@@ -52,7 +52,7 @@ impl SyncManager {
 
     pub fn refresh_watcher(&self, app: &AppHandle) -> notify::Result<()> {
         let mut watcher_lock = self.watcher.lock();
-        
+
         // Stop existing watcher if any
         if let Some(old_watcher) = watcher_lock.take() {
             // Watchers stop when dropped, but we can also explicitly unwatch if we want
@@ -99,13 +99,19 @@ impl SyncManager {
             while let Some(event) = rx.recv().await {
                 match event.kind {
                     EventKind::Create(_) | EventKind::Modify(_) => {
-                        let paths_to_scan: Vec<PathBuf> = event.paths.into_iter()
+                        let paths_to_scan: Vec<PathBuf> = event
+                            .paths
+                            .into_iter()
                             .filter(|p| {
-                                let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                                let ext = p
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("")
+                                    .to_lowercase();
                                 p.is_file() && audio_extensions.contains(&ext.as_ref())
                             })
                             .collect();
-                        
+
                         if !paths_to_scan.is_empty() {
                             let pool = app_handle.state::<DbPool>();
                             if let Ok(mut conn) = pool.get() {
@@ -114,7 +120,9 @@ impl SyncManager {
                         }
                     }
                     EventKind::Remove(_) => {
-                        let paths_to_remove: Vec<String> = event.paths.into_iter()
+                        let paths_to_remove: Vec<String> = event
+                            .paths
+                            .into_iter()
                             .map(|p| p.to_string_lossy().to_string())
                             .collect();
 
@@ -127,7 +135,10 @@ impl SyncManager {
                                         let mut stmt = conn.prepare(
                                             "SELECT path FROM track WHERE path = ? OR path LIKE ? || '/%' OR path LIKE ? || '\\%'"
                                         ).map_err(crate::error::Error::Db)?;
-                                        let rows = stmt.query_map(rusqlite::params![path, path, path], |row| row.get::<_, String>(0))
+                                        let rows = stmt
+                                            .query_map(rusqlite::params![path, path, path], |row| {
+                                                row.get::<_, String>(0)
+                                            })
                                             .map_err(crate::error::Error::Db)?;
                                         for r in rows {
                                             if let Ok(p) = r {
@@ -137,7 +148,8 @@ impl SyncManager {
                                     }
 
                                     if !tracks_to_delete.is_empty() {
-                                        let tx = conn.transaction().map_err(crate::error::Error::Db)?;
+                                        let tx =
+                                            conn.transaction().map_err(crate::error::Error::Db)?;
                                         db::delete_tracks_by_paths(&tx, &tracks_to_delete)?;
                                         tx.commit().map_err(crate::error::Error::Db)?;
                                         let _ = app_handle.emit("library-updated", ());

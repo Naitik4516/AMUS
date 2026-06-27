@@ -118,7 +118,7 @@
 
         {#if showResults && results.length > 0}
             <div
-                class="absolute top-full left-0 right-0 mt-2 bg-card/40 backdrop-blur-xl border-2 border-border/60 rounded-4xl shadow-2xl overflow-hidden py-1 z-50"
+                class="absolute top-full left-0 right-0 mt-2 bg-card/40 backdrop-blur-xl border-2 border-border rounded-4xl shadow-2xl overflow-hidden py-1 z-50"
                 onblur={() => (showResults = false)}
 
             >

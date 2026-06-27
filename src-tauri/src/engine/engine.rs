@@ -1,14 +1,16 @@
-use std::{collections::VecDeque, fs::File, io::BufReader, time::Duration};
-use rodio::{decoder::Decoder, mixer::Mixer, Player};
 use crate::db::{self, DbPool};
 use crate::models::{RepeatMode, SourceType, TrackDetails};
-use tauri::{AppHandle, Emitter};
-use std::sync::Arc;
 use parking_lot::Mutex;
+use rodio::{Player, decoder::Decoder, mixer::Mixer};
+use std::sync::Arc;
+use std::{collections::VecDeque, fs::File, io::BufReader, time::Duration};
+use tauri::{AppHandle, Emitter};
 
 fn is_track_near_end(pos_ms: u64, duration_sec: u32) -> bool {
     let near_end_threshold = std::cmp::min(5, (duration_sec as f64 * 0.05).ceil() as u32);
-    pos_ms > 0 && duration_sec > 0 && (pos_ms / 1000) >= duration_sec.saturating_sub(near_end_threshold) as u64
+    pos_ms > 0
+        && duration_sec > 0
+        && (pos_ms / 1000) >= duration_sec.saturating_sub(near_end_threshold) as u64
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -354,7 +356,10 @@ pub fn spawn_playback_monitor(
                 });
                 let should = finished && near_end;
                 let info = should.then(|| {
-                    (eng.current_track.clone().unwrap(), eng.session_source_type())
+                    (
+                        eng.current_track.clone().unwrap(),
+                        eng.session_source_type(),
+                    )
                 });
                 (should, info)
             };

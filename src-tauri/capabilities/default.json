@@ -21,6 +21,7 @@
     "fs:default",
     "fs:scope-appdata",
     "fs:allow-appdata-read-recursive",
-    "store:default"
+    "store:default",
+    "updater:default"
   ]
 }

@@ -3,45 +3,81 @@
     import TracksSection from "$components/ui/Home/TracksSection.svelte";
     import ArtistsSection from "$components/ui/Home/ArtistsSection.svelte";
     import AlbumsSection from "$components/ui/Home/AlbumsSection.svelte";
+    import type { InvokeArgs } from "@tauri-apps/api/core";
 
     import type { PageProps } from "./$types";
 
     let { data }: PageProps = $props();
 
+    type LoadFunction =
+        | "get_recently_played"
+        | "get_most_played_tracks"
+        | "get_favorite_tracks"
+        | "get_forgotten_tracks"
+        | "get_unplayed_tracks"
+        | "get_recently_added";
+
+    const trackSections: { title: string; loadFunction: LoadFunction; args?: InvokeArgs }[] = [
+        { title: "Continue Listening", loadFunction: "get_recently_played" },
+        { title: "Recently Added", loadFunction: "get_recently_added" },
+        { title: "On repeat", loadFunction: "get_most_played_tracks", args: { timeframe: "this_month" } },
+        { title: "Favorites", loadFunction: "get_favorite_tracks" },
+    ];
 </script>
 
 <div class="container">
-    <Banner hasMusic={data.hasMusic} />
+    <div
+        class="reveal-section"
+        data-scroll
+        data-scroll-class="section-reveal"
+        data-scroll-offset="0, 5%"
+    >
+        <Banner hasMusic={data.hasMusic} />
+    </div>
 
     <div class="flex flex-col gap-8 py-10">
-        <TracksSection
-            title="Continue Listening"
-            loadFunction="get_recently_played"
-        />
+        {#each trackSections as section}
+            <div
+                class="reveal-section"
+                data-scroll
+                data-scroll-class="section-reveal"
+                data-scroll-offset="0, 10%"
+            >
+                <TracksSection title={section.title} loadFunction={section.loadFunction} args={section.args} />
+            </div>
+        {/each}
 
-        <TracksSection
-            title="Recently Added"
-            loadFunction="get_recently_added"
-        />
+        <div
+            class="reveal-section"
+            data-scroll
+            data-scroll-class="section-reveal"
+            data-scroll-offset="0, 10%"
+        >
+            <ArtistsSection
+                title="Your Top Artists"
+                loadFunction="get_top_artists"
+            />
+        </div>
 
-        <TracksSection
-            title="On repeat"
-            loadFunction="get_most_played_tracks"
-            args={{ timeframe: "this_month" }}
-        />
+        <div
+            class="reveal-section"
+            data-scroll
+            data-scroll-class="section-reveal"
+            data-scroll-offset="0, 10%"
+        >
+            <AlbumsSection title="Albums You Love" loadFunction="get_top_albums" />
+        </div>
 
-        <TracksSection title="Favorites" loadFunction="get_favorite_tracks" />
-
-        <ArtistsSection
-            title="Your Top Artists"
-            loadFunction="get_top_artists"
-        />
-
-        <AlbumsSection title="Albums You Love" loadFunction="get_top_albums" />
-
-        <TracksSection
-            title="Remember These?"
-            loadFunction="get_forgotten_tracks"
-        />
+        <div
+            class="reveal-section"
+            data-scroll
+            data-scroll-class="section-reveal"
+            data-scroll-offset="0, 10%"
+        >
+            <TracksSection
+                title="Remember These?"
+                loadFunction="get_forgotten_tracks"
+            />
+        </div>
     </div>
 </div>

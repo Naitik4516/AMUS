@@ -1,6 +1,7 @@
 use crate::artist_pic_fetcher;
 use crate::db;
 use crate::error::{Error, Result};
+use crate::sync;
 use image::ImageFormat;
 use lofty::picture::Picture;
 use lofty::prelude::*;
@@ -436,19 +437,27 @@ pub fn scan_files(
 
     // Background artist pic fetch for unique artists
     if !unique_artists_to_fetch.is_empty() {
-        let app_handle_clone = app_handle.clone();
-        let app_dir_clone = app_dir.clone();
-        let pool_clone = pool.inner().clone();
+        let fetch_pic = sync::get_setting(app_handle, "autoFetchArtistPic", true).unwrap_or(true);
+        let fetch_banner =
+            sync::get_setting(app_handle, "autoFetchArtistBanner", true).unwrap_or(true);
 
-        tokio::spawn(async move {
-            let _ = artist_pic_fetcher::fetch_artist_images(
-                &unique_artists_to_fetch,
-                &app_dir_clone,
-                pool_clone,
-                &app_handle_clone,
-            )
-            .await;
-        });
+        if fetch_pic || fetch_banner {
+            let app_handle_clone = app_handle.clone();
+            let app_dir_clone = app_dir.clone();
+            let pool_clone = pool.inner().clone();
+
+            tokio::spawn(async move {
+                let _ = artist_pic_fetcher::fetch_artist_images(
+                    &unique_artists_to_fetch,
+                    &app_dir_clone,
+                    pool_clone,
+                    &app_handle_clone,
+                    fetch_pic,
+                    fetch_banner,
+                )
+                .await;
+            });
+        }
     }
 
     Ok(())

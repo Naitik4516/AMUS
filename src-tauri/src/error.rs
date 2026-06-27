@@ -27,6 +27,9 @@ pub enum Error {
     #[error("Scan error: {0}")]
     Scan(String),
 
+    #[error("Migration error: {0}")]
+    Migration(String),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }

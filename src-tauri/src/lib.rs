@@ -13,9 +13,9 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rodio::DeviceSinkBuilder;
 use sync::SyncManager;
 use tauri::{
+    Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
 };
 
 fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
@@ -26,7 +26,18 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let show = MenuItem::with_id(app, "show", "Show/Hide", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-    Menu::with_items(app, &[&play_pause, &previous, &next, &separator, &show, &separator, &quit])
+    Menu::with_items(
+        app,
+        &[
+            &play_pause,
+            &previous,
+            &next,
+            &separator,
+            &show,
+            &separator,
+            &quit,
+        ],
+    )
 }
 
 fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
@@ -123,6 +134,7 @@ fn create_popup(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -131,6 +143,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_handle = app.handle();
+
+            #[cfg(desktop)]
+            app_handle.plugin(tauri_plugin_updater::Builder::new().build())?;
+
             let app_dir = app_handle
                 .path()
                 .app_data_dir()
@@ -144,8 +160,15 @@ pub fn run() {
             let monitor_pool = pool.clone();
 
             {
-                let conn = pool.get().expect("failed to get db connection");
-                db::init_db(&conn).expect("failed to initialize database");
+                let mut conn = pool.get().expect("failed to get db connection");
+                db::init_db(&mut conn).expect("failed to initialize database");
+
+                // Compatibility: add columns that may be missing in databases
+                // created before the migration system existed.
+                let _ =
+                    conn.execute_batch("ALTER TABLE track ADD COLUMN file_size INTEGER DEFAULT 0;");
+                let _ = conn.execute_batch("ALTER TABLE album ADD COLUMN album_artist TEXT;");
+                let _ = conn.execute_batch("ALTER TABLE playlist ADD COLUMN cover_art TEXT;");
             }
 
             let stream = DeviceSinkBuilder::open_default_sink().expect("open default audio stream");
@@ -184,14 +207,18 @@ pub fn run() {
                 .on_menu_event(handle_tray_menu)
                 .build(app_handle)?;
 
-            // --- Main Window Close → Hide ---
+            // --- Main Window Close → Hide (configurable) ---
             let handle = app_handle.clone();
             if let Some(main_win) = app_handle.get_webview_window("main") {
                 main_win.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        if let Some(w) = handle.get_webview_window("main") {
-                            let _ = w.hide();
+                        let keep_in_bg =
+                            sync::get_setting(&handle, "keepRunningInBg", true).unwrap_or(true);
+                        if keep_in_bg {
+                            api.prevent_close();
+                            if let Some(w) = handle.get_webview_window("main") {
+                                let _ = w.hide();
+                            }
                         }
                     }
                 });
@@ -268,6 +295,7 @@ pub fn run() {
             commands::get_streak_data,
             commands::get_library_growth,
             commands::get_format_distribution,
+            commands::get_data_age,
             commands::get_heatmap_hourly,
             commands::get_heatmap_weekday,
             commands::get_favorite_trends,

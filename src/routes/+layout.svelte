@@ -1,6 +1,5 @@
 <script lang="ts">
     import "../app.css";
-    import { page } from "$app/stores";
     import Header from "../components/Header.svelte";
     import Player from "../components/Player.svelte";
     import Sidebar from "../components/Sidebar.svelte";
@@ -9,13 +8,92 @@
     import type { LayoutProps } from "./$types";
     import { player } from "$lib/player.svelte";
     import { afterNavigate } from "$app/navigation";
+    import { onMount } from "svelte";
+    import { settings, flags, initSettings } from "$lib/settings.svelte";
+    import { updater } from "$lib/update.svelte";
+    import { toast } from "svelte-sonner";
+    import LocomotiveScroll from "locomotive-scroll";
+    import "locomotive-scroll/locomotive-scroll.css";
 
     let { children }: LayoutProps = $props();
 
     let scrollContainer: HTMLDivElement | undefined = $state();
+    let scrollContent: HTMLDivElement | undefined = $state();
+    let scrollInstance: LocomotiveScroll | undefined;
+
+    $effect(() => {
+        if (!flags.ready) return;
+        document.documentElement.classList.toggle(
+            "smooth-scroll",
+            settings.useLocomotiveScroll,
+        );
+    });
+
+    function initScroll() {
+        scrollInstance?.destroy();
+        scrollInstance = new LocomotiveScroll({
+            lenisOptions: {
+                wrapper: scrollContainer,
+                content: scrollContent,
+                duration: 1.2,
+                smoothWheel: true,
+                orientation: "vertical",
+                gestureOrientation: "vertical",
+            },
+            autoStart: true,
+        });
+    }
+
+    function destroyScroll() {
+        scrollInstance?.destroy();
+        scrollInstance = undefined;
+    }
+
+    $effect(() => {
+        if (!flags.ready) return;
+        if (settings.useLocomotiveScroll && scrollContainer && scrollContent) {
+            initScroll();
+        } else {
+            destroyScroll();
+        }
+    });
+
+    onMount(() => {
+        initSettings();
+
+        if (settings.autoCheckUpdates) {
+            updater
+                .checkForUpdates()
+                .then((found) => {
+                    if (found && updater.updateAvailable) {
+                        toast(
+                            `Update v${updater.updateAvailable.version} available`,
+                            {
+                                description:
+                                    updater.updateAvailable.body ??
+                                    "A new version is ready to install.",
+                                action: {
+                                    label: "Install",
+                                    onClick: async () => {
+                                        await updater.downloadAndInstall();
+                                    },
+                                },
+                                duration: 10000,
+                            },
+                        );
+                    }
+                })
+                .catch((error) => {
+                    console.error("Error checking for updates:", error);
+                });
+        }
+    });
 
     afterNavigate(() => {
-        scrollContainer?.scrollTo(0, 0);
+        if (!scrollInstance || !scrollContainer) return;
+        scrollInstance.scrollTo(0, { immediate: true });
+        scrollInstance.addScrollElements(scrollContainer);
+        scrollInstance.resize();
     });
 </script>
 
@@ -38,14 +116,19 @@
 
 <div
     bind:this={scrollContainer}
-    class="flex flex-col w-screen h-screen overflow-y-auto pt-8 pl-30 {player.currentTrack
-        ? 'pb-32'
-        : ''}"
+    class="w-screen h-screen {flags.ready && settings.useLocomotiveScroll
+        ? 'overflow-hidden'
+        : 'overflow-y-auto'}"
 >
-    <div>
-        {@render children()}
+    <div
+        bind:this={scrollContent}
+        class="pt-8 pl-30 {player.currentTrack ? 'pb-32' : ''}"
+    >
+        <div>
+            {@render children()}
+        </div>
     </div>
-    {#if player.currentTrack}
-        <Player />
-    {/if}
 </div>
+{#if player.currentTrack}
+    <Player />
+{/if}

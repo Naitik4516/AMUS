@@ -2,9 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getImageUrl } from "./utils";
 import type { Album, Track, Artist } from "./types";
 
-export async function getPlaylistCoverArt(
-  playlistId: number,
-): Promise<string[] | null> {
+export async function getPlaylistCoverArt(playlistId: number) {
   try {
     const coverArt = await invoke<string[]>("get_playlist_cover_arts", {
       playlistId,

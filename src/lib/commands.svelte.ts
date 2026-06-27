@@ -43,10 +43,15 @@ export type Timeframe =
   | "this_month"
   | "last_3_months"
   | "last_6_months"
-  | "this_year"
   | "last_year"
   | "last_5_years"
   | "all_time";
+
+export interface DataAge {
+  min_track_added_at: string | null;
+  min_played_at: string | null;
+  data_age_days: number;
+}
 
 export interface StatsOverview {
   total_tracks: number;
@@ -171,6 +176,10 @@ export async function getLibraryGrowth(timeframe: Timeframe): Promise<GrowthPoin
 
 export async function getFormatDistribution(): Promise<FormatStat[]> {
   return invoke("get_format_distribution");
+}
+
+export async function getDataAge(): Promise<DataAge> {
+  return invoke("get_data_age");
 }
 
 export async function getHeatmapHourly(timeframe: Timeframe): Promise<HeatmapCell[]> {

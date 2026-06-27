@@ -1,7 +1,8 @@
-use chrono::{DateTime, Utc};
 use crate::error::{Error, Result};
 use crate::models::*;
+use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Params, params};
+use rusqlite_migration::{M, Migrations};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -45,142 +46,14 @@ pub enum SortBy {
     RecentlyAdded,
 }
 
-pub fn init_db(conn: &Connection) -> Result<()> {
-    conn.execute_batch(
-        "BEGIN;
-        CREATE TABLE IF NOT EXISTS track (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            path TEXT NOT NULL UNIQUE,
-            title TEXT NOT NULL,
-            duration_sec INTEGER NOT NULL,
-            cover_art TEXT,
-            year INTEGER,
-            is_favorite BOOLEAN DEFAULT FALSE,
-            added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            mtime INTEGER NOT NULL,
-            file_size INTEGER DEFAULT 0
-        );
+const MIGRATIONS_SLICE: &[M<'_>] = &[M::up(include_str!("../migrations/001_initial_schema.sql"))];
 
-        CREATE TABLE IF NOT EXISTS artist (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            profile_image TEXT,
-            banner_image TEXT
-        );
+const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);
 
-        CREATE TABLE IF NOT EXISTS album (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            cover_art TEXT,
-            year INTEGER
-        );
-
-        CREATE TABLE IF NOT EXISTS playlist (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-
-        -- Junction Tables
-        CREATE TABLE IF NOT EXISTS track_artist (
-            track_id INTEGER,
-            artist_id INTEGER,
-            PRIMARY KEY (track_id, artist_id),
-            FOREIGN KEY (track_id) REFERENCES track(id) ON DELETE CASCADE,
-            FOREIGN KEY (artist_id) REFERENCES artist(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS album_track (
-            album_id INTEGER,
-            track_id INTEGER,
-            track_number INTEGER NOT NULL, -- <-- Added for Album Sequence
-            PRIMARY KEY (album_id, track_id),
-            FOREIGN KEY (album_id) REFERENCES album(id) ON DELETE CASCADE,
-            FOREIGN KEY (track_id) REFERENCES track(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS playlist_track (
-            playlist_id INTEGER,
-            track_id INTEGER,
-            position INTEGER NOT NULL, -- <-- Added for Custom Drag & Drop Order
-            PRIMARY KEY (playlist_id, track_id),
-            FOREIGN KEY (playlist_id) REFERENCES playlist(id) ON DELETE CASCADE,
-            FOREIGN KEY (track_id) REFERENCES track(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS source_dirs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            path TEXT NOT NULL UNIQUE
-        );
-
-        CREATE TABLE IF NOT EXISTS playback_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            track_id INTEGER NOT NULL,
-            played_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            source_type TEXT CHECK(source_type IN ('ALBUM', 'PLAYLIST', 'ARTIST', 'FAVORITES', 'SEARCH', 'RECOMMENDATION', 'OTHER')),
-            source_id INTEGER,
-            completion_percent REAL CHECK(completion_percent >= 0 AND completion_percent <= 100),
-            FOREIGN KEY(track_id) REFERENCES track(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS user_queue (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            track_id INTEGER NOT NULL,
-            position INTEGER NOT NULL,
-            added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(track_id) REFERENCES track(id) ON DELETE CASCADE
-        );
-
-        CREATE VIEW IF NOT EXISTS track_stats AS
-        SELECT
-            t.id AS track_id,
-            COUNT(ph.id) AS play_count,
-            MAX(ph.played_at) AS last_played_at,
-            SUM(CASE WHEN ph.completion_percent < 50 THEN 1 ELSE 0 END) AS skip_count,
-            MAX(CASE WHEN ph.completion_percent < 50 THEN ph.played_at ELSE NULL END) AS last_skipped_at
-        FROM track t
-        LEFT JOIN playback_history ph ON t.id = ph.track_id
-        GROUP BY t.id;
-
-        COMMIT;",
-    )
-    .map_err(Error::Db)?;
-
-    conn.execute_batch(
-        "BEGIN;
-        -- Search & Sorting
-        CREATE INDEX IF NOT EXISTS idx_track_title ON track(title);
-        CREATE INDEX IF NOT EXISTS idx_track_added_at ON track(added_at);
-        CREATE INDEX IF NOT EXISTS idx_artist_name ON artist(name);
-        CREATE INDEX IF NOT EXISTS idx_album_name ON album(name);
-
-        -- Junction/Foreign Key Lookups
-        CREATE INDEX IF NOT EXISTS idx_track_artist_artist_id ON track_artist(artist_id);
-        CREATE INDEX IF NOT EXISTS idx_album_track_album_id ON album_track(album_id);
-        CREATE INDEX IF NOT EXISTS idx_playlist_track_playlist_id ON playlist_track(playlist_id);
-
-        -- Metrics & Timeline
-        CREATE INDEX IF NOT EXISTS idx_playback_history_played_at ON playback_history(played_at);
-        CREATE INDEX IF NOT EXISTS idx_playback_history_track_id ON playback_history(track_id);
-        COMMIT;",
-    )
-    .map_err(Error::Db)?;
-
-    // Migration: add file_size column if missing (pre-v2 databases)
-    let _ = conn.execute_batch(
-        "ALTER TABLE track ADD COLUMN file_size INTEGER DEFAULT 0;",
-    );
-
-    // Migration: add album_artist column if missing (pre-v3 databases)
-    let _ = conn.execute_batch(
-        "ALTER TABLE album ADD COLUMN album_artist TEXT;",
-    );
-
-    // Migration: add cover_art column to playlist if missing
-    let _ = conn.execute_batch(
-        "ALTER TABLE playlist ADD COLUMN cover_art TEXT;",
-    );
-
+pub fn init_db(conn: &mut Connection) -> Result<()> {
+    MIGRATIONS
+        .to_latest(conn)
+        .map_err(|e| Error::Migration(e.to_string()))?;
     Ok(())
 }
 
@@ -227,6 +100,16 @@ pub fn remove_source_dir(conn: &mut Connection, path: &str) -> Result<()> {
 
     tx.commit().map_err(Error::Db)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrations_validate() {
+        assert!(MIGRATIONS.validate().is_ok());
+    }
 }
 
 pub fn get_all_track_paths_and_mtimes(conn: &Connection) -> Result<HashMap<String, i64>> {
@@ -958,7 +841,15 @@ pub fn search_tracks(conn: &Connection, query: &str, limit: usize) -> Result<Vec
     prepare_tracks_list(
         conn,
         sql,
-        params![pattern, pattern, pattern, pattern, pattern, pattern, limit as i64],
+        params![
+            pattern,
+            pattern,
+            pattern,
+            pattern,
+            pattern,
+            pattern,
+            limit as i64
+        ],
     )
 }
 
@@ -1186,9 +1077,7 @@ fn resolve_album_artist(
         None => Ok(None),
         Some(name) => {
             let mut stmt = conn
-                .prepare(
-                    "SELECT id, name, profile_image, banner_image FROM artist WHERE name = ?",
-                )
+                .prepare("SELECT id, name, profile_image, banner_image FROM artist WHERE name = ?")
                 .map_err(Error::Db)?;
             let artists: Vec<Artist> = stmt
                 .query_map(params![name], |row| {
@@ -1376,7 +1265,8 @@ fn prepare_sorted_tracks_list<P: Params>(
 
 pub fn save_user_queue(conn: &mut Connection, track_ids: &[i64]) -> Result<()> {
     let tx = conn.transaction().map_err(Error::Db)?;
-    tx.execute("DELETE FROM user_queue", []).map_err(Error::Db)?;
+    tx.execute("DELETE FROM user_queue", [])
+        .map_err(Error::Db)?;
     for (i, id) in track_ids.iter().enumerate() {
         tx.execute(
             "INSERT INTO user_queue (track_id, position) VALUES (?, ?)",
@@ -1456,15 +1346,15 @@ pub fn get_stats_overview(conn: &Connection, timeframe: Timeframe) -> Result<Sta
     };
 
     let total_file_size: i64 = conn
-        .query_row("SELECT COALESCE(SUM(file_size), 0) FROM track", [], |row| row.get(0))
+        .query_row("SELECT COALESCE(SUM(file_size), 0) FROM track", [], |row| {
+            row.get(0)
+        })
         .map_err(Error::Db)?;
 
     let largest_file: f64 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(file_size), 0) FROM track",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
+        .query_row("SELECT COALESCE(MAX(file_size), 0) FROM track", [], |row| {
+            row.get::<_, i64>(0)
+        })
         .map_err(Error::Db)? as f64
         / 1048576.0;
 
@@ -1843,9 +1733,7 @@ pub fn get_streak_data(conn: &Connection, timeframe: Timeframe) -> Result<Streak
 
     // Also fetch all dates for all-time streaks
     let mut all_stmt = conn
-        .prepare(
-            "SELECT DISTINCT date(played_at) FROM playback_history ORDER BY played_at ASC",
-        )
+        .prepare("SELECT DISTINCT date(played_at) FROM playback_history ORDER BY played_at ASC")
         .map_err(Error::Db)?;
 
     let all_dates: Vec<String> = all_stmt
@@ -1924,106 +1812,120 @@ fn parse_date(s: &str) -> Option<chrono::NaiveDate> {
     chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
 
-pub fn get_library_growth(conn: &Connection, timeframe: Timeframe) -> Result<Vec<GrowthPoint>> {
-    let time_filter = timeframe_where_clause("t.added_at", timeframe);
-    // Use monthly grouping for growth
-    let period_expr = "strftime('%Y-%m', t.added_at)";
+pub fn get_library_growth(conn: &Connection, _timeframe: Timeframe) -> Result<Vec<GrowthPoint>> {
+    // Use dynamic grouping based on data span
+    let (_data_span_days, period_fmt): (i64, String) = conn
+        .query_row(
+            "SELECT
+                COALESCE(CAST(JULIANDAY(MAX(added_at)) - JULIANDAY(MIN(added_at)) AS INTEGER), 0),
+                CASE
+                    WHEN JULIANDAY(MAX(added_at)) - JULIANDAY(MIN(added_at)) < 31 THEN '%Y-%m-%d'
+                    WHEN JULIANDAY(MAX(added_at)) - JULIANDAY(MIN(added_at)) < 365 THEN '%Y-%W'
+                    ELSE '%Y-%m'
+                END
+             FROM track",
+            [],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .map_err(Error::Db)?;
 
+    let pe = format!("strftime('{}', t.added_at)", period_fmt);
+
+    // Track growth: count per period
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT {pe} as period,
-                    COUNT(*) as tracks
+            "SELECT {pe} as period, COUNT(*) as tracks
              FROM track t
-             WHERE {}
              GROUP BY period
              ORDER BY period ASC",
-            time_filter,
-            pe = period_expr
+            pe = pe
         ))
         .map_err(Error::Db)?;
 
     let track_growth: HashMap<String, i64> = stmt
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
         .map_err(Error::Db)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::Db)?
         .into_iter()
         .collect();
 
-    // Artist growth: count artists whose earliest track appeared in this period
+    // Artist growth: count artists by period of their first track appearance
+    let pe_artist = format!("strftime('{}', first.first_added)", period_fmt);
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT {pe} as period,
-                    COUNT(DISTINCT ar.id) as artists
-             FROM artist ar
-             JOIN track_artist ta ON ta.artist_id = ar.id
-             JOIN track t ON t.id = ta.track_id
-             WHERE {}
+            "SELECT {pe} as period, COUNT(*) as artists
+             FROM (
+                 SELECT MIN(t.added_at) as first_added
+                 FROM artist ar
+                 JOIN track_artist ta ON ta.artist_id = ar.id
+                 JOIN track t ON t.id = ta.track_id
+                 GROUP BY ar.id
+             ) first
              GROUP BY period
              ORDER BY period ASC",
-            time_filter,
-            pe = period_expr
+            pe = pe_artist
         ))
         .map_err(Error::Db)?;
 
     let artist_growth: HashMap<String, i64> = stmt
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
         .map_err(Error::Db)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::Db)?
         .into_iter()
         .collect();
 
-    // Album growth
+    // Album growth: count albums by period of their first track appearance
+    let pe_album = format!("strftime('{}', first.first_added)", period_fmt);
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT {pe} as period,
-                    COUNT(DISTINCT al.id) as albums
-             FROM album al
-             JOIN album_track alt ON alt.album_id = al.id
-             JOIN track t ON t.id = alt.track_id
-             WHERE {}
+            "SELECT {pe} as period, COUNT(*) as albums
+             FROM (
+                 SELECT MIN(t.added_at) as first_added
+                 FROM album al
+                 JOIN album_track alt ON alt.album_id = al.id
+                 JOIN track t ON t.id = alt.track_id
+                 GROUP BY al.id
+             ) first
              GROUP BY period
              ORDER BY period ASC",
-            time_filter,
-            pe = period_expr
+            pe = pe_album
         ))
         .map_err(Error::Db)?;
 
     let album_growth: HashMap<String, i64> = stmt
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
         .map_err(Error::Db)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::Db)?
         .into_iter()
         .collect();
 
+    // Collect all unique periods sorted
     let mut periods: Vec<String> = track_growth.keys().cloned().collect();
-    periods.extend(artist_growth.keys().cloned());
-    periods.extend(album_growth.keys().cloned());
+    for key in artist_growth.keys() {
+        if !periods.contains(key) {
+            periods.push(key.clone());
+        }
+    }
+    for key in album_growth.keys() {
+        if !periods.contains(key) {
+            periods.push(key.clone());
+        }
+    }
     periods.sort();
-    periods.dedup();
 
     let mut result = Vec::new();
     let mut cum_tracks: i64 = 0;
     let mut cum_artists: i64 = 0;
     let mut cum_albums: i64 = 0;
-
-    // Get counts before the timeframe start
-    let cum_before_sql = format!(
-        "SELECT
-            (SELECT COUNT(*) FROM track WHERE added_at < (SELECT MIN(added_at) FROM track WHERE {})),
-            (SELECT COUNT(DISTINCT ar.id) FROM artist ar JOIN track_artist ta ON ta.artist_id = ar.id JOIN track t ON t.id = ta.track_id WHERE t.added_at < (SELECT MIN(added_at) FROM track WHERE {})),
-            (SELECT COUNT(DISTINCT al.id) FROM album al JOIN album_track alt ON alt.album_id = al.id JOIN track t ON t.id = alt.track_id WHERE t.added_at < (SELECT MIN(added_at) FROM track WHERE {}))",
-        time_filter, time_filter, time_filter
-    );
-
-    let _ = conn.query_row(&cum_before_sql, [], |row| {
-        cum_tracks = row.get::<_, Option<i64>>(0)?.unwrap_or(0);
-        cum_artists = row.get::<_, Option<i64>>(1)?.unwrap_or(0);
-        cum_albums = row.get::<_, Option<i64>>(2)?.unwrap_or(0);
-        Ok::<_, rusqlite::Error>(())
-    });
 
     for period in &periods {
         cum_tracks += track_growth.get(period).copied().unwrap_or(0);
@@ -2044,7 +1946,13 @@ pub fn get_heatmap_hourly(conn: &Connection, timeframe: Timeframe) -> Result<Vec
     let time_filter = timeframe_where_clause("played_at", timeframe);
 
     let day_names = [
-        "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
     ];
 
     let mut stmt = conn
@@ -2088,7 +1996,13 @@ pub fn get_heatmap_weekday(conn: &Connection, timeframe: Timeframe) -> Result<Ve
     let time_filter = timeframe_where_clause("played_at", timeframe);
 
     let day_names = [
-        "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
     ];
 
     let mut stmt = conn
@@ -2126,10 +2040,7 @@ pub fn get_heatmap_weekday(conn: &Connection, timeframe: Timeframe) -> Result<Ve
     Ok(cells)
 }
 
-pub fn get_favorite_trends(
-    conn: &Connection,
-    timeframe: Timeframe,
-) -> Result<Vec<FavoriteTrend>> {
+pub fn get_favorite_trends(conn: &Connection, timeframe: Timeframe) -> Result<Vec<FavoriteTrend>> {
     let time_filter = timeframe_where_clause("ph.played_at", timeframe);
     let period_expr = "strftime('%Y-%m', ph.played_at)";
 
@@ -2383,4 +2294,47 @@ pub fn get_playback_history_timeline(
     }
 
     Ok(raw_events.into_iter().map(|r| r.event).collect())
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DataAge {
+    pub min_track_added_at: Option<String>,
+    pub min_played_at: Option<String>,
+    pub data_age_days: i64,
+}
+
+pub fn get_data_age(conn: &Connection) -> Result<DataAge> {
+    let min_track: Option<String> = conn
+        .query_row("SELECT MIN(added_at) FROM track", [], |row| row.get(0))
+        .ok()
+        .flatten();
+
+    let min_play: Option<String> = conn
+        .query_row("SELECT MIN(played_at) FROM playback_history", [], |row| {
+            row.get(0)
+        })
+        .ok()
+        .flatten();
+
+    // data_age_days: days since the earliest data point
+    let now = chrono::Utc::now().naive_utc();
+    let max_age = |s: &str| -> i64 {
+        if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+            (now - dt).num_days().max(0)
+        } else {
+            0
+        }
+    };
+    let data_age_days = match (&min_track, &min_play) {
+        (Some(t), Some(p)) => max_age(t).max(max_age(p)),
+        (Some(t), None) => max_age(t),
+        (None, Some(p)) => max_age(p),
+        (None, None) => 0,
+    };
+
+    Ok(DataAge {
+        min_track_added_at: min_track,
+        min_played_at: min_play,
+        data_age_days,
+    })
 }

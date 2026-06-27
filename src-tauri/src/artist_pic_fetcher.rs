@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{AppHandle, Emitter};
 use tokio::fs;
 use tokio::sync::Semaphore;
@@ -236,30 +236,35 @@ pub async fn fetch_single_artist_images(
     artist_name: &str,
     app_dir: &Path,
     pool: Pool<SqliteConnectionManager>,
+    fetch_pic: bool,
+    fetch_banner: bool,
 ) -> Result<()> {
-    if artist_name == "Unknown Artist" {
+    if (artist_name == "Unknown Artist") || (!fetch_pic && !fetch_banner) {
         return Ok(());
     }
 
     let conn = pool.get().map_err(|e| anyhow!(e))?;
 
-    let has_photo = db::artist_has_photo(&conn, artist_id).unwrap_or(false);
-    let has_banner = db::artist_has_banner(&conn, artist_id).unwrap_or(false);
-
-    if !has_photo {
-        let result = download_and_save(artist_name, app_dir).await;
-        if let Ok(filename) = result {
-            if let Ok(conn) = pool.get() {
-                let _ = db::update_artist_profile_image(&conn, artist_id, &filename);
+    if fetch_pic {
+        let has_photo = db::artist_has_photo(&conn, artist_id).unwrap_or(false);
+        if !has_photo {
+            let result = download_and_save(artist_name, app_dir).await;
+            if let Ok(filename) = result {
+                if let Ok(conn) = pool.get() {
+                    let _ = db::update_artist_profile_image(&conn, artist_id, &filename);
+                }
             }
         }
     }
 
-    if !has_banner {
-        let result = download_and_save_banner(artist_name, app_dir).await;
-        if let Ok(filename) = result {
-            if let Ok(conn) = pool.get() {
-                let _ = db::update_artist_banner_image(&conn, artist_id, &filename);
+    if fetch_banner {
+        let has_banner = db::artist_has_banner(&conn, artist_id).unwrap_or(false);
+        if !has_banner {
+            let result = download_and_save_banner(artist_name, app_dir).await;
+            if let Ok(filename) = result {
+                if let Ok(conn) = pool.get() {
+                    let _ = db::update_artist_banner_image(&conn, artist_id, &filename);
+                }
             }
         }
     }
@@ -272,7 +277,13 @@ pub async fn fetch_artist_images(
     app_dir: &Path,
     pool: Pool<SqliteConnectionManager>,
     app_handle: &AppHandle,
+    fetch_pic: bool,
+    fetch_banner: bool,
 ) -> Result<()> {
+    if !fetch_pic && !fetch_banner {
+        return Ok(());
+    }
+
     let total = artists.len();
     let completed = Arc::new(AtomicUsize::new(0));
 
@@ -283,7 +294,9 @@ pub async fn fetch_artist_images(
         }
 
         if let Ok(conn) = pool.get() {
-            if db::artist_has_photo(&conn, *aid).unwrap_or(false) {
+            let has_photo = fetch_pic && !db::artist_has_photo(&conn, *aid).unwrap_or(false);
+            let has_banner = fetch_banner && !db::artist_has_banner(&conn, *aid).unwrap_or(false);
+            if !has_photo && !has_banner {
                 completed.fetch_add(1, Ordering::Relaxed);
                 continue;
             }
@@ -298,14 +311,22 @@ pub async fn fetch_artist_images(
         let total_clone = total;
 
         tokio::spawn(async move {
-            let result = download_and_save(&artist_name, &app_dir).await;
-
-            if let Ok(filename) = result {
-                if let Ok(conn) = pool_clone.get() {
-                    let _ = db::update_artist_profile_image(&conn, artist_id, &filename);
+            if fetch_pic {
+                let result = download_and_save(&artist_name, &app_dir).await;
+                if let Ok(filename) = result {
+                    if let Ok(conn) = pool_clone.get() {
+                        let _ = db::update_artist_profile_image(&conn, artist_id, &filename);
+                    }
                 }
-            } else if let Err(e) = result {
-                eprintln!("[fetch] failed '{artist_name}': {e}");
+            }
+
+            if fetch_banner {
+                let result = download_and_save_banner(&artist_name, &app_dir).await;
+                if let Ok(filename) = result {
+                    if let Ok(conn) = pool_clone.get() {
+                        let _ = db::update_artist_banner_image(&conn, artist_id, &filename);
+                    }
+                }
             }
 
             let done = completed_clone.fetch_add(1, Ordering::Relaxed) + 1;
@@ -334,7 +355,7 @@ pub async fn fetch_artist_images(
         ScanProgress {
             current: total,
             total,
-            message: "Artist photos updated".to_string(),
+            message: "Artist images updated".to_string(),
         },
     );
 

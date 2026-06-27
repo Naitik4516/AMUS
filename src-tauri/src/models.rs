@@ -63,7 +63,7 @@ pub struct Album {
     pub name: String,
     pub cover_art: Option<String>,
     pub album_artist: Option<Vec<Artist>>,
-    pub year: Option<u32>
+    pub year: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]

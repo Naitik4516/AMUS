@@ -1,5 +1,5 @@
 use crate::artist_pic_fetcher;
-use crate::db::{self, DbPool, SortBy, Timeframe};
+use crate::db::{self, DataAge, DbPool, SortBy, Timeframe};
 use crate::engine::Player;
 use crate::error::{Error, Result};
 use crate::models::*;
@@ -269,10 +269,7 @@ pub async fn get_playlist(
 // Playback controls
 // ---------------------------------------------------------------------------
 
-fn record_current_track_async(
-    pool: &State<'_, DbPool>,
-    player: &State<'_, Player>,
-) {
+fn record_current_track_async(pool: &State<'_, DbPool>, player: &State<'_, Player>) {
     let info = {
         let engine = player.engine.lock();
         let Some(track) = engine.current_track() else {
@@ -296,7 +293,8 @@ fn record_current_track_async(
                 100.0
             };
             if let Ok(conn) = pool.get() {
-                let _ = db::record_playback(&conn, track_id, source_type.to_db_string(), completion);
+                let _ =
+                    db::record_playback(&conn, track_id, source_type.to_db_string(), completion);
             }
         });
     }
@@ -390,21 +388,14 @@ pub async fn insert_play_next_queue(
 }
 
 #[tauri::command]
-pub async fn remove_from_queue(
-    index: usize,
-    player: State<'_, Player>,
-) -> Result<()> {
+pub async fn remove_from_queue(index: usize, player: State<'_, Player>) -> Result<()> {
     let mut engine = player.engine.lock();
     engine.remove_from_queue(index);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn reorder_queue(
-    from: usize,
-    to: usize,
-    player: State<'_, Player>,
-) -> Result<()> {
+pub async fn reorder_queue(from: usize, to: usize, player: State<'_, Player>) -> Result<()> {
     let mut engine = player.engine.lock();
     engine.reorder_queue(from, to);
     Ok(())
@@ -515,26 +506,19 @@ pub async fn get_queue_state(
 }
 
 #[tauri::command]
-pub async fn get_current_track(
-    player: State<'_, Player>,
-) -> Result<Option<TrackDetails>> {
+pub async fn get_current_track(player: State<'_, Player>) -> Result<Option<TrackDetails>> {
     let engine = player.engine.lock();
     Ok(engine.current_track().cloned())
 }
 
 #[tauri::command]
-pub async fn save_queue(
-    track_ids: Vec<i64>,
-    pool: State<'_, DbPool>,
-) -> Result<()> {
+pub async fn save_queue(track_ids: Vec<i64>, pool: State<'_, DbPool>) -> Result<()> {
     let mut conn = pool.get().map_err(Error::Pool)?;
     db::save_user_queue(&mut conn, &track_ids)
 }
 
 #[tauri::command]
-pub async fn load_queue(
-    pool: State<'_, DbPool>,
-) -> Result<Vec<TrackDetails>> {
+pub async fn load_queue(pool: State<'_, DbPool>) -> Result<Vec<TrackDetails>> {
     let conn = pool.get().map_err(Error::Pool)?;
     let ids = db::load_user_queue(&conn)?;
     let tracks = ids
@@ -627,10 +611,7 @@ pub async fn get_listening_time_trend(
 }
 
 #[tauri::command]
-pub async fn get_streak_data(
-    timeframe: Timeframe,
-    pool: State<'_, DbPool>,
-) -> Result<StreakData> {
+pub async fn get_streak_data(timeframe: Timeframe, pool: State<'_, DbPool>) -> Result<StreakData> {
     let conn = pool.get().map_err(Error::Pool)?;
     db::get_streak_data(&conn, timeframe)
 }
@@ -645,11 +626,15 @@ pub async fn get_library_growth(
 }
 
 #[tauri::command]
-pub async fn get_format_distribution(
-    pool: State<'_, DbPool>,
-) -> Result<Vec<FormatStat>> {
+pub async fn get_format_distribution(pool: State<'_, DbPool>) -> Result<Vec<FormatStat>> {
     let conn = pool.get().map_err(Error::Pool)?;
     db::get_format_distribution(&conn)
+}
+
+#[tauri::command]
+pub async fn get_data_age(pool: State<'_, DbPool>) -> Result<DataAge> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::get_data_age(&conn)
 }
 
 #[tauri::command]
@@ -712,6 +697,8 @@ pub async fn fetch_artist_images(
             &artist.name,
             &app_dir,
             pool.inner().clone(),
+            true,
+            true,
         )
         .await
         .map_err(|e| Error::Unknown(e.to_string()))?;
