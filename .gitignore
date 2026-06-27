@@ -11,3 +11,4 @@ vite.config.ts.timestamp-*
 find-skills/
 .vscode/
 skills-lock.json
+.agents/
