@@ -41,9 +41,9 @@
     }
 </script>
 
-<div class="fixed bottom-0 left-0 w-full px-5 pb-3 z-15">
+<div class="fixed bottom-0 left-0 w-full px-4 pb-2 z-15">
     <div
-        class="bg-neutral-950/60 border-2 border-neutral-800/40 backdrop-blur-lg flex items-center justify-between px-6 py-4 shadow-2xl rounded-2xl relative"
+        class="bg-neutral-950/60 border-2 border-neutral-800/40 backdrop-blur-xl flex items-center justify-between px-6 py-4 shadow-2xl rounded-3xl relative"
     >
         {#if !player.currentTrack}
             <p class="text-sm text-gray-400">No track playing</p>

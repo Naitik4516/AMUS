@@ -85,7 +85,7 @@
 
         <div class="flex flex-col gap-4 min-w-0 pb-2">
             <h1
-                class="text-3xl md:text-5xl lg:text-[4cqw] max-text-[6rem] font-black line-clamp-2"
+                class="text-3xl md:text-5xl lg:text-[5cqw] max-text-[6rem] font-black drop-shadow-lg line-clamp-2"
             >
                 {name}
             </h1>

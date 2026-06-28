@@ -59,10 +59,10 @@
 </script>
 
 <div
-    class="relative flex flex-col rounded-2xl h-full w-full overflow-y-scroll pb-10"
+    class="relative flex flex-col h-full w-full overflow-y-scroll pb-10 pr-5"
 >
     <div
-        class="banner-wrapper relative max-h-80 w-full aspect-video overflow-hidden"
+        class="banner-wrapper relative max-h-80 w-full aspect-video overflow-hidden rounded-t-2xl"
     >
         {#if bgUrl}
             <img
