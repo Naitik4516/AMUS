@@ -8,6 +8,7 @@
     import type { LayoutProps } from "./$types";
     import { player } from "$lib/player.svelte";
     import { afterNavigate } from "$app/navigation";
+    import { getCurrentWindow, PhysicalSize } from "@tauri-apps/api/window";
     import { onMount } from "svelte";
     import { settings, flags, initSettings } from "$lib/settings.svelte";
     import { updater } from "$lib/update.svelte";
@@ -95,30 +96,60 @@
         scrollInstance.addScrollElements(scrollContainer);
         scrollInstance.resize();
     });
+
+    const MIN_W = 700;
+    const MIN_H = 700;
+
+    function startResize(edge: string, e: MouseEvent) {
+        e.preventDefault();
+        e.stopPropagation();
+        const appWindow = getCurrentWindow();
+        const startX = e.screenX;
+        const startY = e.screenY;
+
+        appWindow.outerSize().then((startSize) => {
+            function onMouseMove(e: MouseEvent) {
+                const dx = e.screenX - startX;
+                const dy = e.screenY - startY;
+                let newW = startSize.width;
+                let newH = startSize.height;
+                if (edge.includes('right')) newW = Math.max(MIN_W, startSize.width + dx);
+                if (edge.includes('bottom')) newH = Math.max(MIN_H, startSize.height + dy);
+                appWindow.setSize(new PhysicalSize(newW, newH));
+            }
+            function onMouseUp() {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            }
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+    }
 </script>
 
-<Header />
-<ScanProgress />
-<Sidebar />
-<Toaster
-    position="top-center"
-    theme="dark"
-    toastOptions={{
-        unstyled: true,
-        classes: {
-            toast: "flex items-center bg-secondary/10 backdrop-blur-xl p-4 rounded-2xl w-full shadow-2xl border gap-2 transition-all pointer-events-auto mt-10",
-            title: "font-bold",
-            error: "bg-red-500/50 text-white",
-            success: "bg-green-500/50 text-white",
-        },
-    }}
-/>
+<div class="flex flex-col h-screen">
+    <Header />
+    <ScanProgress />
+    <Sidebar />
+    <Toaster
+        position="top-center"
+        theme="dark"
+        toastOptions={{
+            unstyled: true,
+            classes: {
+                toast: "flex items-center bg-secondary/10 backdrop-blur-xl p-4 rounded-2xl w-full shadow-2xl border gap-2 transition-all pointer-events-auto mt-10",
+                title: "font-bold",
+                error: "bg-red-500/50 text-white",
+                success: "bg-green-500/50 text-white",
+            },
+        }}
+    />
 
-<div
-    bind:this={scrollContainer}
-    class="w-screen h-screen {flags.ready && settings.useLocomotiveScroll
-        ? 'overflow-hidden'
-        : 'overflow-y-auto'}"
+    <div
+        bind:this={scrollContainer}
+        class="w-screen flex-1 min-h-0 {flags.ready && settings.useLocomotiveScroll
+            ? 'overflow-hidden'
+            : 'overflow-y-auto'}"
 >
     <div
         bind:this={scrollContent}
@@ -127,7 +158,24 @@
         <div>
             {@render children()}
         </div>
+        </div>
     </div>
+
+    <div
+        role="presentation"
+        class="fixed bottom-0 left-0 right-0 h-[6px] cursor-s-resize z-[99999]"
+        onmousedown={(e) => startResize('bottom', e)}
+    ></div>
+    <div
+        role="presentation"
+        class="fixed top-0 right-0 bottom-0 w-[6px] cursor-e-resize z-[99999]"
+        onmousedown={(e) => startResize('right', e)}
+    ></div>
+    <div
+        role="presentation"
+        class="fixed bottom-0 right-0 w-[16px] h-[16px] cursor-se-resize z-[99999]"
+        onmousedown={(e) => startResize('bottom-right', e)}
+    ></div>
 </div>
 {#if player.currentTrack}
     <Player />

@@ -79,10 +79,14 @@
 </script>
 
 <header
-    data-tauri-drag-region
-    class="sticky top-0 flex items-center px-4 h-0 mt-10 justify-between select-none text-white z-20"
+    class="sticky top-0 z-20"
 >
-    <div class="w-16 flex justify-center shrink-0 mt-1 pointer-events-none">
+    <div class="h-2 shrink-0"></div>
+    <div
+        data-tauri-drag-region
+        class="flex items-center px-4 h-12 justify-between select-none text-white"
+    >
+        <div class="w-16 flex justify-center shrink-0 mt-1 pointer-events-none">
         <img
             src="/icon.svg"
             alt="Avatar"
@@ -92,7 +96,7 @@
 
     <div class="relative">
         <div
-            class="flex items-center gap-2 bg-card/40 backdrop-blur-md rounded-full px-4 h-full border-2 transition-colors duration-300 hover:bg-card/75 focus-within:bg-card"
+            class="flex items-center gap-2 bg-card/40 backdrop-blur-md rounded-full px-4 py-1 mt-5 h-full border-2 transition-colors duration-300 hover:bg-card/75 focus-within:bg-card"
         >
             <Search size={16} class="text-gray-400" />
             <input
@@ -163,6 +167,7 @@
         >
             <X size={14} />
         </button>
+        </div>
     </div>
 </header>
 
