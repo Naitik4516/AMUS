@@ -1,68 +1,87 @@
 # AMUS
 <div align="center">
 
-<img src="static/icon.svg" alt="Amus" width="120" height="120" />
+<img src="static/icon.svg" alt="Amus" width="256" height="256" />
 
-**A fast local modern music player** 
+**A fast local modern music player**
+
 AMUS is a fast, privacy-focused local music player built for users who own their music library. It works completely offline and is designed to feel modern while remaining lightweight.
+
+![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)
+![Tauri](https://img.shields.io/badge/Tauri-FFC131?style=for-the-badge&logo=Tauri&logoColor=white)
+![SvekteKit](https://img.shields.io/badge/SvelteKit-FF3E00?style=for-the-badge&logo=Svelte&logoColor=white)
+![License](https://img.shields.io/badge/MPL--2.0-blue?style=for-the-badge)
 
 </div>
 
 ## Features
 
 - **Audio playback** — MP3, FLAC, WAV, OGG, M4A, AAC, OPUS via rodio
-- **Fast Library scanning** — Incremental scanning with automatic metadata extraction.
-- **Real-time file watcher** — automatically picks up new/deleted files via notify
+- **Fast library scanning** — Incremental scanning with automatic metadata extraction.
+- **Real-time file watcher** — automatically detects added, modified, and deleted files
 - **Advanced Queue** — play next, drag & drop reorder, shuffle and repeat.
 - **Auto-regeneration** — when queues run dry, similar tracks are suggested based on artist/album match, play count, and randomness
 - **Playback history & stats** — play counts, listening time trends, streaks, library growth, format distribution, hourly/weekday heatmaps, favorite trends
 - **Playlists** — create, rename, delete; add/remove tracks; auto-generated cover art
 - **Favorites** — one-click toggle per track
 - **Artist images** — automatic profile + banner fetching from Bing / DuckDuckGo
-- **System tray** — play/pause, previous/next, show/hide, quit
-- **Pop-up mini-player** — separate always-on-top window showing current track
+- **System tray** — play/pause, previous/next, show/hide, quit\
 - **Auto-updater** — GitHub releases with passive install on Windows
-- **Custom borderless window** — draggable header, custom titlebar
 - **Smooth scrolling** — locomotive-scroll (toggleable in settings)
-- **Keyboard shortcuts** — global media keys via Tauri global-shortcut plugin
-- **Background running** — keeps alive in system tray on window close
+- **Background playback** — keeps alive in system tray on window close
 
-## Prerequisites
+## Installation
+<p align="center">
+  <a href="https://github.com/Naitik4516/AMUS/releases/latest">
+  <img alt="GitHub Downloads (all assets, latest release)" src="https://img.shields.io/github/downloads/Naitik4516/AMUS/latest/total?style=social">
+  </a>
+</p>
 
-- **Rust** 1.95+ (edition 2024)
-- **Bun** (for frontend tooling)
-- **System deps** (Linux): `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `libasound2-dev`
+**Supported Platforms**
+- ✅ Windows (x64)
+- ✅ Linux (x64)
+- ✅ macOS (Intel & Apple Silicon)
 
-## Getting Started
+## Screenshots
+<p align="center">
+  <img src=".github/images/home.webp" width="45%">
+  <img src=".github/images/player+queue+search.webp" width="45%">
+</p>
+
+<p align="center">
+  <img src=".github/images/aritsts.webp" width="45%">
+  <img src=".github/images/artist_page.webp" width="45%">
+</p>
+
+<p align="center">
+  <img src=".github/images/albums.webp" width="45%">
+  <img src=".github/images/album_page.webp" width="45%">
+</p>
+
+<p align="center">
+  <img src=".github/images/stats.webp" width="45%">
+  <img src=".github/images/settings.webp" width="45%">
+</p>
+
+## Build & Run
+
+### Prerequisites
+1. [Tauri prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites)
+2. [Bun](https://bun.sh/) 
 
 ```bash
-# Install frontend deps
+git clone https://github.com/Naitik4516/AMUS.git
+cd AMUS
+
 bun install
-
-# Run in development mode (frontend on :1420, Tauri window with hot-reload)
-bun run tauri dev
-
-# Type-check frontend
-bun run check
-
-# Production build
-bun run tauri build
+bun tauri dev
 ```
 
-To work on the frontend independently (without Tauri window):
-
-```bash
-bun run dev          # Vite dev server on http://localhost:1420
-```
-
-To work on Rust code independently:
-
-```bash
-cargo check          # Type-check only (fast)
-cargo build          # Full Rust build (in src-tauri/)
-```
 
 ## Architecture
+
+<details>
+<summary>Click to expand</summary>
 
 ```
 amus/
@@ -101,6 +120,7 @@ amus/
 ├── svelte.config.js
 └── tsconfig.json
 ```
+</details>
 
 ## Tech Stack
 
@@ -112,3 +132,28 @@ amus/
 | Rust backend | rodio, rusqlite, r2d2, lofty, rayon, notify |
 | Artist images | primp (HTTP), scraper, Bing/DuckDuckGo |
 | Audio formats | MP3, FLAC, WAV, OGG, M4A, AAC, OPUS |
+
+
+## Roadmap
+- [ ] Support lyrics
+- [ ] Support podcasts
+- [ ] Support video playback
+- [ ] Better os integration
+- [ ] Dynamic theming 
+- [ ] Global and local keyboard shortcuts
+- [ ] Mini player with always-on-top option
+- [ ] Recommendation System
+- [ ] Better Search
+- [ ] Smart Playlists
+- [ ] Auto tagging
+- [ ] Sleep timer
+- [ ] auto start and schedule auto playback
+- [ ] Gapless Playback & skip silence
+- [ ] Equalizer
+- [ ] Audio Normalization
+- [ ] Crossfade
+- [ ] Advanced Search
+- [ ] DSP Effects
+
+## License
+AMUS is licensed under the [Mozilla Public License 2.0](https://www.mozilla.org/en-US/MPL/2.0/). See [LICENSE](LICENSE) for details.

@@ -1,7 +1,7 @@
 [package]
 name = "amus"
-version = "0.1.0"
-description = "Local  Music Player"
+version = "0.2.0"
+description = "AMUS is a fast, privacy-focused local music player built for users who own their music library. It works completely offline and is designed to feel modern while remaining lightweight."
 authors = ["you"]
 edition = "2024"
 rust-version = "1.95"
