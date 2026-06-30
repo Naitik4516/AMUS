@@ -29,6 +29,7 @@ AMUS is a fast, privacy-focused local music player built for users who own their
 - **Auto-updater** — GitHub releases with passive install on Windows
 - **Smooth scrolling** — locomotive-scroll (toggleable in settings)
 - **Background playback** — keeps alive in system tray on window close
+- **Mini player** — compact window with album art, track info, and controls
 
 ## Installation
 <p align="center">
@@ -137,12 +138,11 @@ amus/
 ## Roadmap
 - [x] Mini player with always-on-top option
 - [x] Better Search
+- [] Global and local keyboard shortcuts
 - [ ] Support lyrics
-- [ ] Support podcasts
-- [ ] Support video playback
 - [ ] Better os integration
+- [ ] Support video playback
 - [ ] Dynamic theming 
-- [ ] Global and local keyboard shortcuts
 - [ ] Recommendation System
 - [ ] Smart Playlists
 - [ ] Auto tagging
