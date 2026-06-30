@@ -805,52 +805,183 @@ pub fn get_track_details(conn: &Connection, track_id: i64) -> Result<TrackDetail
     Ok(details)
 }
 
-pub fn search_tracks(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Track>> {
-    let pattern = format!("%{}%", query);
+pub fn global_search(
+    conn: &Connection,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<GlobalSearchResult>> {
+    if query.len() < 2 {
+        return Ok(Vec::new());
+    }
 
-    let sql = r#"
-        SELECT
-            t.id,
-            t.title,
-            al.id,
-            al.name,
-            al.cover_art,
-            NULL,
-            NULL,
-            NULL,
-            t.duration_sec,
-            t.is_favorite,
-            t.cover_art,
-            t.added_at
+    let pattern = format!("%{}%", query);
+    let per_type_limit = limit * 2;
+
+    let mut results: Vec<GlobalSearchResult> = Vec::new();
+
+    // --- Tracks ---
+    let track_sql =
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
         FROM track t
         LEFT JOIN track_artist ta ON t.id = ta.track_id
         LEFT JOIN artist ar ON ta.artist_id = ar.id
         LEFT JOIN album_track alt ON t.id = alt.track_id
         LEFT JOIN album al ON al.id = alt.album_id
-        LEFT JOIN track_stats s ON s.track_id = t.id
         WHERE t.title LIKE ? OR ar.name LIKE ? OR al.name LIKE ?
         GROUP BY t.id
-        ORDER BY
-            (CASE WHEN t.title LIKE ? THEN 3 ELSE 0 END) +
-            (CASE WHEN ar.name LIKE ? THEN 2 ELSE 0 END) +
-            (CASE WHEN al.name LIKE ? THEN 2 ELSE 0 END) DESC,
-            IFNULL(s.play_count, 0) DESC
-        LIMIT ?
-        "#;
+        LIMIT ?";
 
-    prepare_tracks_list(
-        conn,
-        sql,
-        params![
-            pattern,
-            pattern,
-            pattern,
-            pattern,
-            pattern,
-            pattern,
-            limit as i64
-        ],
-    )
+    let tracks = prepare_tracks_list(conn, track_sql, params![pattern, pattern, pattern, per_type_limit as i64])?;
+
+    if !tracks.is_empty() {
+        let ids: Vec<i64> = tracks.iter().map(|t| t.id).collect();
+        let mut play_counts = HashMap::new();
+        for chunk in ids.chunks(900) {
+            let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "SELECT track_id, play_count FROM track_stats WHERE track_id IN ({})",
+                placeholders
+            );
+            if let Ok(mut stmt) = conn.prepare(&sql) {
+                if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(chunk), |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+                }) {
+                    for row in rows {
+                        if let Ok((id, pc)) = row {
+                            play_counts.insert(id, pc);
+                        }
+                    }
+                }
+            }
+        }
+        for track in tracks {
+            let pc = play_counts.get(&track.id).copied().unwrap_or(0);
+            results.push(GlobalSearchResult {
+                result_type: "track".to_string(),
+                score: compute_track_score(&track, query, pc),
+                track: Some(track),
+                artist: None,
+                album: None,
+                playlist: None,
+            });
+        }
+    }
+
+    // --- Artists ---
+    let mut stmt = conn
+        .prepare("SELECT id, name, profile_image, banner_image FROM artist WHERE name LIKE ? LIMIT ?")
+        .map_err(Error::Db)?;
+    let artists: Vec<Artist> = stmt
+        .query_map(params![pattern, per_type_limit as i64], |row| {
+            Ok(Artist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                profile_image: row.get(2)?,
+                banner_image: row.get(3)?,
+            })
+        })
+        .map_err(Error::Db)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Error::Db)?;
+
+    for artist in artists {
+        results.push(GlobalSearchResult {
+            result_type: "artist".to_string(),
+            score: compute_entity_score(&artist.name, query, 10),
+            track: None,
+            artist: Some(artist),
+            album: None,
+            playlist: None,
+        });
+    }
+
+    // --- Albums ---
+    let mut stmt = conn
+        .prepare("SELECT id, name, cover_art, album_artist, year FROM album WHERE name LIKE ? LIMIT ?")
+        .map_err(Error::Db)?;
+    let raw_albums: Vec<(Album, Option<String>)> = stmt
+        .query_map(params![pattern, per_type_limit as i64], |row| {
+            let album = Album {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                cover_art: row.get(2)?,
+                album_artist: None,
+                year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+            };
+            Ok((album, row.get::<_, Option<String>>(3)?))
+        })
+        .map_err(Error::Db)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Error::Db)?;
+
+    for (mut album, aa_name) in raw_albums {
+        album.album_artist = resolve_album_artist(conn, aa_name)?;
+        results.push(GlobalSearchResult {
+            result_type: "album".to_string(),
+            score: compute_entity_score(&album.name, query, 8),
+            track: None,
+            artist: None,
+            album: Some(album),
+            playlist: None,
+        });
+    }
+
+    // --- Playlists ---
+    let mut stmt = conn
+        .prepare("SELECT id, name FROM playlist WHERE name LIKE ? LIMIT ?")
+        .map_err(Error::Db)?;
+    let playlists: Vec<Playlist> = stmt
+        .query_map(params![pattern, per_type_limit as i64], |row| {
+            Ok(Playlist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+            })
+        })
+        .map_err(Error::Db)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Error::Db)?;
+
+    for playlist in playlists {
+        results.push(GlobalSearchResult {
+            result_type: "playlist".to_string(),
+            score: compute_entity_score(&playlist.name, query, 7),
+            track: None,
+            artist: None,
+            album: None,
+            playlist: Some(playlist),
+        });
+    }
+
+    // Sort by score descending and cap
+    results.sort_by(|a, b| b.score.cmp(&a.score));
+    results.truncate(limit);
+
+    Ok(results)
+}
+
+fn compute_entity_score(name: &str, query: &str, base_weight: i32) -> i32 {
+    let name_lower = name.to_lowercase();
+    let query_lower = query.to_lowercase();
+    if name_lower == query_lower {
+        base_weight * 4
+    } else if name_lower.starts_with(&query_lower) {
+        (base_weight as f64 * 2.5) as i32
+    } else if name_lower.contains(&query_lower) {
+        base_weight
+    } else {
+        0
+    }
+}
+
+fn compute_track_score(track: &Track, query: &str, play_count: i64) -> i32 {
+    let title_score = compute_entity_score(&track.title, query, 10);
+    let album_score = compute_entity_score(&track.album.name, query, 4);
+    let mut best_artist_score = 0i32;
+    for artist in &track.artists {
+        best_artist_score = best_artist_score.max(compute_entity_score(&artist.name, query, 6));
+    }
+    let play_boost = (play_count / 50).min(10) as i32;
+    title_score + best_artist_score + album_score + play_boost
 }
 
 pub fn get_similar_tracks(
