@@ -56,8 +56,13 @@ impl AudioEngine {
 
     fn play_inner(&mut self, track: &TrackDetails) -> anyhow::Result<()> {
         let path = track.path.as_str();
-        let file = BufReader::with_capacity(256 * 1024, File::open(path)?);
-        let decoder = Decoder::try_from(file)?;
+        let file = File::open(path)?;
+        let len = file.metadata()?.len();
+        let decoder = Decoder::builder()
+            .with_data(BufReader::with_capacity(256 * 1024, file))
+            .with_byte_len(len)
+            .with_seekable(true)
+            .build()?;
 
         self.player.clear();
         self.player.append(decoder);

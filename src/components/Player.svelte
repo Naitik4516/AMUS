@@ -20,9 +20,19 @@
     import { player } from "$lib/player.svelte";
     import { getImageUrl } from "$lib/utils";
     import TrackListSmall from "./ui/TrackListSmall.svelte";
+    import { formatDurationColon } from "$lib/utils";
 
     let volumeValue = $state(player.volume);
     let showQueue = $state(false);
+    let seekDragPercent = $state<number | null>(null);
+
+    let displayProgress = $derived(
+        seekDragPercent !== null && player.currentTrack
+            ? (seekDragPercent / 100) *
+                  player.currentTrack.duration_seconds *
+                  1000
+            : player.progress,
+    );
 
     $effect(() => {
         player.setVolume(volumeValue);
@@ -32,12 +42,6 @@
         if (player.currentTrack) {
             await player.toggleFavorite(player.currentTrack);
         }
-    }
-
-    function formatDuration(seconds: number) {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, "0")}`;
     }
 </script>
 
@@ -151,17 +155,25 @@
                     <span
                         class="text-[10px] font-medium text-gray-400 w-10 text-right"
                     >
-                        {formatDuration(Math.floor(player.progress / 1000))}
+                        {formatDurationColon(
+                            Math.floor(displayProgress / 1000),
+                        )}
                     </span>
                     <Slider
                         value={(player.progress /
                             1000 /
                             player.currentTrack.duration_seconds) *
                             100}
-                        onValueChange={(val: number) => player.seek(val)}
+                        onDragChange={(val) => (seekDragPercent = val)}
+                        onValueChange={(val) => {
+                            seekDragPercent = null;
+                            player.seek(val)
+                        }}
                     />
                     <span class="text-[10px] font-medium text-gray-400 w-10">
-                        {formatDuration(player.currentTrack.duration_seconds)}
+                        {formatDurationColon(
+                            player.currentTrack.duration_seconds,
+                        )}
                     </span>
                 </div>
             </div>
