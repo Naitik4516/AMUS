@@ -831,7 +831,11 @@ pub fn global_search(
         GROUP BY t.id
         LIMIT ?";
 
-    let tracks = prepare_tracks_list(conn, track_sql, params![pattern, pattern, pattern, per_type_limit as i64])?;
+    let tracks = prepare_tracks_list(
+        conn,
+        track_sql,
+        params![pattern, pattern, pattern, per_type_limit as i64],
+    )?;
 
     if !tracks.is_empty() {
         let ids: Vec<i64> = tracks.iter().map(|t| t.id).collect();
@@ -869,7 +873,9 @@ pub fn global_search(
 
     // --- Artists ---
     let mut stmt = conn
-        .prepare("SELECT id, name, profile_image, banner_image FROM artist WHERE name LIKE ? LIMIT ?")
+        .prepare(
+            "SELECT id, name, profile_image, banner_image FROM artist WHERE name LIKE ? LIMIT ?",
+        )
         .map_err(Error::Db)?;
     let artists: Vec<Artist> = stmt
         .query_map(params![pattern, per_type_limit as i64], |row| {
@@ -897,7 +903,9 @@ pub fn global_search(
 
     // --- Albums ---
     let mut stmt = conn
-        .prepare("SELECT id, name, cover_art, album_artist, year FROM album WHERE name LIKE ? LIMIT ?")
+        .prepare(
+            "SELECT id, name, cover_art, album_artist, year FROM album WHERE name LIKE ? LIMIT ?",
+        )
         .map_err(Error::Db)?;
     let raw_albums: Vec<(Album, Option<String>)> = stmt
         .query_map(params![pattern, per_type_limit as i64], |row| {

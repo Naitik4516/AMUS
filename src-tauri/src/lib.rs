@@ -11,13 +11,14 @@ use engine::{AudioEngine, Player};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rodio::DeviceSinkBuilder;
-use sync::SyncManager;
 use std::sync::atomic::{AtomicBool, Ordering};
+use sync::SyncManager;
 use tauri::{
+    Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
 };
+use tauri_plugin_positioner::{Position, WindowExt};
 
 pub(crate) struct MiniPlayerPinned(AtomicBool);
 
@@ -26,8 +27,13 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let previous = MenuItem::with_id(app, "previous", "Previous", true, None::<&str>)?;
     let next = MenuItem::with_id(app, "next", "Next", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let show_miniplayer =
-        MenuItem::with_id(app, "show_miniplayer", "Show Miniplayer", true, None::<&str>)?;
+    let show_miniplayer = MenuItem::with_id(
+        app,
+        "show_miniplayer",
+        "Show Miniplayer",
+        true,
+        None::<&str>,
+    )?;
     let show = MenuItem::with_id(app, "show", "Show/Hide", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
@@ -108,52 +114,38 @@ fn toggle_popup(app: &tauri::AppHandle) {
 }
 
 fn create_popup(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
-    let window = WebviewWindowBuilder::new(
-        app,
-        "mini-player",
-        WebviewUrl::App("/miniplayer".into()),
-    )
-    .title("Amus - Mini Player")
-    .inner_size(400.0, 200.0)
-    .resizable(false)
-    .decorations(false)
-    .transparent(true)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .build()?;
+    let window =
+        WebviewWindowBuilder::new(app, "mini-player", WebviewUrl::App("/miniplayer".into()))
+            .title("Amus - Mini Player")
+            .inner_size(400.0, 200.0)
+            .resizable(false)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .build()?;
 
     let app_clone = app.clone();
-    window.on_window_event(move |event| {
-        match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
-                api.prevent_close();
-                if let Some(w) = app_clone.get_webview_window("mini-player") {
-                    let _ = w.hide();
-                }
+    window.on_window_event(move |event| match event {
+        tauri::WindowEvent::CloseRequested { api, .. } => {
+            api.prevent_close();
+            if let Some(w) = app_clone.get_webview_window("mini-player") {
+                let _ = w.hide();
             }
-            tauri::WindowEvent::Focused(false) => {
-                if let Some(state) = app_clone.try_state::<MiniPlayerPinned>() {
-                    if !state.0.load(Ordering::Relaxed) {
-                        if let Some(w) = app_clone.get_webview_window("mini-player") {
-                            let _ = w.hide();
-                        }
+        }
+        tauri::WindowEvent::Focused(false) => {
+            if let Some(state) = app_clone.try_state::<MiniPlayerPinned>() {
+                if !state.0.load(Ordering::Relaxed) {
+                    if let Some(w) = app_clone.get_webview_window("mini-player") {
+                        let _ = w.hide();
                     }
                 }
             }
-            _ => {}
         }
+        _ => {}
     });
 
-    if let Some(monitor) = window.current_monitor()? {
-        let screen = monitor.size();
-        let size = window.outer_size()?;
-        let x = (screen.width as i32 - size.width as i32).max(0) - 20;
-        let y = (screen.height as i32 - size.height as i32).max(0) - 80;
-        window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
-            x.max(0),
-            y.max(0),
-        )))?;
-    }
+    window.set_position(Position::TopRight)?;
 
     Ok(window)
 }
@@ -161,6 +153,7 @@ fn create_popup(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_fs::init())
@@ -171,8 +164,15 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle();
 
-            #[cfg(desktop)]
-            app_handle.plugin(tauri_plugin_updater::Builder::new().build())?;
+            {
+                app_handle.plugin(tauri_plugin_updater::Builder::new().build())?;
+                app_handle.plugin(tauri_plugin_positioner::init());
+                tauri::tray::TrayIconBuilder::new()
+                    .on_tray_icon_event(|tray_handle, event| {
+                        tauri_plugin_positioner::on_tray_event(tray_handle.app_handle(), &event);
+                    })
+                    .build(app)?;
+            }
 
             let app_dir = app_handle
                 .path()

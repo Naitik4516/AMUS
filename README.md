@@ -135,15 +135,15 @@ amus/
 
 
 ## Roadmap
+- [x] Mini player with always-on-top option
+- [x] Better Search
 - [ ] Support lyrics
 - [ ] Support podcasts
 - [ ] Support video playback
 - [ ] Better os integration
 - [ ] Dynamic theming 
 - [ ] Global and local keyboard shortcuts
-- [ ] Mini player with always-on-top option
 - [ ] Recommendation System
-- [ ] Better Search
 - [ ] Smart Playlists
 - [ ] Auto tagging
 - [ ] Sleep timer

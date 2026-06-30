@@ -1,3 +1,4 @@
+use crate::MiniPlayerPinned;
 use crate::artist_pic_fetcher;
 use crate::db::{self, DataAge, DbPool, SortBy, Timeframe};
 use crate::engine::Player;
@@ -5,7 +6,6 @@ use crate::error::{Error, Result};
 use crate::models::*;
 use crate::scanner;
 use crate::sync::SyncManager;
-use crate::MiniPlayerPinned;
 use tauri::Emitter;
 use tauri::Manager;
 use tauri::State;
