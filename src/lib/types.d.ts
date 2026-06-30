@@ -25,6 +25,15 @@ export interface Track {
   track_number?: number;
 }
 
+export interface GlobalSearchResult {
+  result_type: "track" | "artist" | "album" | "playlist";
+  score: number;
+  track?: Track;
+  artist?: Artist;
+  album?: Album;
+  playlist?: Playlist;
+}
+
 export interface TrackDetails extends Track {
   path: string;
   mtime: number;

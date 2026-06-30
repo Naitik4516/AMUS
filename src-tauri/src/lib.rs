@@ -12,17 +12,22 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rodio::DeviceSinkBuilder;
 use sync::SyncManager;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
-    Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
 };
+
+pub(crate) struct MiniPlayerPinned(AtomicBool);
 
 fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let play_pause = MenuItem::with_id(app, "play_pause", "Play/Pause", true, None::<&str>)?;
     let previous = MenuItem::with_id(app, "previous", "Previous", true, None::<&str>)?;
     let next = MenuItem::with_id(app, "next", "Next", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
+    let show_miniplayer =
+        MenuItem::with_id(app, "show_miniplayer", "Show Miniplayer", true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", "Show/Hide", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
@@ -33,6 +38,7 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &previous,
             &next,
             &separator,
+            &show_miniplayer,
             &show,
             &separator,
             &quit,
@@ -67,6 +73,9 @@ fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
             let state = engine.get_playback_state();
             let _ = app.emit("track-changed", &state);
         }
+        "show_miniplayer" => {
+            toggle_popup(app);
+        }
         "show" => {
             if let Some(window) = app.get_webview_window("main") {
                 if window.is_visible().unwrap_or(false) {
@@ -85,7 +94,7 @@ fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
 }
 
 fn toggle_popup(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("popup") {
+    if let Some(window) = app.get_webview_window("mini-player") {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
         } else {
@@ -99,21 +108,39 @@ fn toggle_popup(app: &tauri::AppHandle) {
 }
 
 fn create_popup(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
-    let window = WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("popup".into()))
-        .title("Now Playing")
-        .inner_size(320.0, 210.0)
-        .resizable(false)
-        .decorations(false)
-        .skip_taskbar(true)
-        .build()?;
+    let window = WebviewWindowBuilder::new(
+        app,
+        "mini-player",
+        WebviewUrl::App("/miniplayer".into()),
+    )
+    .title("Amus - Mini Player")
+    .inner_size(400.0, 200.0)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .build()?;
 
     let app_clone = app.clone();
     window.on_window_event(move |event| {
-        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-            api.prevent_close();
-            if let Some(w) = app_clone.get_webview_window("popup") {
-                let _ = w.hide();
+        match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                if let Some(w) = app_clone.get_webview_window("mini-player") {
+                    let _ = w.hide();
+                }
             }
+            tauri::WindowEvent::Focused(false) => {
+                if let Some(state) = app_clone.try_state::<MiniPlayerPinned>() {
+                    if !state.0.load(Ordering::Relaxed) {
+                        if let Some(w) = app_clone.get_webview_window("mini-player") {
+                            let _ = w.hide();
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     });
 
@@ -162,13 +189,6 @@ pub fn run() {
             {
                 let mut conn = pool.get().expect("failed to get db connection");
                 db::init_db(&mut conn).expect("failed to initialize database");
-
-                // Compatibility: add columns that may be missing in databases
-                // created before the migration system existed.
-                let _ =
-                    conn.execute_batch("ALTER TABLE track ADD COLUMN file_size INTEGER DEFAULT 0;");
-                let _ = conn.execute_batch("ALTER TABLE album ADD COLUMN album_artist TEXT;");
-                let _ = conn.execute_batch("ALTER TABLE playlist ADD COLUMN cover_art TEXT;");
             }
 
             let stream = DeviceSinkBuilder::open_default_sink().expect("open default audio stream");
@@ -184,6 +204,7 @@ pub fn run() {
             let sync_manager = SyncManager::new();
             sync_manager.init(app_handle);
             app.manage(sync_manager);
+            app.manage(MiniPlayerPinned(AtomicBool::new(true)));
 
             engine::engine::spawn_playback_monitor(app_handle.clone(), engine_arc, monitor_pool);
 
@@ -238,7 +259,7 @@ pub fn run() {
             commands::get_recently_played,
             commands::get_most_played_tracks,
             commands::get_track_details,
-            commands::search_tracks,
+            commands::global_search,
             commands::get_artists,
             commands::get_artist,
             commands::get_all_albums,
@@ -300,6 +321,7 @@ pub fn run() {
             commands::get_heatmap_weekday,
             commands::get_favorite_trends,
             commands::get_playback_history_timeline,
+            commands::toggle_mini_player_pin,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

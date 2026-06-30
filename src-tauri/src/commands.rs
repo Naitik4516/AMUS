@@ -5,6 +5,7 @@ use crate::error::{Error, Result};
 use crate::models::*;
 use crate::scanner;
 use crate::sync::SyncManager;
+use crate::MiniPlayerPinned;
 use tauri::Emitter;
 use tauri::Manager;
 use tauri::State;
@@ -109,13 +110,13 @@ pub async fn get_track_details(id: i64, pool: State<'_, DbPool>) -> Result<Track
 }
 
 #[tauri::command]
-pub async fn search_tracks(
+pub async fn global_search(
     query: String,
     limit: usize,
     pool: State<'_, DbPool>,
-) -> Result<Vec<Track>> {
+) -> Result<Vec<GlobalSearchResult>> {
     let conn = pool.get().map_err(Error::Pool)?;
-    db::search_tracks(&conn, &query, limit)
+    db::global_search(&conn, &query, limit)
 }
 
 #[tauri::command]
@@ -789,4 +790,21 @@ pub async fn update_playlist(
     let ca = cover_art.as_deref();
     db::update_playlist(&conn, id, name.as_deref(), ca)?;
     Ok(())
+}
+
+#[tauri::command]
+pub(crate) fn toggle_mini_player_pin(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, MiniPlayerPinned>,
+) -> std::result::Result<bool, String> {
+    let new_pinned = !state.0.load(std::sync::atomic::Ordering::Relaxed);
+    state
+        .0
+        .store(new_pinned, std::sync::atomic::Ordering::Relaxed);
+    if let Some(window) = app.get_webview_window("mini-player") {
+        window
+            .set_always_on_top(new_pinned)
+            .map_err(|e| format!("failed to set always-on-top: {e}"))?;
+    }
+    Ok(new_pinned)
 }

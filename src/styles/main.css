@@ -1,0 +1,59 @@
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: auto;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    /*background-color: var(--color-dark);*/
+    color: var(--color-foreground);
+    overflow: hidden;
+    background: var(--color-background);
+    background: radial-gradient(
+        circle,
+        var(--color-background) 0%,
+        rgb(0, 0, 0) 100%
+    );
+}
+
+button {
+    cursor: pointer;
+}
+
+::-webkit-scrollbar {
+    width: 0px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.reveal-section {
+    opacity: 0;
+    transform: translateY(30px);
+    transition:
+        opacity 0.7s cubic-bezier(0.25, 0.4, 0.25, 1),
+        transform 0.7s cubic-bezier(0.25, 0.4, 0.25, 1);
+}
+
+html:not(.smooth-scroll) .reveal-section,
+.reveal-section.section-reveal {
+    opacity: 1;
+    transform: translateY(0);
+}
