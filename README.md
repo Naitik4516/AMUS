@@ -134,27 +134,37 @@ amus/
 | Artist images | primp (HTTP), scraper, Bing/DuckDuckGo |
 | Audio formats | MP3, FLAC, WAV, OGG, M4A, AAC, OPUS |
 
-
-## Roadmap
+### Recently completed
 - [x] Mini player with always-on-top option
-- [x] Better Search
+- [x] Enhanced search
 - [x] Global and local keyboard shortcuts
-- [ ] Better os integration
-- [ ] Support lyrics
-- [ ] Support video playback
-- [ ] Dynamic theming 
-- [ ] Recommendation System
-- [ ] Smart Playlists
-- [ ] Auto tagging
-- [ ] Sleep timer
-- [ ] auto start and schedule auto playback
-- [ ] Gapless Playback & skip silence
-- [ ] Equalizer
-- [ ] Audio Normalization
+
+### Library & Playback
+- [ ] Smart playlists
+- [ ] Music recommendations
+- [ ] Gapless playback & silence skipping
 - [ ] Crossfade
-- [ ] Advanced Search
-- [ ] DSP Effects
+- [ ] Equalizer
+- [ ] Audio normalization
+- [ ] DSP effects
+- [ ] Sleep timer
+
+### Library Management
+- [ ] Automatic metadata tagging
+- [ ] Lyrics support
+- [ ] Advanced search
+
+### User Experience
+- [ ] Dynamic theming
+- [ ] Improved UI animations
+- [ ] Better OS integration
+- [ ] Auto-start and scheduled playback
+
+### Media
+- [ ] Video playback support
 
 ## FAQ
-1. **Is it a vibe coded project? Completely built with AI?**  
-   No, it is not a vibe coded projects. It is personally built by me. However, I have used *opencode* coding agent to build some parts of the project. I don't have a lot of experience in Rust, so I used it mostly there specially in scanner.rs, sync.rs and errors.rs where more than 80% code is ai written. Also many lines of code used ai code completion. But I have reviewed and tested all the code and made sure it works as expected.
+1. **Is this a vibe-coded project? Is it completely AI-generated?**  
+   No. AMUS is a personal project that I designed and built myself.
+   I do use AI tools, including the Opencode coding agent and AI code completion, to help with implementation and bug fixing — especially while I was learning Rust or working on boilerplate and low-level code. Some files, such as parts of the library scanner and synchronization logic, were largely generated with AI assistance.
+All AI-generated code has been reviewed, tested, and integrated by me. I make the architectural decisions, develop new features, fix bugs, and maintain the codebase.
