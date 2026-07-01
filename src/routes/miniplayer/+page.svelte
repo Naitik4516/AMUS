@@ -16,6 +16,7 @@
     import { getImageUrl } from "$lib/utils";
     import { formatDurationColon } from "$lib/utils";
     import { invoke } from "@tauri-apps/api/core";
+    import Marquee from "$components/ui/Marquee.svelte";
 
     let volumeValue = $state(player.volume);
     let seekDragPercent = $state<number | null>(null);
@@ -79,16 +80,19 @@
                 />
             </div>
             <div class="col-span-3 flex flex-col gap-4 items-center">
-                <div class="flex flex-col items-center">
-                    <span
-                        class="font-extrabold text-2xl text-white line-clamp-1"
-                        >{player.currentTrack.title}</span
-                    >
-                    <div class="title" id="title">
+                <div class="flex flex-col items-center overflow-hidden w-50">
+                    <Marquee animationDelay={8}>
+                        <div
+                            class="font-extrabold text-xl text-white inline-block truncate"
+                        >
+                            {player.currentTrack.title}
+                        </div>
+                    </Marquee>
+                    <Marquee>
                         <span class=" text-gray-300" id="text"
                             >{player.currentTrack.artists[0].name}</span
                         >
-                    </div>
+                    </Marquee>
                 </div>
                 <div class="flex items-center gap-6">
                     <button

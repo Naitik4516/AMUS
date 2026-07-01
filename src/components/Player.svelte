@@ -22,9 +22,15 @@
     import TrackListSmall from "./ui/TrackListSmall.svelte";
     import { formatDurationColon } from "$lib/utils";
 
+    import { ui } from "$lib/shortcut-handler.svelte";
+    import Marquee from "./ui/Marquee.svelte";
     let volumeValue = $state(player.volume);
     let showQueue = $state(false);
     let seekDragPercent = $state<number | null>(null);
+
+    $effect(() => {
+        if (ui.queueVisible) showQueue = true;
+    });
 
     let displayProgress = $derived(
         seekDragPercent !== null && player.currentTrack
@@ -69,25 +75,29 @@
                         <Music2 size={32} />
                     {/if}
                 </div>
-                <div class="overflow-hidden">
-                    <a
-                        href="/library/track/{player.currentTrack?.id}"
-                        class="font-bold truncate text-white hover:underline cursor-pointer"
-                    >
-                        {player.currentTrack?.title}
-                    </a>
-                    <p class="text-xs text-gray-300 truncate">
-                        {#each player.currentTrack?.artists as artist, ai (artist.id)}
-                            {#if ai > 0}
-                                <span>, </span>
-                            {/if}
-                            <a
-                                href="/library/artists/{artist.id}"
-                                class=" hover:text-white font-medium"
-                                >{artist.name}</a
-                            >
-                        {/each}
-                    </p>
+                <div class="flex flex-col min-w-0 flex-1 overflow-hidden">
+                    <Marquee>
+                        <a
+                            href="/library/track/{player.currentTrack?.id}"
+                            class="font-bold truncate text-white hover:underline cursor-pointer inline-block"
+                        >
+                            {player.currentTrack?.title}
+                        </a>
+                    </Marquee>
+                    <Marquee>
+                        <p class=" text-gray-300 truncate -mt-1">
+                            {#each player.currentTrack?.artists as artist, ai (artist.id)}
+                                {#if ai > 0}
+                                    <span>, </span>
+                                {/if}
+                                <a
+                                    href="/library/artists/{artist.id}"
+                                    class=" hover:text-white font-medium text-xs"
+                                    >{artist.name}</a
+                                >
+                            {/each}
+                        </p>
+                    </Marquee>
                 </div>
                 <button
                     onclick={toggleFavorite}
@@ -110,7 +120,7 @@
                 <div class="flex items-center gap-6">
                     <button
                         class="hover:text-white transition-colors"
-                        class:text-secondary={player.shuffle}
+                        class:text-white={player.shuffle}
                         class:text-gray-300={!player.shuffle}
                         onclick={() => player.toggleShuffle()}
                     >
@@ -140,7 +150,7 @@
                     </button>
                     <button
                         class="hover:text-white transition-colors"
-                        class:text-secondary={player.repeat !== "none"}
+                        class:text-white={player.repeat !== "none"}
                         class:text-gray-300={player.repeat === "none"}
                         onclick={() => player.toggleRepeat()}
                     >
@@ -167,7 +177,7 @@
                         onDragChange={(val) => (seekDragPercent = val)}
                         onValueChange={(val) => {
                             seekDragPercent = null;
-                            player.seek(val)
+                            player.seek(val);
                         }}
                     />
                     <span class="text-[10px] font-medium text-gray-400 w-10">
@@ -188,7 +198,17 @@
                     <ListMusic size={20} />
                 </button>
 
-                <div class="flex items-center gap-2 group">
+                <div
+                    class="flex items-center gap-2 group"
+                    onwheel={(e) => {
+                        e.preventDefault();
+                        const delta = e.deltaY > 0 ? -5 : 5;
+                        volumeValue = Math.max(
+                            0,
+                            Math.min(100, volumeValue + delta),
+                        );
+                    }}
+                >
                     <button
                         class="text-gray-300 group-hover:text-white transition-colors"
                         onclick={() =>

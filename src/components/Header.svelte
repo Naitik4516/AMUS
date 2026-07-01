@@ -153,6 +153,7 @@
             >
                 <Search size={16} class="text-gray-400" />
                 <input
+                    id="global-search-input"
                     type="text"
                     placeholder="What do you want to listen to?"
                     bind:value={searchQuery}
