@@ -26,11 +26,9 @@
 </script>
 
 {#if artists.length > 0}
-    <div class="flex flex-col gap-4">
-        <HorizontalScroll {title}>
-            {#each artists as artist (artist.id)}
-                <ArtistCard data={artist} />
-            {/each}
-        </HorizontalScroll>
-    </div>
+    <HorizontalScroll {title}>
+        {#each artists as artist (artist.id)}
+            <ArtistCard data={artist} />
+        {/each}
+    </HorizontalScroll>
 {/if}

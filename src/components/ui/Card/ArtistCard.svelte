@@ -8,10 +8,10 @@
 
 <a
     href="/library/artists/{data.id}"
-    class="group flex flex-col items-center text-center gap-4 px-5 py-3 rounded-4xl hover:bg-zinc-800/20 transition-all duration-300 border border-transparent hover:border-zinc-700/40 hover:shadow-xl w-60 h-auto"
+    class="group flex flex-col items-center text-center gap-4 px-5 py-3 rounded-4xl hover:bg-zinc-800/20 transition-all duration-300 border border-transparent hover:border-zinc-700/40 hover:shadow-xl"
 >
     <div
-        class="aspect-square w-full rounded-full overflow-hidden bg-zinc-800 shadow-xl relative"
+        class="w-50 h-50 rounded-full overflow-hidden bg-zinc-800 shadow-xl relative"
     >
         {#if data.profile_image}
             {#await getImageUrl(data.profile_image, "artist")}
@@ -21,8 +21,6 @@
                     src={url}
                     alt={data.name}
                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    width="200"
-                    height="200"
                 />
             {/await}
         {:else}

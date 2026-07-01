@@ -33,35 +33,41 @@
     ];
 </script>
 
-<div class="container">
-    <div
-        class="reveal-section"
-        data-scroll
-        data-scroll-class="section-reveal"
-        data-scroll-offset="0, 5%"
-    >
+<div class="container pb-12">
+    <div>
         <Banner hasMusic={data.hasMusic} />
     </div>
 
     <div class="flex flex-col gap-8 py-10">
-        {#each trackSections as section}
-            <TracksSection
-                title={section.title}
-                loadFunction={section.loadFunction}
-                args={section.args}
-            />
+        {#each trackSections as section, i}
+            <div data-scroll data-scroll-speed={i !== 0 && "0.4"}>
+                <TracksSection
+                    title={section.title}
+                    loadFunction={section.loadFunction}
+                    args={section.args}
+                />
+            </div>
         {/each}
 
-        <ArtistsSection
-            title="Your Top Artists"
-            loadFunction="get_top_artists"
-        />
+        <div data-scroll data-scroll-speed="0.4">
+            <ArtistsSection
+                title="Your Top Artists"
+                loadFunction="get_top_artists"
+            />
+        </div>
 
-        <AlbumsSection title="Albums You Love" loadFunction="get_top_albums" />
+        <div>
+            <AlbumsSection
+                title="Albums You Love"
+                loadFunction="get_top_albums"
+            />
+        </div>
 
-        <TracksSection
-            title="Remember These?"
-            loadFunction="get_forgotten_tracks"
-        />
+        <div>
+            <TracksSection
+                title="Remember These?"
+                loadFunction="get_forgotten_tracks"
+            />
+        </div>
     </div>
 </div>

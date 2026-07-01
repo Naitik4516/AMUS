@@ -1,3 +1,5 @@
+@import "locomotive-scroll/dist/locomotive-scroll.css";
+
 *,
 *::before,
 *::after {
@@ -11,15 +13,17 @@ html {
 body {
     margin: 0;
     padding: 0;
-    /*background-color: var(--color-dark);*/
-    color: var(--color-foreground);
     overflow: hidden;
+    color: var(--color-foreground);
     background: var(--color-background);
     background: radial-gradient(
         circle,
         var(--color-background) 0%,
         rgb(0, 0, 0) 100%
     );
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
 }
 
 button {
@@ -27,8 +31,8 @@ button {
 }
 
 ::-webkit-scrollbar {
-    width: 0px;
-    height: 6px;
+    width: 2px;
+    height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -36,24 +40,10 @@ button {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgb(95, 98, 242);
     border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.15);
-}
-
-.reveal-section {
-    opacity: 0;
-    transform: translateY(30px);
-    transition:
-        opacity 0.7s cubic-bezier(0.25, 0.4, 0.25, 1),
-        transform 0.7s cubic-bezier(0.25, 0.4, 0.25, 1);
-}
-
-html:not(.smooth-scroll) .reveal-section,
-.reveal-section.section-reveal {
-    opacity: 1;
-    transform: translateY(0);
+    background: rgb(107, 83, 237);
 }
