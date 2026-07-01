@@ -16,6 +16,21 @@
     import { toast } from "svelte-sonner";
     import LocomotiveScroll from "locomotive-scroll";
     import "locomotive-scroll/locomotive-scroll.css";
+    import { listen } from "@tauri-apps/api/event";
+    import {
+        initShortcuts,
+        findAction,
+        getHandler,
+        globalShortcutFlags,
+    } from "$lib/shortcuts.svelte";
+    import { installHandlers } from "$lib/shortcut-handler.svelte";
+    import ShortcutSettingsModal from "$components/shortcuts/ShortcutSettingsModal.svelte";
+    let shortcutModalOpen = $state(false);
+    $effect(() => {
+        function handler() { shortcutModalOpen = true; }
+        window.addEventListener("open-shortcut-settings", handler);
+        return () => window.removeEventListener("open-shortcut-settings", handler);
+    });
 
     let { children }: LayoutProps = $props();
 
@@ -58,6 +73,56 @@
         } else {
             destroyScroll();
         }
+    });
+
+    $effect(() => {
+        let active = true;
+        let cleanupGlobal: (() => void) | undefined;
+
+        const handler = (e: KeyboardEvent) => {
+            if (shortcutModalOpen) return;
+            const action = findAction(e);
+            if (action) {
+                e.preventDefault();
+                e.stopPropagation();
+                const fn = getHandler(action.id);
+                fn?.();
+            }
+        };
+
+        const unlistenMouseBack = (e: MouseEvent) => {
+            if (e.button === 3) { history.back(); }
+            if (e.button === 4) { history.forward(); }
+        };
+
+        initShortcuts().then(() => {
+            if (!active) return;
+            installHandlers();
+
+            window.addEventListener("keydown", handler);
+            window.addEventListener("mouseup", unlistenMouseBack);
+
+            listen<string>("global-shortcut", (ev) => {
+                if (ev.payload.startsWith("global_") && globalShortcutFlags[ev.payload] !== true) {
+                    return;
+                }
+                const fn = getHandler(ev.payload);
+                fn?.();
+            }).then((unlisten) => {
+                if (!active) {
+                    unlisten();
+                } else {
+                    cleanupGlobal = unlisten;
+                }
+            });
+        });
+
+        return () => {
+            active = false;
+            window.removeEventListener("keydown", handler);
+            window.removeEventListener("mouseup", unlistenMouseBack);
+            if (cleanupGlobal) cleanupGlobal();
+        };
     });
 
     onMount(() => {
@@ -184,3 +249,5 @@
 {#if player.currentTrack}
     <Player />
 {/if}
+
+<ShortcutSettingsModal bind:open={shortcutModalOpen} />

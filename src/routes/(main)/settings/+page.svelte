@@ -27,6 +27,7 @@
     import ToggleCard from "$components/ui/ToggleCard.svelte";
     import { settings, setSetting, initSettings } from "$lib/settings.svelte";
     import { updater } from "$lib/update.svelte";
+    import { Keyboard } from "@lucide/svelte";
 
     let sources = $state<string[]>([]);
     let loading = $state(true);
@@ -229,6 +230,19 @@
                     iconActiveClass="text-orange-400"
                 />
             </div>
+
+            <h3 class="text-lg font-bold text-gray-300 mt-6">Shortcuts</h3>
+            <button
+                class="flex items-center justify-between w-full px-8 py-4 bg-card/50 backdrop-blur-lg rounded-3xl shadow-lg border border-border cursor-pointer hover:bg-card/70 transition-colors text-left"
+                command="show-modal"
+                commandfor="shortcut-settings-modal"
+            >
+                <div class="flex items-center gap-3">
+                    <Keyboard size={20} class="text-foreground" />
+                    <Label class="text-xl font-bold text-white">Keyboard Shortcuts</Label>
+                </div>
+                <span class="text-gray-400 text-sm">Customize</span>
+            </button>
 
             <h3 class="text-lg font-bold text-gray-300 mt-6">Updates</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

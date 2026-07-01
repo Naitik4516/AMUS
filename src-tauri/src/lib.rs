@@ -138,6 +138,7 @@ fn create_popup(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
                 if !state.0.load(Ordering::Relaxed) {
                     if let Some(w) = app_clone.get_webview_window("mini-player") {
                         let _ = w.hide();
+                        let _ = w.as_ref().window().move_window(Position::BottomRight);
                     }
                 }
             }
@@ -145,34 +146,45 @@ fn create_popup(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
         _ => {}
     });
 
-    window.set_position(Position::TopRight)?;
-
     Ok(window)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let _ = app
+                .get_webview_window("main")
+                .expect("no main window")
+                .set_focus();
+        }))
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        let action_id = match shortcut.to_string().as_str() {
+                            "MediaPlayPause" => "global_play_pause",
+                            "MediaTrackNext" => "global_next_track",
+                            "MediaTrackPrevious" => "global_prev_track",
+                            "MediaStop" => "global_stop",
+                            _ => return,
+                        };
+                        let _ = app.emit("global-shortcut", action_id);
+                    }
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let app_handle = app.handle();
-
-            {
-                app_handle.plugin(tauri_plugin_updater::Builder::new().build())?;
-                app_handle.plugin(tauri_plugin_positioner::init());
-                tauri::tray::TrayIconBuilder::new()
-                    .on_tray_icon_event(|tray_handle, event| {
-                        tauri_plugin_positioner::on_tray_event(tray_handle.app_handle(), &event);
-                    })
-                    .build(app)?;
-            }
 
             let app_dir = app_handle
                 .path()
@@ -208,7 +220,7 @@ pub fn run() {
 
             engine::engine::spawn_playback_monitor(app_handle.clone(), engine_arc, monitor_pool);
 
-            // --- System Tray ---
+            // System Tray
             let tray_menu = build_tray_menu(app_handle)?;
 
             TrayIconBuilder::new()
@@ -216,6 +228,7 @@ pub fn run() {
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
+                    tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
@@ -228,7 +241,7 @@ pub fn run() {
                 .on_menu_event(handle_tray_menu)
                 .build(app_handle)?;
 
-            // --- Main Window Close → Hide (configurable) ---
+            // Prevent closing the main window if "keepRunningInBg" is true
             let handle = app_handle.clone();
             if let Some(main_win) = app_handle.get_webview_window("main") {
                 main_win.on_window_event(move |event| {
@@ -322,6 +335,8 @@ pub fn run() {
             commands::get_favorite_trends,
             commands::get_playback_history_timeline,
             commands::toggle_mini_player_pin,
+            commands::quit_app,
+            commands::toggle_mini_player,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

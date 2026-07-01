@@ -17,10 +17,18 @@
         | "get_unplayed_tracks"
         | "get_recently_added";
 
-    const trackSections: { title: string; loadFunction: LoadFunction; args?: InvokeArgs }[] = [
+    const trackSections: {
+        title: string;
+        loadFunction: LoadFunction;
+        args?: InvokeArgs;
+    }[] = [
         { title: "Continue Listening", loadFunction: "get_recently_played" },
         { title: "Recently Added", loadFunction: "get_recently_added" },
-        { title: "On repeat", loadFunction: "get_most_played_tracks", args: { timeframe: "this_month" } },
+        {
+            title: "On repeat",
+            loadFunction: "get_most_played_tracks",
+            args: { timeframe: "this_month" },
+        },
         { title: "Favorites", loadFunction: "get_favorite_tracks" },
     ];
 </script>
@@ -37,47 +45,23 @@
 
     <div class="flex flex-col gap-8 py-10">
         {#each trackSections as section}
-            <div
-                class="reveal-section"
-                data-scroll
-                data-scroll-class="section-reveal"
-                data-scroll-offset="0, 10%"
-            >
-                <TracksSection title={section.title} loadFunction={section.loadFunction} args={section.args} />
-            </div>
+            <TracksSection
+                title={section.title}
+                loadFunction={section.loadFunction}
+                args={section.args}
+            />
         {/each}
 
-        <div
-            class="reveal-section"
-            data-scroll
-            data-scroll-class="section-reveal"
-            data-scroll-offset="0, 10%"
-        >
-            <ArtistsSection
-                title="Your Top Artists"
-                loadFunction="get_top_artists"
-            />
-        </div>
+        <ArtistsSection
+            title="Your Top Artists"
+            loadFunction="get_top_artists"
+        />
 
-        <div
-            class="reveal-section"
-            data-scroll
-            data-scroll-class="section-reveal"
-            data-scroll-offset="0, 10%"
-        >
-            <AlbumsSection title="Albums You Love" loadFunction="get_top_albums" />
-        </div>
+        <AlbumsSection title="Albums You Love" loadFunction="get_top_albums" />
 
-        <div
-            class="reveal-section"
-            data-scroll
-            data-scroll-class="section-reveal"
-            data-scroll-offset="0, 10%"
-        >
-            <TracksSection
-                title="Remember These?"
-                loadFunction="get_forgotten_tracks"
-            />
-        </div>
+        <TracksSection
+            title="Remember These?"
+            loadFunction="get_forgotten_tracks"
+        />
     </div>
 </div>
