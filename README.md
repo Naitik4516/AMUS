@@ -138,9 +138,9 @@ amus/
 ## Roadmap
 - [x] Mini player with always-on-top option
 - [x] Better Search
-- [] Global and local keyboard shortcuts
-- [ ] Support lyrics
+- [x] Global and local keyboard shortcuts
 - [ ] Better os integration
+- [ ] Support lyrics
 - [ ] Support video playback
 - [ ] Dynamic theming 
 - [ ] Recommendation System
@@ -155,5 +155,6 @@ amus/
 - [ ] Advanced Search
 - [ ] DSP Effects
 
-## License
-AMUS is licensed under the [Mozilla Public License 2.0](https://www.mozilla.org/en-US/MPL/2.0/). See [LICENSE](LICENSE) for details.
+## FAQ
+1. **Is it a vibe coded project? Completely built with AI?**  
+   No, it is not a vibe coded projects. It is personally built by me. However, I have used *opencode* coding agent to build some parts of the project. I don't have a lot of experience in Rust, so I used it mostly there specially in scanner.rs, sync.rs and errors.rs where more than 80% code is ai written. Also many lines of code used ai code completion. But I have reviewed and tested all the code and made sure it works as expected.
