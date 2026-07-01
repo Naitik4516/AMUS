@@ -26,16 +26,13 @@
 
         return () => resize.disconnect();
     });
-
-    $inspect("duration", duration);
-    $inspect("delay", delay);
 </script>
 
 <div bind:this={container} class="container">
     <span
         bind:this={text}
         class:scroll={shouldScroll}
-        style="--distance: {distance}px; --duration: {duration}s; --delay: {delay}s;"
+        style="--distance: {distance}px; --duration: {duration}s;"
         class="inline-block px-1"
     >
         {@render children()}
