@@ -121,6 +121,7 @@ fn create_popup(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
             .resizable(false)
             .decorations(false)
             .transparent(true)
+            .shadow(false)
             .always_on_top(true)
             .skip_taskbar(true)
             .build()?;
