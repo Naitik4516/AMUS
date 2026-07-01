@@ -27,9 +27,12 @@
     import ShortcutSettingsModal from "$components/shortcuts/ShortcutSettingsModal.svelte";
     let shortcutModalOpen = $state(false);
     $effect(() => {
-        function handler() { shortcutModalOpen = true; }
+        function handler() {
+            shortcutModalOpen = true;
+        }
         window.addEventListener("open-shortcut-settings", handler);
-        return () => window.removeEventListener("open-shortcut-settings", handler);
+        return () =>
+            window.removeEventListener("open-shortcut-settings", handler);
     });
 
     let { children }: LayoutProps = $props();
@@ -91,8 +94,12 @@
         };
 
         const unlistenMouseBack = (e: MouseEvent) => {
-            if (e.button === 3) { history.back(); }
-            if (e.button === 4) { history.forward(); }
+            if (e.button === 3) {
+                history.back();
+            }
+            if (e.button === 4) {
+                history.forward();
+            }
         };
 
         initShortcuts().then(() => {
@@ -103,7 +110,10 @@
             window.addEventListener("mouseup", unlistenMouseBack);
 
             listen<string>("global-shortcut", (ev) => {
-                if (ev.payload.startsWith("global_") && globalShortcutFlags[ev.payload] !== true) {
+                if (
+                    ev.payload.startsWith("global_") &&
+                    globalShortcutFlags[ev.payload] !== true
+                ) {
                     return;
                 }
                 const fn = getHandler(ev.payload);
@@ -157,10 +167,12 @@
     });
 
     afterNavigate(() => {
-        if (!scrollInstance || !scrollContainer) return;
-        scrollInstance.scrollTo(0, { immediate: true });
-        scrollInstance.addScrollElements(scrollContainer);
-        scrollInstance.resize();
+        if (!scrollContainer || !scrollContent) return;
+        if (settings.useLocomotiveScroll) {
+            initScroll();
+        } else {
+            scrollContainer.scrollTop = 0;
+        }
     });
 
     const MIN_W = 700;

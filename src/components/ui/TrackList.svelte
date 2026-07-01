@@ -622,6 +622,12 @@
                         : 'py-3'}"
                     style="grid-template-columns:{gridTemplate}"
                     ondblclick={() => handleRowActivate(track)}
+                    onauxclick={(e) => {
+                        if (e.button === 1) {
+                            e.preventDefault();
+                            player.addToQueue(track);
+                        }
+                    }}
                 >
                     {#each visibleColumnKeys as key (key)}
                         <div
