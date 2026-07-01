@@ -41,14 +41,11 @@
         {/if}
         {#if player.isPlaying && player.currentTrack?.id === track.id}
             <div
-                class="absolute inset-0 bg-black/40 flex items-end justify-center"
+                class="absolute inset-0 bg-black/40 flex items-end justify-between px-2 py-1"
             >
-                <div class="visualizer-container">
-                    <div class="bar"></div>
-                    <div class="bar"></div>
-                    <div class="bar"></div>
-                    <div class="bar"></div>
-                </div>
+                <span class="playing__bar playing__bar1"></span>
+                <span class="playing__bar playing__bar2"></span>
+                <span class="playing__bar playing__bar3"></span>
             </div>
         {/if}
     </div>
@@ -63,44 +60,48 @@
 </button>
 
 <style>
-    .visualizer-container {
-        display: flex;
-        align-items: flex-end; /* Keeps bars aligned at the bottom */
-        gap: 4px;
-        height: 24px;
-        width: max-content;
-        margin-bottom: 3px;
+    .playing__bar {
+        display: inline-block;
+        background: lightgray;
+        width: 15%;
+        height: 80%;
+        animation: up-and-down 1.3s ease infinite alternate;
+        border-radius: 12px;
     }
 
-    .bar {
-        width: 3px;
-        height: 100%;
-        background-color: #1db954; 
-        border-radius: 30px 30px 0 0; 
-        animation: bounce 0.5s ease-in-out infinite alternate;
-        transform-origin: bottom;
+    .playing__bar1 {
+        height: 60%;
     }
 
-    /* Offset the animation delay for each bar to create the wave effect */
-    .bar:nth-child(1) {
-        animation-delay: 0.1s;
-    }
-    .bar:nth-child(2) {
-        animation-delay: 0.25s;
-    }
-    .bar:nth-child(3) {
-        animation-delay: 0.35s;
-    }
-    .bar:nth-child(4) {
-        animation-delay: 0.5s;
+    .playing__bar2 {
+        height: 30%;
+        animation-delay: -2.2s;
     }
 
-    @keyframes bounce {
-        0% {
-            transform: scaleY(0.1);
+    .playing__bar3 {
+        height: 75%;
+        animation-delay: -3.7s;
+    }
+
+    @keyframes up-and-down {
+        10% {
+            height: 30%;
         }
+
+        30% {
+            height: 100%;
+        }
+
+        60% {
+            height: 50%;
+        }
+
+        80% {
+            height: 75%;
+        }
+
         100% {
-            transform: scaleY(1);
+            height: 60%;
         }
     }
 </style>

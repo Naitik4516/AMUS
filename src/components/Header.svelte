@@ -173,7 +173,7 @@
 
             {#if showResults}
                 <div
-                    class="absolute top-full left-0 right-0 mt-2 backdrop-blur-xl border-2 border-border rounded-4xl shadow-2xl overflow-hidden py-1 z-50 max-h-[50vh] h-auto overflow-y-auto bg-linear-to-b from-transparent via-gray-400/10 to-transparent"
+                    class="absolute top-full left-0 right-0 mt-2 backdrop-blur-xl border-2 border-border rounded-4xl shadow-2xl overflow-hidden py-1 z-50 max-h-[50vh] h-auto overflow-y-auto bg-linear-to-b from-transparent via-gray-400/10 to-transparent scrollbar-none"
                     bind:this={resultsContainer}
                     onblur={() => (showResults = false)}
                     role="listbox"
