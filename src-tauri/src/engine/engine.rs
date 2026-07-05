@@ -1,4 +1,5 @@
 use crate::db::{self, DbPool};
+use crate::error::Error;
 use crate::models::{RepeatMode, SourceType, TrackDetails};
 use parking_lot::Mutex;
 use rodio::{Player, decoder::Decoder, mixer::Mixer};
@@ -27,6 +28,7 @@ pub struct PlaybackState {
 
 pub struct AudioEngine {
     player: Player,
+    pool: DbPool,
     user_queue: VecDeque<TrackDetails>,
     play_next: VecDeque<TrackDetails>,
     history: Vec<TrackDetails>,
@@ -39,9 +41,10 @@ pub struct AudioEngine {
 }
 
 impl AudioEngine {
-    pub fn new(mixer: &Mixer) -> Self {
+    pub fn new(mixer: &Mixer, pool: DbPool) -> Self {
         Self {
             player: Player::connect_new(mixer),
+            pool: pool,
             user_queue: VecDeque::new(),
             play_next: VecDeque::new(),
             history: Vec::new(),
@@ -80,19 +83,116 @@ impl AudioEngine {
         _source_id: Option<i64>,
     ) -> anyhow::Result<()> {
         self.session_source_type = source_type;
-        self.user_queue.clear();
         self.play_next.clear();
-        self.history.clear();
-        self.tracks_played_this_gen = 0;
+        self.play_inner(track);
 
-        if play_next_tracks.is_empty() && source_type == SourceType::Other {
-            self.tracks_played_this_gen = 0;
-        } else if !play_next_tracks.is_empty() {
-            self.play_next = VecDeque::from(play_next_tracks.to_vec());
-            self.tracks_played_this_gen = u32::MAX;
+        match source_type {
+            SourceType::Other => {
+                self.generate_play_next(track.id);
+            }
+            _ => {
+                self.play_next = VecDeque::from(play_next_tracks.to_vec());
+            }
         }
 
-        self.play_inner(track)
+        Ok(())
+    }
+
+    pub fn play_next(&mut self) -> anyhow::Result<bool> {
+        match self.repeat {
+            RepeatMode::Track => {
+                if let Some(current) = &self.current_track.clone() {
+                    self.play_inner(current)?;
+                    return Ok(true);
+                }
+            }
+            RepeatMode::All => {
+                let next = self.history.first().cloned();
+                let history = self.history.clone();
+                if let Some(ref track) = next {
+                    self.play(
+                        track,
+                        &history,
+                        self.session_source_type,
+                        self.session_source_id,
+                    )
+                    .map(|_| true)?;
+                    self.history.clear();
+                    return Ok(true);
+                }
+            }
+            RepeatMode::Off => {}
+        };
+
+        self.push_history();
+
+        if !self.user_queue.is_empty() {
+            let next: TrackDetails;
+            if self.shuffle {
+                let idx = rand::random::<u32>() as usize % self.user_queue.len();
+                next = self.user_queue.remove(idx).unwrap();
+            } else {
+                next = self.user_queue.pop_front().unwrap();
+            }
+            return self.play_inner(&next).map(|_| true);
+        }
+
+        if !self.play_next.is_empty() {
+            let next: TrackDetails;
+            if self.shuffle {
+                let idx = rand::random::<u32>() as usize % self.play_next.len();
+                next = self.play_next.remove(idx).unwrap();
+            } else {
+                next = self.play_next.pop_front().unwrap();
+            }
+            if self.play_next.len() <= 2 {
+                self.generate_play_next(self.history.last().map(|t| t.id).unwrap_or(0))
+            }
+            return self.play_inner(&next).map(|_| true);
+        }
+
+        self.player.stop();
+
+        Ok(false)
+    }
+
+    pub fn play_previous(&mut self) -> anyhow::Result<bool> {
+        let Some(previous) = self.history.pop() else {
+            return Ok(false);
+        };
+
+        if let Some(current) = self.current_track.take() {
+            self.user_queue.push_front(current);
+        }
+
+        self.play_inner(&previous)?;
+        Ok(true)
+    }
+
+    pub fn generate_play_next(&mut self, track_id: i64) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self.pool.get().map_err(Error::Pool)?;
+        if let Ok(similar) = db::get_similar_tracks(&conn, track_id, 10) {
+            let details: Vec<TrackDetails> = similar
+                .into_iter()
+                .filter_map(|t| db::get_track_details(&conn, t.id).ok())
+                .collect();
+
+            let current_id = self.current_track.as_ref().map(|t| t.id);
+            let filtered: Vec<TrackDetails> = details
+                .into_iter()
+                .filter(|t| {
+                    t.id != track_id
+                        && current_id.map_or(true, |id| t.id != id)
+                        && !self.user_queue.iter().any(|qt| qt.id == t.id)
+                        && !self.play_next.iter().any(|pt| pt.id == t.id)
+                })
+                .collect();
+
+            if !filtered.is_empty() {
+                self.play_next = VecDeque::from(filtered);
+            }
+        }
+        Ok(())
     }
 
     pub fn add_to_queue(&mut self, track: &TrackDetails) {
@@ -115,13 +215,6 @@ impl AudioEngine {
         }
     }
 
-    pub fn reorder_queue(&mut self, from: usize, to: usize) {
-        if from < self.user_queue.len() && to < self.user_queue.len() && from != to {
-            let track = self.user_queue.remove(from).unwrap();
-            self.user_queue.insert(to, track);
-        }
-    }
-
     pub fn clear_queue(&mut self) {
         self.user_queue.clear();
     }
@@ -132,10 +225,6 @@ impl AudioEngine {
 
     pub fn resume(&self) {
         self.player.play();
-    }
-
-    pub fn stop(&self) {
-        self.player.stop();
     }
 
     pub fn is_paused(&self) -> bool {
@@ -167,14 +256,6 @@ impl AudioEngine {
         self.repeat = mode;
     }
 
-    pub fn shuffle(&self) -> bool {
-        self.shuffle
-    }
-
-    pub fn repeat(&self) -> RepeatMode {
-        self.repeat
-    }
-
     pub fn has_finished(&self) -> bool {
         self.player.empty()
     }
@@ -185,131 +266,6 @@ impl AudioEngine {
         }
     }
 
-    pub fn play_next(&mut self, conn: Option<&rusqlite::Connection>) -> anyhow::Result<bool> {
-        if self.repeat == RepeatMode::Track {
-            if let Some(current) = &self.current_track.clone() {
-                self.play_inner(current)?;
-                return Ok(true);
-            }
-        }
-
-        self.push_history();
-
-        if self.shuffle {
-            if !self.user_queue.is_empty() {
-                let idx = rand::random::<u32>() as usize % self.user_queue.len();
-                let next = self.user_queue.remove(idx).unwrap();
-                return self.play_inner(&next).map(|_| true);
-            }
-            if !self.play_next.is_empty() {
-                let idx = rand::random::<u32>() as usize % self.play_next.len();
-                let next = self.play_next.remove(idx).unwrap();
-                self.tracks_played_this_gen = self.tracks_played_this_gen.saturating_add(1);
-                if let Some(conn) = conn {
-                    self.maybe_regenerate(conn);
-                }
-                return self.play_inner(&next).map(|_| true);
-            }
-        } else {
-            if let Some(next) = self.user_queue.pop_front() {
-                return self.play_inner(&next).map(|_| true);
-            }
-            if let Some(next) = self.play_next.pop_front() {
-                self.tracks_played_this_gen = self.tracks_played_this_gen.saturating_add(1);
-                if let Some(conn) = conn {
-                    self.maybe_regenerate(conn);
-                }
-                return self.play_inner(&next).map(|_| true);
-            }
-        }
-
-        if self.repeat == RepeatMode::All {
-            if let Some(first) = self.history.first() {
-                let track = first.clone();
-                self.history.clear();
-                self.history.push(track.clone());
-                return self.play_inner(&track).map(|_| true);
-            }
-        }
-
-        // Ad-hoc playback: generate similar tracks when queues are empty
-        if self.play_next.is_empty() && self.user_queue.is_empty() {
-            if let Some(conn) = conn {
-                let seed = self.history.last().map(|t| t.id);
-                if let Some(seed_id) = seed {
-                    self.regenerate_play_next(seed_id, conn);
-                    if !self.play_next.is_empty() {
-                        let next = if self.shuffle {
-                            let idx = rand::random::<u32>() as usize % self.play_next.len();
-                            self.play_next.remove(idx).unwrap()
-                        } else {
-                            self.play_next.pop_front().unwrap()
-                        };
-                        return self.play_inner(&next).map(|_| true);
-                    }
-                }
-            }
-        }
-
-        self.player.stop();
-        Ok(false)
-    }
-
-    pub fn play_previous(&mut self) -> anyhow::Result<bool> {
-        let Some(previous) = self.history.pop() else {
-            return Ok(false);
-        };
-
-        if let Some(current) = self.current_track.take() {
-            self.user_queue.push_front(current);
-        }
-
-        self.play_inner(&previous)?;
-        Ok(true)
-    }
-
-    pub fn skip_current(&mut self, conn: Option<&rusqlite::Connection>) -> anyhow::Result<bool> {
-        self.player.skip_one();
-        self.play_next(conn)
-    }
-
-    fn maybe_regenerate(&mut self, conn: &rusqlite::Connection) {
-        if self.tracks_played_this_gen >= 4 && self.play_next.len() < 5 {
-            let seed = self
-                .current_track
-                .as_ref()
-                .or_else(|| self.history.last())
-                .map(|t| t.id);
-            if let Some(seed_id) = seed {
-                self.regenerate_play_next(seed_id, conn);
-            }
-        }
-    }
-
-    pub fn regenerate_play_next(&mut self, track_id: i64, conn: &rusqlite::Connection) {
-        if let Ok(similar) = db::get_similar_tracks(conn, track_id, 10) {
-            let details: Vec<TrackDetails> = similar
-                .into_iter()
-                .filter_map(|t| db::get_track_details(conn, t.id).ok())
-                .collect();
-
-            let current_id = self.current_track.as_ref().map(|t| t.id);
-            let filtered: Vec<TrackDetails> = details
-                .into_iter()
-                .filter(|t| {
-                    t.id != track_id
-                        && current_id.map_or(true, |id| t.id != id)
-                        && !self.user_queue.iter().any(|qt| qt.id == t.id)
-                        && !self.play_next.iter().any(|pt| pt.id == t.id)
-                })
-                .collect();
-
-            if !filtered.is_empty() {
-                self.play_next = VecDeque::from(filtered);
-                self.tracks_played_this_gen = 0;
-            }
-        }
-    }
 
     pub fn get_user_queue(&self) -> Vec<TrackDetails> {
         self.user_queue.iter().cloned().collect()
@@ -384,8 +340,7 @@ pub fn spawn_playback_monitor(
                 let mut eng = engine.lock();
 
                 if should_advance && eng.has_finished() && !eng.is_paused() {
-                    let conn = pool.get().ok();
-                    let _ = eng.play_next(conn.as_ref().map(|c| &**c));
+                    let _ = eng.play_next();
                 }
 
                 let new_id = eng.current_track.as_ref().map(|t| t.id);

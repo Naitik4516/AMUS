@@ -105,18 +105,17 @@ class PlayerState {
   async play(
     track: Track,
     tracks?: Track[],
-    sourceType?: SourceType,
-    sourceId?: number | null,
+    sourceType: SourceType = "other",
+    sourceId: number | null = null,
   ) {
-    const st = sourceType ?? "other";
     const idx = tracks ? tracks.findIndex((t) => t.id === track.id) : -1;
-    const playNextIds: number[] =
+    const playNextIds =
       idx >= 0 && tracks ? tracks.slice(idx + 1).map((t) => t.id) : [];
 
     await invoke("play_from_source", {
       trackId: track.id,
-      sourceType: st,
-      sourceId: sourceId ?? null,
+      sourceType,
+      sourceId,
       playNextIds,
     });
   }
@@ -187,12 +186,6 @@ class PlayerState {
     const idx = this.userQueue.findIndex((t) => t.id === trackId);
     if (idx === -1) return;
     await invoke("remove_from_queue", { index: idx });
-    await this.syncState();
-    await this.persistQueue();
-  }
-
-  async reorderQueue(from: number, to: number) {
-    await invoke("reorder_queue", { from, to });
     await this.syncState();
     await this.persistQueue();
   }

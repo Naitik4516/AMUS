@@ -29,7 +29,6 @@
         })
             .then((data) => {
                 tracks = data;
-                console.log(`Loaded ${data.length} tracks for ${title}`);
             })
             .catch((error) => {
                 console.error("Error loading tracks:", error);

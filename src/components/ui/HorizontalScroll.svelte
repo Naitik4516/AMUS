@@ -6,17 +6,27 @@
     {title}
 </h2>
 <div
-    class="relative flex gap-10 justify-evenly overflow-x-auto scrollbar-hide px-2 w-full"
+    class="relative flex gap-10 overflow-x-auto container scrollbar-none pl-2 w-full"
 >
     {@render children()}
 </div>
 
 <style>
-    .scrollbar-hide::-webkit-scrollbar {
-        display: none;
-    }
-    .scrollbar-hide {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
+    .container {
+        -webkit-mask-image: linear-gradient(
+            to right,
+            transparent 0,
+            black 20px,
+            black calc(100% - 20px),
+            transparent 100%
+        );
+
+        mask-image: linear-gradient(
+            to right,
+            transparent 0,
+            black 20px,
+            black calc(100% - 20px),
+            transparent 100%
+        );
     }
 </style>
