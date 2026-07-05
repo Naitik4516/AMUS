@@ -65,10 +65,8 @@ fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
         }
         "next" => {
             let player = app.state::<Player>();
-            let pool = app.state::<Pool<SqliteConnectionManager>>();
             let mut engine = player.engine.lock();
-            let conn = pool.get().ok();
-            let _ = engine.play_next(conn.as_deref());
+            let _ = engine.play_next();
             let state = engine.get_playback_state();
             let _ = app.emit("track-changed", &state);
         }
@@ -182,7 +180,6 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let app_handle = app.handle();
@@ -194,18 +191,24 @@ pub fn run() {
             std::fs::create_dir_all(&app_dir).expect("failed to create app data dir");
             let db_path = app_dir.join("music.db");
 
-            let manager = SqliteConnectionManager::file(db_path)
-                .with_init(|c| c.execute_batch("PRAGMA foreign_keys = ON;"));
+            let manager = SqliteConnectionManager::file(db_path).with_init(|c| {
+                c.execute_batch(
+                    "PRAGMA foreign_keys = ON;\n\
+                    PRAGMA journal_mode = WAL;\n\
+                    PRAGMA synchronous = NORMAL;\n\
+                    PRAGMA temp_store = MEMORY;\n\
+                    PRAGMA busy_timeout = 5000;",
+                )
+            });
             let pool = Pool::new(manager).expect("failed to create db pool");
             let monitor_pool = pool.clone();
-
             {
                 let mut conn = pool.get().expect("failed to get db connection");
                 db::init_db(&mut conn).expect("failed to initialize database");
             }
 
             let stream = DeviceSinkBuilder::open_default_sink().expect("open default audio stream");
-            let engine = AudioEngine::new(&stream.mixer());
+            let engine = AudioEngine::new(&stream.mixer(), pool.clone());
             let engine_arc = std::sync::Arc::new(parking_lot::Mutex::new(engine));
 
             app.manage(pool);
@@ -219,7 +222,7 @@ pub fn run() {
             app.manage(sync_manager);
             app.manage(MiniPlayerPinned(AtomicBool::new(true)));
 
-            engine::engine::spawn_playback_monitor(app_handle.clone(), engine_arc, monitor_pool);
+            engine::spawn_playback_monitor(app_handle.clone(), engine_arc, monitor_pool);
 
             // System Tray
             let tray_menu = build_tray_menu(app_handle)?;
@@ -300,14 +303,11 @@ pub fn run() {
             commands::add_to_queue,
             commands::insert_play_next_queue,
             commands::remove_from_queue,
-            commands::reorder_queue,
             commands::clear_queue,
             commands::play_next_track,
             commands::play_previous_track,
-            commands::skip_current_track,
             commands::set_shuffle,
             commands::set_repeat,
-            commands::regenerate_play_next,
             commands::get_queue_state,
             commands::get_current_track,
             commands::save_queue,

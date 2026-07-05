@@ -50,7 +50,7 @@
         class="relative bg-gray-900 h-screen w-screen rounded-4xl overflow-hidden"
     >
         <img
-            src={await getImageUrl(player.currentTrack.cover_art)}
+            src={await getImageUrl(player.currentTrack?.cover_art)}
             alt="Cover Art"
             class="w-screen h-screen object-cover blur-3xl -z-10 rounded-4xl"
         />
@@ -74,23 +74,24 @@
         >
             <div class="col-span-2">
                 <img
-                    src={await getImageUrl(player.currentTrack.cover_art)}
+                    src={await getImageUrl(player.currentTrack?.cover_art)}
                     alt="Cover Art"
                     class="oject-cover rounded-3xl shadow-lg shadow-zinc-800/60 w-full h-full"
                 />
             </div>
             <div class="col-span-3 flex flex-col gap-4 items-center">
                 <div class="flex flex-col items-center overflow-hidden w-50">
-                    <Marquee animationDelay={8}>
+                    <Marquee>
                         <div
                             class="font-extrabold text-xl text-white inline-block truncate"
                         >
-                            {player.currentTrack.title}
+                            {player.currentTrack?.title ?? ""}
                         </div>
                     </Marquee>
                     <Marquee>
                         <span class=" text-gray-300" id="text"
-                            >{player.currentTrack.artists[0].name}</span
+                            >{player.currentTrack?.artists?.[0]?.name ??
+                                ""}</span
                         >
                     </Marquee>
                 </div>

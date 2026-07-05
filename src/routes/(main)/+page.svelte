@@ -33,14 +33,14 @@
     ];
 </script>
 
-<div class="container pb-12">
+<div class="pb-12 mr-6">
     <div>
         <Banner hasMusic={data.hasMusic} />
     </div>
 
-    <div class="flex flex-col gap-8 py-10">
+    <div class="flex flex-col gap-10 py-10">
         {#each trackSections as section, i}
-            <div data-scroll data-scroll-speed={i !== 0 && "0.4"}>
+            <div>
                 <TracksSection
                     title={section.title}
                     loadFunction={section.loadFunction}
@@ -49,7 +49,7 @@
             </div>
         {/each}
 
-        <div data-scroll data-scroll-speed="0.4">
+        <div data-scroll>
             <ArtistsSection
                 title="Your Top Artists"
                 loadFunction="get_top_artists"

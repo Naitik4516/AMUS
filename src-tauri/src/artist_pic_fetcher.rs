@@ -10,12 +10,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::LazyLock;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{AppHandle, Emitter};
 use tokio::fs;
 use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 static FETCH_SEMAPHORE: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(5));
 
@@ -188,8 +187,13 @@ async fn download_image(
                 continue;
             }
         };
-        if image::guess_format(&bytes).is_err() {
+        let format = image::guess_format(&bytes);
+        if format.is_err() {
             last_err = anyhow!("Downloaded file is not a valid image ({url})");
+            continue;
+        }
+        if format.unwrap() == image::ImageFormat::Avif {
+            last_err = anyhow!("AVIF format not supported, skipping ({url})");
             continue;
         }
 
@@ -215,7 +219,7 @@ async fn download_image(
 }
 
 async fn download_and_save(artist_name: &str, app_dir: &Path) -> Result<String> {
-    let query = format!("\"{artist_name}\" artist profile picture");
+    let query = format!("\"{artist_name}\" music artist");
     download_image(
         &query,
         AspectRatio::Square,
@@ -244,14 +248,22 @@ pub async fn fetch_single_artist_images(
     }
 
     let conn = pool.get().map_err(|e| anyhow!(e))?;
+    let mut any_attempted = false;
+    let mut any_succeeded = false;
 
     if fetch_pic {
         let has_photo = db::artist_has_photo(&conn, artist_id).unwrap_or(false);
         if !has_photo {
-            let result = download_and_save(artist_name, app_dir).await;
-            if let Ok(filename) = result {
-                if let Ok(conn) = pool.get() {
-                    let _ = db::update_artist_profile_image(&conn, artist_id, &filename);
+            any_attempted = true;
+            match download_and_save(artist_name, app_dir).await {
+                Ok(filename) => {
+                    if let Ok(conn) = pool.get() {
+                        let _ = db::update_artist_profile_image(&conn, artist_id, &filename);
+                    }
+                    any_succeeded = true;
+                }
+                Err(e) => {
+                    eprintln!("Failed to fetch profile image for {artist_name}: {e}");
                 }
             }
         }
@@ -260,12 +272,26 @@ pub async fn fetch_single_artist_images(
     if fetch_banner {
         let has_banner = db::artist_has_banner(&conn, artist_id).unwrap_or(false);
         if !has_banner {
-            let result = download_and_save_banner(artist_name, app_dir).await;
-            if let Ok(filename) = result {
-                if let Ok(conn) = pool.get() {
-                    let _ = db::update_artist_banner_image(&conn, artist_id, &filename);
+            any_attempted = true;
+            match download_and_save_banner(artist_name, app_dir).await {
+                Ok(filename) => {
+                    if let Ok(conn) = pool.get() {
+                        let _ = db::update_artist_banner_image(&conn, artist_id, &filename);
+                    }
+                    any_succeeded = true;
+                }
+                Err(e) => {
+                    eprintln!("Failed to fetch banner image for {artist_name}: {e}");
                 }
             }
+        }
+    }
+
+    if let Ok(conn) = pool.get() {
+        if any_succeeded {
+            let _ = db::report_fetch_success(&conn, artist_id);
+        } else if any_attempted {
+            let _ = db::report_fetch_failure(&conn, artist_id);
         }
     }
 
@@ -285,21 +311,20 @@ pub async fn fetch_artist_images(
     }
 
     let total = artists.len();
-    let completed = Arc::new(AtomicUsize::new(0));
+    let mut set = JoinSet::new();
 
     for (aid, name) in artists.iter() {
         if name == "Unknown Artist" {
-            completed.fetch_add(1, Ordering::Relaxed);
             continue;
         }
 
-        if let Ok(conn) = pool.get() {
+        let skip = pool.get().ok().map_or(false, |conn| {
             let has_photo = fetch_pic && !db::artist_has_photo(&conn, *aid).unwrap_or(false);
             let has_banner = fetch_banner && !db::artist_has_banner(&conn, *aid).unwrap_or(false);
-            if !has_photo && !has_banner {
-                completed.fetch_add(1, Ordering::Relaxed);
-                continue;
-            }
+            !has_photo && !has_banner
+        });
+        if skip {
+            continue;
         }
 
         let app_dir = app_dir.to_path_buf();
@@ -307,47 +332,71 @@ pub async fn fetch_artist_images(
         let artist_id = *aid;
         let pool_clone = pool.clone();
         let app_handle_clone = app_handle.clone();
-        let completed_clone = completed.clone();
-        let total_clone = total;
 
-        tokio::spawn(async move {
+        set.spawn(async move {
+            let mut any_attempted = false;
+            let mut any_succeeded = false;
+
             if fetch_pic {
-                let result = download_and_save(&artist_name, &app_dir).await;
-                if let Ok(filename) = result {
-                    if let Ok(conn) = pool_clone.get() {
-                        let _ = db::update_artist_profile_image(&conn, artist_id, &filename);
+                match download_and_save(&artist_name, &app_dir).await {
+                    Ok(filename) => {
+                        if let Ok(conn) = pool_clone.get() {
+                            let _ = db::update_artist_profile_image(&conn, artist_id, &filename);
+                        }
+                        any_succeeded = true;
+                    }
+                    Err(e) => {
+                        any_attempted = true;
+                        eprintln!("Failed to fetch profile image for {artist_name}: {e}");
                     }
                 }
             }
 
             if fetch_banner {
-                let result = download_and_save_banner(&artist_name, &app_dir).await;
-                if let Ok(filename) = result {
-                    if let Ok(conn) = pool_clone.get() {
-                        let _ = db::update_artist_banner_image(&conn, artist_id, &filename);
+                match download_and_save_banner(&artist_name, &app_dir).await {
+                    Ok(filename) => {
+                        if let Ok(conn) = pool_clone.get() {
+                            let _ = db::update_artist_banner_image(&conn, artist_id, &filename);
+                        }
+                        any_succeeded = true;
+                    }
+                    Err(e) => {
+                        any_attempted = true;
+                        eprintln!("Failed to fetch banner image for {artist_name}: {e}");
                     }
                 }
             }
 
-            let done = completed_clone.fetch_add(1, Ordering::Relaxed) + 1;
+            if let Ok(conn) = pool_clone.get() {
+                if any_succeeded {
+                    let _ = db::report_fetch_success(&conn, artist_id);
+                } else if any_attempted {
+                    let _ = db::report_fetch_failure(&conn, artist_id);
+                }
+            }
+
             let _ = app_handle_clone.emit(
                 "fetch-progress",
                 ScanProgress {
-                    current: done,
-                    total: total_clone,
+                    current: 1,
+                    total,
                     message: format!("Fetching artist: {artist_name}"),
                 },
             );
         });
     }
 
-    // Wait for all tasks with a periodic progress emit to keep UI responsive
-    loop {
-        let done = completed.load(Ordering::Relaxed);
-        if done >= total {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let mut done = 0;
+    while set.join_next().await.is_some() {
+        done += 1;
+        let _ = app_handle.emit(
+            "fetch-progress",
+            ScanProgress {
+                current: done,
+                total,
+                message: format!("Artist images ({}/{})", done, total),
+            },
+        );
     }
 
     let _ = app_handle.emit(

@@ -1,10 +1,10 @@
 use crate::error::{Error, Result};
 use crate::models::*;
 use chrono::{DateTime, Utc};
-use rusqlite::{Connection, OptionalExtension, Params, params};
+use rusqlite::{Connection, OptionalExtension, Params, params, types::ToSql};
 use rusqlite_migration::{M, Migrations};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub type DbPool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
@@ -46,7 +46,11 @@ pub enum SortBy {
     RecentlyAdded,
 }
 
-const MIGRATIONS_SLICE: &[M<'_>] = &[M::up(include_str!("../migrations/001_initial_schema.sql"))];
+const MIGRATIONS_SLICE: &[M<'_>] = &[
+    M::up(include_str!("../migrations/001_initial_schema.sql")),
+    M::up(include_str!("../migrations/002_add_album_artist.sql")),
+    M::up(include_str!("../migrations/003_add_fetch_tracking.sql")),
+];
 
 const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);
 
@@ -166,34 +170,59 @@ pub fn delete_tracks_by_paths(conn: &Connection, paths: &[String]) -> Result<usi
 }
 
 pub fn get_or_create_artist(conn: &Connection, name: &str) -> Result<i64> {
-    conn.execute(
-        "INSERT OR IGNORE INTO artist (name) VALUES (?)",
-        params![name],
-    )
-    .map_err(Error::Db)?;
-
-    conn.query_row(
-        "SELECT id FROM artist WHERE name = ?",
-        params![name],
-        |row| row.get(0),
-    )
-    .map_err(Error::Db)
+    conn
+        .prepare_cached(
+            "INSERT INTO artist (name) VALUES (?1) ON CONFLICT(name) DO UPDATE SET name=?1 RETURNING id",
+        )
+        .map_err(Error::Db)?
+        .query_row(params![name], |row| row.get(0))
+        .map_err(Error::Db)
 }
 
 pub fn set_track_artists(conn: &Connection, track_id: i64, artist_ids: &[i64]) -> Result<()> {
-    conn.execute(
-        "DELETE FROM track_artist WHERE track_id = ?",
-        params![track_id],
-    )
-    .map_err(Error::Db)?;
-
-    for artist_id in artist_ids {
-        conn.execute(
-            "INSERT OR IGNORE INTO track_artist (track_id, artist_id) VALUES (?, ?)",
-            params![track_id, artist_id],
-        )
+    // Check if artists are unchanged to avoid unnecessary DELETE+INSERT
+    let existing: HashSet<i64> = conn
+        .prepare_cached("SELECT artist_id FROM track_artist WHERE track_id = ?")
+        .map_err(Error::Db)?
+        .query_map(params![track_id], |row| row.get(0))
+        .map_err(Error::Db)?
+        .collect::<std::result::Result<HashSet<_>, _>>()
         .map_err(Error::Db)?;
+
+    let new_set: HashSet<i64> = artist_ids.iter().copied().collect();
+
+    if existing == new_set {
+        return Ok(());
     }
+
+    conn
+        .prepare_cached("DELETE FROM track_artist WHERE track_id = ?")
+        .map_err(Error::Db)?
+        .execute(params![track_id])
+        .map_err(Error::Db)?;
+
+    if artist_ids.is_empty() {
+        return Ok(());
+    }
+
+    let placeholders: Vec<String> = artist_ids.iter().map(|_| "(?, ?)".to_string()).collect();
+    let sql = format!(
+        "INSERT OR IGNORE INTO track_artist (track_id, artist_id) VALUES {}",
+        placeholders.join(", ")
+    );
+
+    let mut param_values: Vec<Box<dyn ToSql>> = Vec::with_capacity(artist_ids.len() * 2);
+    for &artist_id in artist_ids {
+        param_values.push(Box::new(track_id));
+        param_values.push(Box::new(artist_id));
+    }
+    let params_refs: Vec<&dyn ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+
+    conn
+        .prepare_cached(&sql)
+        .map_err(Error::Db)?
+        .execute(params_refs.as_slice())
+        .map_err(Error::Db)?;
     Ok(())
 }
 
@@ -257,37 +286,76 @@ pub fn artist_has_banner(conn: &Connection, artist_id: i64) -> Result<bool> {
     Ok(res.is_some())
 }
 
+pub fn report_fetch_success(conn: &Connection, artist_id: i64) -> Result<()> {
+    conn
+        .prepare_cached(
+            "UPDATE artist SET fetch_attempts = 0, last_fetch_attempt = NULL WHERE id = ?",
+        )
+        .map_err(Error::Db)?
+        .execute(params![artist_id])
+        .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn report_fetch_failure(conn: &Connection, artist_id: i64) -> Result<()> {
+    conn
+        .prepare_cached(
+            "UPDATE artist SET fetch_attempts = fetch_attempts + 1, last_fetch_attempt = datetime('now') WHERE id = ?",
+        )
+        .map_err(Error::Db)?
+        .execute(params![artist_id])
+        .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn get_artists_needing_fetch(conn: &Connection) -> Result<Vec<(i64, String)>> {
+    let mut stmt = conn
+        .prepare_cached(
+            "SELECT id, name FROM artist
+             WHERE (profile_image IS NULL OR banner_image IS NULL)
+             AND fetch_attempts < 3
+             AND name != 'Unknown Artist'",
+        )
+        .map_err(Error::Db)?;
+    let rows = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .map_err(Error::Db)?;
+    let mut artists = Vec::new();
+    for row in rows {
+        artists.push(row.map_err(Error::Db)?);
+    }
+    Ok(artists)
+}
+
 pub fn get_or_create_album(
     conn: &Connection,
     name: &str,
     cover_art: Option<&str>,
     year: Option<i32>,
-    album_artist: Option<&str>,
 ) -> Result<i64> {
-    conn.execute(
-        "INSERT OR IGNORE INTO album (name, cover_art, year) VALUES (?, ?, ?)",
-        params![name, cover_art, year],
-    )
-    .map_err(Error::Db)?;
+    conn
+        .prepare_cached(
+            "INSERT INTO album (name, cover_art, year) VALUES (?1, ?2, ?3)
+             ON CONFLICT(name) DO UPDATE SET name=?1 RETURNING id",
+        )
+        .map_err(Error::Db)?
+        .query_row(params![name, cover_art, year], |row| row.get(0))
+        .map_err(Error::Db)
+}
 
-    // Update album_artist on first encounter
-    if let Some(aa) = album_artist {
-        conn.execute(
+pub fn set_album_artist(
+    conn: &Connection,
+    name: &str,
+    album_artist: &str,
+) -> Result<()> {
+    conn
+        .prepare_cached(
             "UPDATE album SET album_artist = ? WHERE name = ? AND album_artist IS NULL",
-            params![aa, name],
         )
+        .map_err(Error::Db)?
+        .execute(params![album_artist, name])
         .map_err(Error::Db)?;
-    }
-
-    let album_id: i64 = conn
-        .query_row(
-            "SELECT id FROM album WHERE name = ?",
-            params![name],
-            |row| row.get(0),
-        )
-        .map_err(Error::Db)?;
-
-    Ok(album_id)
+    Ok(())
 }
 
 pub fn update_track(
@@ -300,26 +368,22 @@ pub fn update_track(
     file_size: i64,
     cover_art: Option<&str>,
 ) -> Result<i64> {
-    conn.execute(
-        "INSERT INTO track (path, title, duration_sec, year, mtime, file_size, cover_art)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(path) DO UPDATE SET
-        title = excluded.title,
-        duration_sec = excluded.duration_sec,
-        year = excluded.year,
-        mtime = excluded.mtime,
-        file_size = excluded.file_size,
-        cover_art = excluded.cover_art",
-        params![path, title, duration_sec, year, mtime, file_size, cover_art],
-    )
-    .map_err(Error::Db)?;
-
-    conn.query_row(
-        "SELECT id FROM track WHERE path = ?",
-        params![path],
-        |row| row.get(0),
-    )
-    .map_err(Error::Db)
+    conn
+        .prepare_cached(
+            "INSERT INTO track (path, title, duration_sec, year, mtime, file_size, cover_art)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            ON CONFLICT(path) DO UPDATE SET
+            title = excluded.title,
+            duration_sec = excluded.duration_sec,
+            year = excluded.year,
+            mtime = excluded.mtime,
+            file_size = excluded.file_size,
+            cover_art = excluded.cover_art
+            RETURNING id",
+        )
+        .map_err(Error::Db)?
+        .query_row(params![path, title, duration_sec, year, mtime, file_size, cover_art], |row| row.get(0))
+        .map_err(Error::Db)
 }
 
 pub fn set_track_album(
@@ -328,17 +392,34 @@ pub fn set_track_album(
     album_id: i64,
     track_number: i32,
 ) -> Result<()> {
-    conn.execute(
-        "DELETE FROM album_track WHERE track_id = ?",
-        params![track_id],
-    )
-    .map_err(Error::Db)?;
+    // Check if album assignment is unchanged to avoid unnecessary DELETE+INSERT
+    let unchanged = conn
+        .prepare_cached(
+            "SELECT 1 FROM album_track WHERE track_id = ? AND album_id = ? AND track_number = ?",
+        )
+        .map_err(Error::Db)?
+        .query_row(params![track_id, album_id, track_number], |_| Ok(()))
+        .optional()
+        .map_err(Error::Db)?
+        .is_some();
 
-    conn.execute(
-        "INSERT OR IGNORE INTO album_track (album_id, track_id, track_number) VALUES (?, ?, ?)",
-        params![album_id, track_id, track_number],
-    )
-    .map_err(Error::Db)?;
+    if unchanged {
+        return Ok(());
+    }
+
+    conn
+        .prepare_cached("DELETE FROM album_track WHERE track_id = ?")
+        .map_err(Error::Db)?
+        .execute(params![track_id])
+        .map_err(Error::Db)?;
+
+    conn
+        .prepare_cached(
+            "INSERT OR IGNORE INTO album_track (album_id, track_id, track_number) VALUES (?, ?, ?)",
+        )
+        .map_err(Error::Db)?
+        .execute(params![album_id, track_id, track_number])
+        .map_err(Error::Db)?;
     Ok(())
 }
 

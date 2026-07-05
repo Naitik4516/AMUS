@@ -24,22 +24,14 @@
         globalShortcutFlags,
     } from "$lib/shortcuts.svelte";
     import { installHandlers } from "$lib/shortcut-handler.svelte";
-    import ShortcutSettingsModal from "$components/shortcuts/ShortcutSettingsModal.svelte";
-    let shortcutModalOpen = $state(false);
-    $effect(() => {
-        function handler() {
-            shortcutModalOpen = true;
-        }
-        window.addEventListener("open-shortcut-settings", handler);
-        return () =>
-            window.removeEventListener("open-shortcut-settings", handler);
-    });
 
     let { children }: LayoutProps = $props();
 
     let scrollContainer: HTMLDivElement | undefined = $state();
     let scrollContent: HTMLDivElement | undefined = $state();
     let scrollInstance: LocomotiveScroll | undefined;
+
+    let isMaximized = $state(false);
 
     $effect(() => {
         if (!flags.ready) return;
@@ -207,8 +199,12 @@
     }
 </script>
 
-<div class="flex flex-col h-screen w-screen">
-    <Header />
+<div
+    class="flex flex-col h-screen w-screen overflow-hidden bg-radial from-background to-neutral-950 {isMaximized
+        ? 'rounded-none'
+        : 'rounded-3xl'}"
+>
+    <Header {isMaximized} />
     <ScanProgress />
     <Sidebar />
     <Toaster
@@ -261,5 +257,3 @@
 {#if player.currentTrack}
     <Player />
 {/if}
-
-<ShortcutSettingsModal bind:open={shortcutModalOpen} />

@@ -56,10 +56,12 @@ pub async fn refresh_watcher(
 #[tauri::command]
 pub async fn has_music(pool: State<'_, DbPool>) -> Result<bool> {
     let conn = pool.get().map_err(Error::Pool)?;
-    let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM track", [], |row| row.get(0))
+    let exists: bool = conn
+        .query_row("SELECT EXISTS(SELECT 1 FROM track LIMIT 1)", [], |row| {
+            row.get(0)
+        })
         .map_err(Error::Db)?;
-    Ok(count > 0)
+    Ok(exists)
 }
 
 #[tauri::command]
@@ -396,13 +398,6 @@ pub async fn remove_from_queue(index: usize, player: State<'_, Player>) -> Resul
 }
 
 #[tauri::command]
-pub async fn reorder_queue(from: usize, to: usize, player: State<'_, Player>) -> Result<()> {
-    let mut engine = player.engine.lock();
-    engine.reorder_queue(from, to);
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn clear_queue(player: State<'_, Player>) -> Result<()> {
     let mut engine = player.engine.lock();
     engine.clear_queue();
@@ -418,10 +413,9 @@ pub async fn play_next_track(
     // Record current track before advancing
     record_current_track_async(&pool, &player);
 
-    let conn = pool.get().map_err(Error::Pool)?;
     let mut engine = player.engine.lock();
     engine
-        .play_next(Some(&conn))
+        .play_next()
         .map_err(|e| Error::Audio(e.to_string()))?;
     emit_state(&app_handle, &engine);
     Ok(())
@@ -445,24 +439,6 @@ pub async fn play_previous_track(
 }
 
 #[tauri::command]
-pub async fn skip_current_track(
-    app_handle: tauri::AppHandle,
-    pool: State<'_, DbPool>,
-    player: State<'_, Player>,
-) -> Result<()> {
-    // Record current track before skipping
-    record_current_track_async(&pool, &player);
-
-    let conn = pool.get().map_err(Error::Pool)?;
-    let mut engine = player.engine.lock();
-    engine
-        .skip_current(Some(&conn))
-        .map_err(|e| Error::Audio(e.to_string()))?;
-    emit_state(&app_handle, &engine);
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn set_shuffle(enabled: bool, player: State<'_, Player>) -> Result<()> {
     let mut engine = player.engine.lock();
     engine.set_shuffle(enabled);
@@ -479,22 +455,6 @@ pub async fn set_repeat(mode: u8, player: State<'_, Player>) -> Result<()> {
     };
     let mut engine = player.engine.lock();
     engine.set_repeat(repeat);
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn regenerate_play_next(
-    app_handle: tauri::AppHandle,
-    pool: State<'_, DbPool>,
-    player: State<'_, Player>,
-) -> Result<()> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    let mut engine = player.engine.lock();
-    let track_id = engine.current_track().map(|t| t.id);
-    if let Some(id) = track_id {
-        engine.regenerate_play_next(id, &conn);
-    }
-    emit_state(&app_handle, &engine);
     Ok(())
 }
 

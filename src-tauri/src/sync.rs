@@ -1,6 +1,8 @@
+use crate::artist_pic_fetcher;
 use crate::db::{self, DbPool};
 use crate::scanner;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
@@ -36,6 +38,44 @@ impl SyncManager {
                     let pool = app_handle.state::<DbPool>();
                     if let Ok(mut conn) = pool.get() {
                         let _ = scanner::scan_directories(&mut conn, &app_handle);
+                    }
+                }
+            }
+
+            // Retry failed artist image fetches from previous runs
+            {
+                let pool = app_handle.state::<DbPool>();
+                if let Ok(conn) = pool.get() {
+                    let fetch_pic = get_setting(&app_handle, "autoFetchArtistPic", true).unwrap_or(true);
+                    let fetch_banner = get_setting(&app_handle, "autoFetchArtistBanner", true).unwrap_or(true);
+                    if fetch_pic || fetch_banner {
+                        if let Ok(artists) = db::get_artists_needing_fetch(&conn) {
+                            if !artists.is_empty() {
+                                let app_dir = app_handle
+                                    .path()
+                                    .app_data_dir()
+                                    .map_err(|e| eprintln!("Failed to get app dir: {e}"))
+                                    .ok();
+                                if let Some(app_dir) = app_dir {
+                                    let artists_map: HashMap<i64, String> = artists.into_iter().collect();
+                                    let pool_clone = pool.inner().clone();
+                                    let app_handle_clone = app_handle.clone();
+                                    let app_dir_clone = app_dir.clone();
+                                    println!("Retrying artist image fetch for {} artists", artists_map.len());
+                                    tauri::async_runtime::spawn(async move {
+                                        let _ = artist_pic_fetcher::fetch_artist_images(
+                                            &artists_map,
+                                            &app_dir_clone,
+                                            pool_clone,
+                                            &app_handle_clone,
+                                            fetch_pic,
+                                            fetch_banner,
+                                        )
+                                        .await;
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             }

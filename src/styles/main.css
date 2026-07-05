@@ -15,12 +15,13 @@ body {
     padding: 0;
     overflow: hidden;
     color: var(--color-foreground);
-    background: var(--color-background);
+    /*background: var(--color-background);
     background: radial-gradient(
         circle,
         var(--color-background) 0%,
         rgb(0, 0, 0) 100%
     );
+    border-radius: 16px;*/
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -32,7 +33,10 @@ button {
 
 ::-webkit-scrollbar {
     width: 2px;
-    height: 4px;
+}
+
+::-webkit-scrollbar:hover {
+    width: 4px;
 }
 
 ::-webkit-scrollbar-track {
@@ -40,10 +44,15 @@ button {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgb(95, 98, 242);
+    background: rgba(95, 98, 242, 0.5);
     border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgb(107, 83, 237);
+    background: rgba(95, 98, 242, 0.8);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:active {
+    background: rgb(95, 98, 242);
 }

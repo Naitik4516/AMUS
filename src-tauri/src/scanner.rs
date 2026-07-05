@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::mpsc;
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use walkdir::WalkDir;
 
@@ -294,19 +294,10 @@ pub fn scan_files(
         return Ok(());
     }
 
-    let (tx_progress, _) = mpsc::channel();
-
     let metadata_results: Vec<TrackMetadata> = to_scan
         .into_par_iter()
         .filter_map(|path| {
             let result = extract_metadata(&path);
-
-            let _ = tx_progress.send(
-                path.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("")
-                    .to_string(),
-            );
 
             match result {
                 Ok(m) => Some(m),
@@ -349,6 +340,7 @@ pub fn scan_files(
     let mut artist_cache = HashMap::new();
     let mut unique_artists_to_fetch = HashMap::new();
     let mut album_cache = HashMap::new();
+    let mut album_artists: HashMap<String, String> = HashMap::new();
 
     let track_count = metadata_with_covers.len();
     let progress_step = if track_count > 0 {
@@ -357,6 +349,7 @@ pub fn scan_files(
         1
     };
 
+    let save_start = Instant::now();
     let tx = conn.transaction().map_err(Error::Db)?;
 
     for (i, (meta, cover_url)) in metadata_with_covers.iter().enumerate() {
@@ -385,8 +378,10 @@ pub fn scan_files(
                 &meta.album,
                 cover_url.as_deref(),
                 meta.release_year.map(|y| y as i32),
-                meta.album_artist.as_deref(),
             )?;
+            if let Some(ref aa) = meta.album_artist {
+                album_artists.entry(album_key.clone()).or_insert_with(|| aa.clone());
+            }
             album_cache.insert(album_key, id);
             id
         };
@@ -423,7 +418,12 @@ pub fn scan_files(
         }
     }
 
+    for (album_name, album_artist_name) in &album_artists {
+        db::set_album_artist(&tx, album_name, album_artist_name)?;
+    }
+
     tx.commit().map_err(Error::Db)?;
+    println!("DB save completed in {:?}", save_start.elapsed());
 
     let _ = app_handle.emit(
         "scan-progress",

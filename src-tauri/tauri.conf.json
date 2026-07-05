@@ -17,6 +17,7 @@
         "width": 1000,
         "height": 700,
         "decorations": false,
+        "transparent": true,
         "resizable": true,
         "minHeight": 700,
         "minWidth": 700

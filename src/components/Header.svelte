@@ -14,7 +14,8 @@
     import { player } from "$lib/player.svelte";
     import type { GlobalSearchResult } from "$lib/types";
 
-    let isMaximized = $state(false);
+    let { isMaximized = $bindable(false) } = $props();
+
     let searchQuery = $state("");
     let results = $state<GlobalSearchResult[]>([]);
     let showResults = $state(false);

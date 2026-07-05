@@ -14,7 +14,6 @@
         ChevronDown,
         SlidersHorizontal,
         Disc,
-        Edit,
         Music2,
     } from "@lucide/svelte";
     import { player } from "$lib/player.svelte";
@@ -326,6 +325,7 @@
 
     function handleMainPlay() {
         const first = orderedTracks[0];
+        console.log("handleMainPlay", orderedTracks, sourceType());
         if (!first) return;
         if (
             player.isPlaying &&
@@ -399,9 +399,7 @@
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
 </script>
 
-<div
-    class="w-full rounded-b-2xl px-2 pb-4 h-full backdrop-blur-lg bg-black/5"
->
+<div class="w-full rounded-b-2xl px-2 pb-4 h-full backdrop-blur-lg bg-black/5">
     <!-- ============================== ACTION BAR ============================== -->
     <div>
         <div class="pointer-events-none absolute inset-0"></div>
@@ -410,9 +408,7 @@
                 type="button"
                 class="flex h-16 w-16 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-lg shadow-accent/20 transition-all hover:scale-105 hover:bg-accent/80 active:scale-95 {focusRing}"
                 onclick={handleMainPlay}
-                aria-label={isCurrentCollectionPlaying
-                    ? "Pause"
-                    : "Play"}
+                aria-label={isCurrentCollectionPlaying ? "Pause" : "Play"}
             >
                 {#if isCurrentCollectionPlaying}
                     <Pause size={24} fill="var(--color-accent-foreground)" />
@@ -497,8 +493,7 @@
                                         : 'text-zinc-300 hover:text-white'} {focusRing}"
                                     onclick={() =>
                                         (density = mode as
-                                            | "relaxed"
-                                            | "compact")}
+                                            "relaxed" | "compact")}
                                 >
                                     {mode}
                                 </button>
