@@ -146,7 +146,6 @@
                         class="ml-2 {player.currentTrack?.is_favorite
                             ? 'text-rose-600 fill-rose-600'
                             : 'text-muted-foreground'}  hover:text-secondary transition-colors"
-                        class:text-secondary={player.currentTrack?.is_favorite}
                     >
                         <Heart
                             size={24}

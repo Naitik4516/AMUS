@@ -16,7 +16,6 @@
     import { formatDuration, getImageUrl } from "$lib/utils";
     import { invoke } from "@tauri-apps/api/core";
     import { invalidate } from "$app/navigation";
-    import type { Track } from "$lib/types";
 
     let { data }: PageProps = $props();
     let track = $derived(data.trackDetails);

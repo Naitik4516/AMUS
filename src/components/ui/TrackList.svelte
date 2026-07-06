@@ -23,6 +23,8 @@
     import type { Context } from "$lib/types";
     import PlayingVisualizer from "./PlayingVisualizer.svelte";
     import { toast } from "svelte-sonner";
+    import { invoke } from "@tauri-apps/api/core";
+    import { invalidate } from "$app/navigation";
 
     type ColumnKey = (typeof COLUMN_ORDER)[number];
 
@@ -79,11 +81,11 @@
         title: {
             label: "Title",
             settingsLabel: "Title",
-            width: 320,
+            width: 300,
             minWidth: 160,
             maxWidth: 640,
             sortable: true,
-            locked: true,
+            locked: false,
             resizable: true,
         },
         album: {
@@ -300,6 +302,21 @@
         if (player.currentTrack?.id === track.id && player.isPlaying)
             player.playPause();
         else player.play(orderedTracks, context, index, context.name);
+    }
+
+    async function toggleFavorite(track: Track) {
+        try {
+            await invoke<boolean>("toggle_favorite", {
+                id: track.id,
+            });
+            if (context.type === "Favorites") {
+                invalidate(context.type);
+            } else {
+                invalidate(`${context.type}:${context.id ?? ""}`);
+            }
+        } catch (e) {
+            console.error("Failed to toggle favorite", e);
+        }
     }
 
     let actionMenuItems = $derived.by(() => {
@@ -672,27 +689,21 @@
                                 <div class="flex items-center gap-3">
                                     <button
                                         type="button"
-                                        class="hidden hover:text-white group-hover:flex {track.is_favorite
+                                        class="hidden group-hover:flex {track.is_favorite
                                             ? 'flex!'
-                                            : ''} {focusRing}"
-                                        onclick={async (e) => {
-                                            track.is_favorite =
-                                                await player.toggleFavorite(
-                                                    track,
-                                                );
-                                        }}
+                                            : ''} {track.is_favorite
+                                            ? 'text-rose-600 fill-rose-600'
+                                            : 'text-gray-300'}  hover:text-secondary transition-colors {focusRing}"
+                                        onclick={() => toggleFavorite(track)}
                                         aria-label={track.is_favorite
                                             ? "Remove from Liked Songs"
                                             : "Save to Liked Songs"}
                                     >
                                         <Heart
-                                            fill={track.is_favorite
-                                                ? "red"
-                                                : ""}
                                             size={16}
                                             class={track.is_favorite
-                                                ? "text-emerald-400"
-                                                : ""}
+                                                ? "text-rose-600 fill-rose-600"
+                                                : "text-gray-300"}
                                         />
                                     </button>
                                     <span class="text-sm"

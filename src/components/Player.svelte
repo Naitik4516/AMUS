@@ -94,7 +94,6 @@
                     class="ml-2 {player.currentTrack?.is_favorite
                         ? 'text-rose-600 fill-rose-600'
                         : 'text-gray-300'}  hover:text-secondary transition-colors"
-                    class:text-secondary={player.currentTrack?.is_favorite}
                 >
                     <Heart
                         size={18}
@@ -106,7 +105,7 @@
             </div>
 
             <!-- Controls -->
-            <div class="flex flex-col items-center gap-2 ">
+            <div class="flex flex-col items-center gap-2">
                 <div class="flex items-center gap-6">
                     <button
                         class="hover:text-white transition-colors"
@@ -178,7 +177,7 @@
             </div>
 
             <!-- Volume & Queue -->
-            <div class="flex items-center gap-4 justify-end ">
+            <div class="flex items-center gap-4 justify-end">
                 <button
                     onclick={() => (showQueue = !showQueue)}
                     class="text-gray-300 hover:text-white transition-colors"
