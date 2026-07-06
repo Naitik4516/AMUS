@@ -58,9 +58,7 @@
     });
 </script>
 
-<div
-    class="relative flex flex-col h-full w-full overflow-y-scroll pb-10 pr-5"
->
+<div class="relative flex flex-col h-full w-full overflow-y-scroll pb-10 pr-5">
     <div
         class="banner-wrapper relative max-h-80 w-full aspect-video overflow-hidden rounded-t-2xl"
     >
@@ -97,7 +95,7 @@
         </div>
         <div class="flex flex-col gap-2 pb-2 min-w-0">
             <h1
-                class="text-3xl md:text-5xl lg:text-[6cqw] max-text-[6rem] font-black font-clash bg-linear-to-b from-white from-50% to-neutral-600 bg-clip-text text-transparent truncate drop-shadow-lg drop-shadow-black py-4.5 -mb-4" 
+                class="text-3xl md:text-5xl lg:text-[6cqw] max-text-[6rem] font-black font-clash bg-linear-to-b from-white from-50% to-neutral-600 bg-clip-text text-transparent truncate drop-shadow-lg drop-shadow-black py-4.5 -mb-4"
             >
                 {artist.name}
             </h1>
@@ -110,13 +108,14 @@
     {#if tracks.length > 0}
         <div class="mt-4 px-4">
             <TrackList
-                context="artist"
+                context={{
+                    type: "Artist",
+                    id: artist.id,
+                    name: artist.name,
+                    profileImage: profileUrl,
+                    bannerImage: bgUrl, 
+                }}
                 {tracks}
-                artistId={artist.id}
-                artistName={artist.name}
-                artistProfileImage={artist.profile_image}
-                artistBannerImage={artist.banner_image}
-                canEdit={true}
             />
         </div>
     {:else}

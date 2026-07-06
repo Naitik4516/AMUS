@@ -19,12 +19,12 @@
     import Slider from "./ui/Slider.svelte";
     import { player } from "$lib/player.svelte";
     import { getImageUrl } from "$lib/utils";
-    import TrackListSmall from "./ui/TrackListSmall.svelte";
     import { formatDurationColon } from "$lib/utils";
 
     import { ui } from "$lib/shortcut-handler.svelte";
     import Marquee from "./ui/Marquee.svelte";
     import QueueWindow from "./QueueWindow.svelte";
+
     let volumeValue = $state(player.volume);
     let showQueue = $state(false);
     let seekDragPercent = $state<number | null>(null);
@@ -32,14 +32,6 @@
     $effect(() => {
         if (ui.queueVisible) showQueue = true;
     });
-
-    let displayProgress = $derived(
-        seekDragPercent !== null && player.currentTrack
-            ? (seekDragPercent / 100) *
-                  player.currentTrack.duration_seconds *
-                  1000
-            : player.progress,
-    );
 
     $effect(() => {
         player.setVolume(volumeValue);
@@ -52,13 +44,11 @@
     }
 </script>
 
-<div class="fixed bottom-0 left-0 w-full px-4 pb-2 z-15">
-    <div
-        class="bg-neutral-950/60 border-2 border-neutral-800/40 backdrop-blur-xl flex items-center justify-between px-6 py-4 shadow-2xl rounded-3xl relative"
-    >
-        {#if !player.currentTrack}
-            <p class="text-sm text-gray-400">No track playing</p>
-        {:else}
+{#if player.currentTrack}
+    <div class="fixed bottom-0 left-0 w-full px-4 pb-2 z-15">
+        <div
+            class="bg-neutral-950/60 border-2 border-neutral-800/40 backdrop-blur-xl flex items-center justify-between px-6 py-4 shadow-2xl rounded-3xl relative"
+        >
             <!-- Track Info -->
             <div class="flex items-center gap-4 w-1/4">
                 <div
@@ -121,8 +111,8 @@
                 <div class="flex items-center gap-6">
                     <button
                         class="hover:text-white transition-colors"
-                        class:text-white={player.shuffle}
-                        class:text-gray-300={!player.shuffle}
+                        class:text-white={player.shuffleEnabled}
+                        class:text-gray-300={!player.shuffleEnabled}
                         onclick={() => player.toggleShuffle()}
                     >
                         <Shuffle size={18} />
@@ -135,7 +125,7 @@
                     </button>
                     <button
                         class="bg-white text-black rounded-full p-3 hover:scale-105 transition-transform shadow-lg"
-                        onclick={() => player.togglePlay()}
+                        onclick={() => player.playPause()}
                     >
                         {#if player.isPlaying}
                             <Pause size={24} fill="currentColor" />
@@ -151,11 +141,11 @@
                     </button>
                     <button
                         class="hover:text-white transition-colors"
-                        class:text-white={player.repeat !== "none"}
-                        class:text-gray-300={player.repeat === "none"}
-                        onclick={() => player.toggleRepeat()}
+                        class:text-white={player.repeatMode !== "OFF"}
+                        class:text-gray-300={player.repeatMode === "OFF"}
+                        onclick={() => player.cycleRepeat()}
                     >
-                        {#if player.repeat === "one"}
+                        {#if player.repeatMode === "ONE"}
                             <Repeat1 size={18} />
                         {:else}
                             <Repeat size={18} />
@@ -166,19 +156,20 @@
                     <span
                         class="text-[10px] font-medium text-gray-400 w-10 text-right"
                     >
-                        {formatDurationColon(
-                            Math.floor(displayProgress / 1000),
-                        )}
+                        {formatDurationColon(player.position)}
                     </span>
                     <Slider
-                        value={(player.progress /
-                            1000 /
-                            player.currentTrack.duration_seconds) *
-                            100}
+                        value={player.progress}
                         onDragChange={(val) => (seekDragPercent = val)}
                         onValueChange={(val) => {
                             seekDragPercent = null;
-                            player.seek(val);
+                            if (player.currentTrack) {
+                                let seekVal =
+                                    val * player.currentTrack.duration_seconds;
+
+                                console.log("Seeking to: ", seekVal, "sec");
+                                player.seek(seekVal);
+                            }
                         }}
                     />
                     <span class="text-[10px] font-medium text-gray-400 w-10">
@@ -233,7 +224,7 @@
                 </div>
             </div>
 
-            <QueueWindow bind:showQueue {player} />
-        {/if}
+            <QueueWindow bind:showQueue />
+        </div>
     </div>
-</div>
+{/if}

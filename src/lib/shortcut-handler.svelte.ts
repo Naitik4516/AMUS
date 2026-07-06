@@ -19,11 +19,11 @@ export function installHandlers() {
     player.seek((newSec / dur) * 100);
   };
 
-  handlerMap.set("play_pause", () => player.togglePlay());
+  handlerMap.set("play_pause", () => player.playPause());
   handlerMap.set("next_track", () => player.next());
   handlerMap.set("prev_track", () => player.previous());
   handlerMap.set("stop", () => {
-    if (player.isPlaying) player.togglePlay();
+    if (player.isPlaying) player.playPause();
   });
   handlerMap.set("restart_track", () => {
     if (player.currentTrack) player.seek(0);
@@ -56,7 +56,7 @@ export function installHandlers() {
   });
 
   handlerMap.set("toggle_shuffle", () => player.toggleShuffle());
-  handlerMap.set("toggle_repeat", () => player.toggleRepeat());
+  handlerMap.set("toggle_repeat", () => player.cycleRepeat());
   handlerMap.set("toggle_queue", () => toggleQueue());
   handlerMap.set("clear_queue", () => player.clearQueue());
 
@@ -80,11 +80,11 @@ export function installHandlers() {
   });
 
   // Global shortcut handlers
-  handlerMap.set("global_play_pause", () => player.togglePlay());
+  handlerMap.set("global_play_pause", () => player.playPause());
   handlerMap.set("global_next_track", () => player.next());
   handlerMap.set("global_prev_track", () => player.previous());
   handlerMap.set("global_stop", () => {
-    if (player.isPlaying) player.togglePlay();
+    if (player.isPlaying) player.playPause();
   });
   handlerMap.set("global_volume_up", () => {
     player.setVolume(Math.min(100, player.volume + 5));
@@ -102,7 +102,7 @@ export function installHandlers() {
     if (player.currentTrack) seekSec(-5);
   });
   handlerMap.set("global_toggle_shuffle", () => player.toggleShuffle());
-  handlerMap.set("global_toggle_repeat", () => player.toggleRepeat());
+  handlerMap.set("global_toggle_repeat", () => player.cycleRepeat());
   handlerMap.set("global_show_hide", () => {
     const w = getCurrentWindow();
     w.isVisible().then((visible) => {

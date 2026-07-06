@@ -24,8 +24,8 @@
 
     function getValueFromPointer(e: PointerEvent): number {
         const rect = slider.getBoundingClientRect();
-        const raw = ((e.clientX - rect.left) / rect.width) * 100;
-        return Math.max(0, Math.min(100, Math.round(raw)));
+        const raw = (e.clientX - rect.left) / rect.width;
+        return Math.max(0, Math.min(1, Math.round(raw * 100) / 100));
     }
 
     function startDrag(e: PointerEvent) {
@@ -56,7 +56,7 @@
     title="Seek"
     role="slider"
     aria-valuemin="0"
-    aria-valuemax="100"
+    aria-valuemax="1"
     aria-valuenow={displayValue}
     tabindex="0"
     onpointerdown={startDrag}
@@ -71,7 +71,7 @@
         class="{hovering
             ? 'h-2 bg-white'
             : 'h-full bg-gray-200'} rounded-full absolute top-0 left-0 pl-1.5 transition-all"
-        style:width={`${displayValue}%`}
+        style:width={`${displayValue * 100}%`}
         role="presentation"
     >
         {#if hovering || dragging}

@@ -1,199 +1,264 @@
+// src/lib/player.svelte.ts
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import type { Track } from "./types";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { Track, PlaybackSource, RepeatMode } from "./types";
 
-export type RepeatMode = "none" | "one" | "all";
-export type SourceType =
-  "album" | "playlist" | "artist" | "favorites" | "other";
+// discriminated union matching the #[serde(tag = "event", content = "payload")] enum
+type PlayerEvent =
+  | {
+      event: "TrackChanged";
+      payload: { track: Track; duration_sec: number; source: PlaybackSource };
+    }
+  | { event: "StateChanged"; payload: { is_playing: boolean } }
+  | { event: "Position"; payload: { pos_sec: number; at_epoch_ms: number } }
+  | {
+      event: "QueueChanged";
+      payload: {
+        user_queue: Track[];
+        context_len: number;
+        context_position: number | null;
+      };
+    }
+  | {
+      event: "RepeatShuffleChanged";
+      payload: { repeat: RepeatMode; shuffle: boolean };
+    }
+  | { event: "VolumeChanged"; payload: { volume: number } }
+  | { event: "PlaybackEnded"; payload: Record<string, never> }
+  | { event: "Error"; payload: { message: string; track_id: number | null } };
 
-function toTrack(dt: any): Track {
-  return {
-    id: dt.id,
-    title: dt.title,
-    artists: dt.artists || [],
-    album: dt.album || { id: 0, name: "Unknown Album" },
-    duration_seconds: dt.duration_seconds,
-    is_favorite: dt.is_favorite,
-    cover_art: dt.cover_art,
-    added_at: dt.added_at,
-  };
+interface StateSnapshot {
+  current_track: Track | null;
+  is_playing: boolean;
+  position_sec: number;
+  duration_sec: number;
+  repeat: RepeatMode;
+  shuffle: boolean;
+  volume: number;
+  user_queue: Track[];
 }
 
-class PlayerState {
+const EVENT_NAME = "player://event";
+
+function toBackendSource(source: PlaybackSource): {
+  sourceType: string;
+  sourceId: number | null;
+} {
+  switch (source.type) {
+    case "Album":
+      return { sourceType: "ALBUM", sourceId: source.id };
+    case "Playlist":
+      return { sourceType: "PLAYLIST", sourceId: source.id };
+    case "Artist":
+      return { sourceType: "ARTIST", sourceId: source.id };
+    case "Favorites":
+      return { sourceType: "FAVORITES", sourceId: null };
+    case "Search":
+      return { sourceType: "SEARCH", sourceId: null };
+    case "Recommendation":
+      return { sourceType: "RECOMMENDATION", sourceId: null };
+    default:
+      return { sourceType: "OTHER", sourceId: null };
+  }
+}
+
+class PlayerStore {
+  // ---------- reactive state consumed by the UI ----------
   currentTrack = $state<Track | null>(null);
+  source = $state<PlaybackSource | null>(null);
   isPlaying = $state(false);
-  progress = $state(0);
-  volume = $state(100);
-  shuffle = $state(false);
-  repeat = $state<RepeatMode>("none");
+  duration = $state(0);
+  /** Smoothed, UI-facing playback position in seconds. Updates every animation frame while playing. */
+  position = $state(0);
+  volume = $state(1);
+  repeatMode = $state<RepeatMode>("OFF");
+  shuffleEnabled = $state(false);
   userQueue = $state<Track[]>([]);
-  playNext = $state<Track[]>([]);
+  contextLength = $state(0);
+  contextPosition = $state<number | null>(null);
+  errorMessage = $state<string | null>(null);
+  /** False until the initial get_current_state() hydration completes. */
+  isReady = $state(false);
 
-  fullQueue = $derived([...this.userQueue, ...this.playNext]);
-
-  currentIsFromQueue = $derived(
-    this.userQueue.some((t) => t.id === this.currentTrack?.id),
-  );
-
-  constructor() {
-    this.setupListeners();
+  /** 0..1, handy for progress bars. */
+  get progress(): number {
+    return this.duration > 0 ? Math.min(this.position / this.duration, 1) : 0;
   }
 
-  async setupListeners() {
-    await listen("playback-state", (event: any) => {
-      if (!this.seeking) {
-        this.progress = event.payload.position_ms;
-      }
-      this.isPlaying = event.payload.is_playing;
-    });
+  // ---------- internal, non-reactive ----------
+  #lastKnownPos = 0;
+  #lastUpdateAtMs = Date.now();
+  #rafHandle: number | null = null;
+  #unlisten: UnlistenFn | null = null;
 
-    await listen("track-changed", (event: any) => {
-      this.updateFromState(event.payload);
-    });
-
-    await this.loadQueue();
-    this.syncState();
-  }
-
-  async loadQueue() {
-    try {
-      const tracks = await invoke<Track[]>("load_queue");
-      if (tracks.length > 0) {
-        for (const t of tracks) {
-          await invoke("add_to_queue", { trackId: t.id });
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load persisted queue", e);
-    }
-  }
-
-  async persistQueue() {
-    try {
-      const ids = this.userQueue.map((t) => t.id);
-      await invoke("save_queue", { trackIds: ids });
-    } catch (e) {
-      console.error("Failed to persist queue", e);
-    }
-  }
-
-  async syncState() {
-    try {
-      const state = await invoke<any>("get_queue_state");
-      this.updateFromState(state);
-    } catch (e) {
-      console.error("Failed to sync state", e);
-    }
-  }
-
-  private updateFromState(payload: any) {
-    this.isPlaying = payload.is_playing;
-    this.progress = payload.position_ms;
-    this.volume = Math.round(payload.volume * 100);
-    this.shuffle = payload.shuffle;
-    const modes: RepeatMode[] = ["none", "all", "one"];
-    this.repeat = modes[payload.repeat] ?? "none";
-
-    if (payload.current_track) {
-      this.currentTrack = toTrack(payload.current_track);
-    }
-
-    this.userQueue = (payload.user_queue || []).map(toTrack);
-    this.playNext = (payload.play_next || []).map(toTrack);
-  }
-
-  async play(
-    track: Track,
-    tracks?: Track[],
-    sourceType: SourceType = "other",
-    sourceId: number | null = null,
-  ) {
-    const idx = tracks ? tracks.findIndex((t) => t.id === track.id) : -1;
-    const playNextIds =
-      idx >= 0 && tracks ? tracks.slice(idx + 1).map((t) => t.id) : [];
-
-    await invoke("play_from_source", {
-      trackId: track.id,
-      sourceType,
-      sourceId,
-      playNextIds,
-    });
-  }
-
-  async togglePlay() {
-    this.isPlaying = !this.isPlaying;
-    await invoke("toggle_playback", { playing: this.isPlaying });
-  }
-
-  async setVolume(vol: number) {
-    this.volume = vol;
-    await invoke("set_volume", { volume: vol });
-  }
-
-  seeking = $state(false);
-
-  async seek(percent: number) {
-    if (!this.currentTrack) return;
-    const seconds = Math.floor(
-      (percent / 100) * this.currentTrack.duration_seconds,
+  /** Call once, e.g. from the root layout's onMount. */
+  async init() {
+    if (this.#unlisten) return; // already initialized
+    this.#unlisten = await listen<PlayerEvent>(EVENT_NAME, (e) =>
+      this.#handleEvent(e.payload),
     );
+    await this.#hydrate();
+    this.#startTicking();
+  }
 
-    this.seeking = true;
-    this.progress = seconds * 1000;
+  destroy() {
+    this.#unlisten?.();
+    this.#unlisten = null;
+    this.#stopTicking();
+  }
+
+  async #hydrate() {
     try {
-      await invoke("seek", { seconds });
-    } catch (e) {
-      console.error("seek failed", e);
+      const snapshot = await invoke<StateSnapshot>("get_current_state");
+      this.currentTrack = snapshot.current_track;
+      this.isPlaying = snapshot.is_playing;
+      this.duration = snapshot.duration_sec;
+      this.repeatMode = snapshot.repeat;
+      this.shuffleEnabled = snapshot.shuffle;
+      this.volume = snapshot.volume;
+      this.userQueue = snapshot.user_queue;
+      this.#setPosition(snapshot.position_sec);
+    } catch (err) {
+      console.error("failed to hydrate player state", err);
     } finally {
-      this.seeking = false;
+      this.isReady = true;
     }
+  }
+
+  // ---------- events: backend -> frontend ----------
+
+  #handleEvent(evt: PlayerEvent) {
+    switch (evt.event) {
+      case "TrackChanged":
+        this.currentTrack = evt.payload.track;
+        this.duration = evt.payload.duration_sec;
+        this.source = evt.payload.source;
+        this.errorMessage = null;
+        this.#setPosition(0);
+        break;
+      case "StateChanged":
+        this.isPlaying = evt.payload.is_playing;
+        break;
+      case "Position":
+        this.#setPosition(evt.payload.pos_sec, evt.payload.at_epoch_ms);
+        break;
+      case "QueueChanged":
+        this.userQueue = evt.payload.user_queue;
+        this.contextLength = evt.payload.context_len;
+        this.contextPosition = evt.payload.context_position;
+        break;
+      case "RepeatShuffleChanged":
+        this.repeatMode = evt.payload.repeat;
+        this.shuffleEnabled = evt.payload.shuffle;
+        break;
+      case "VolumeChanged":
+        this.volume = evt.payload.volume;
+        break;
+      case "PlaybackEnded":
+        this.isPlaying = false;
+        break;
+      case "Error":
+        this.errorMessage = evt.payload.message;
+        break;
+    }
+  }
+
+  #setPosition(posSec: number, atEpochMs = Date.now()) {
+    this.#lastKnownPos = posSec;
+    this.#lastUpdateAtMs = atEpochMs;
+    this.position = posSec;
+  }
+
+  // ---------- smooth position interpolation ----------
+  // The backend only emits a Position event ~once/sec to avoid IPC spam.
+  // This rAF loop fills the gaps so sliders (e.g. the wavy seek bar)
+  // animate smoothly instead of stepping once a second.
+
+  #startTicking() {
+    const tick = () => {
+      if (this.isPlaying) {
+        const elapsedSec = (Date.now() - this.#lastUpdateAtMs) / 1000;
+        const cap = this.duration > 0 ? this.duration : Infinity;
+        this.position = Math.min(this.#lastKnownPos + elapsedSec, cap);
+      }
+      this.#rafHandle = requestAnimationFrame(tick);
+    };
+    this.#rafHandle = requestAnimationFrame(tick);
+  }
+
+  #stopTicking() {
+    if (this.#rafHandle !== null) cancelAnimationFrame(this.#rafHandle);
+    this.#rafHandle = null;
+  }
+
+  // ---------- commands: frontend -> backend ----------
+
+  /** Play an album/playlist/artist/favorites/search result list starting at `startIndex`. */
+  async play(
+    tracks: Track[],
+    source: PlaybackSource = { type: "Recommendation" },
+    startIndex = 0,
+  ) {
+    const { sourceType, sourceId } = toBackendSource(source);
+    await invoke("play_context", { tracks, sourceType, sourceId, startIndex });
+  }
+
+  async playPause() {
+    await invoke("play_pause");
   }
 
   async next() {
-    await invoke("play_next_track");
+    await invoke("next");
   }
 
   async previous() {
-    await invoke("play_previous_track");
+    await invoke("previous");
+  }
+
+  async seek(positionSec: number) {
+    // optimistic update so the slider feels instant; the next Position
+    // event will correct any drift from symphonia's keyframe seeking
+    this.#setPosition(positionSec);
+    await invoke("seek", { positionSec });
+  }
+
+  async setVolume(volume: number) {
+    this.volume = volume; // optimistic
+    await invoke("set_volume", { volume });
+  }
+
+  async cycleRepeat() {
+    const nextMode: RepeatMode =
+      this.repeatMode === "OFF"
+        ? "ALL"
+        : this.repeatMode === "ALL"
+          ? "ONE"
+          : "OFF";
+    await invoke("set_repeat", { mode: nextMode });
   }
 
   async toggleShuffle() {
-    this.shuffle = !this.shuffle;
-    await invoke("set_shuffle", { enabled: this.shuffle });
+    await invoke("toggle_shuffle");
   }
 
-  async toggleRepeat() {
-    const modes: RepeatMode[] = ["none", "all", "one"];
-    const i = modes.indexOf(this.repeat);
-    this.repeat = modes[(i + 1) % modes.length];
-    const modeMap: Record<RepeatMode, number> = { none: 0, one: 1, all: 2 };
-    await invoke("set_repeat", { mode: modeMap[this.repeat] });
+  async enqueueNext(track: Track) {
+    await invoke("enqueue_next", { track });
   }
 
-  async addToQueue(track: Track) {
-    await invoke("add_to_queue", { trackId: track.id });
-    await this.syncState();
-    await this.persistQueue();
+  async enqueueEnd(track: Track) {
+    await invoke("enqueue_end", { track });
   }
 
-  async playNextInQueue(track: Track) {
-    await invoke("insert_play_next_queue", { trackId: track.id });
-    await this.syncState();
-    await this.persistQueue();
+  async removeFromQueue(queueId: number) {
+    await invoke("remove_from_queue", { queueId });
   }
 
-  async removeFromQueue(trackId: number) {
-    const idx = this.userQueue.findIndex((t) => t.id === trackId);
-    if (idx === -1) return;
-    await invoke("remove_from_queue", { index: idx });
-    await this.syncState();
-    await this.persistQueue();
+  async reorderQueue(queueId: number, newIndex: number) {
+    await invoke("reorder_queue", { queueId, newIndex });
   }
 
-  async clearQueue() {
-    this.userQueue = [];
-    await invoke("clear_queue");
-    await this.persistQueue();
+  async setAutoplay(enabled: boolean) {
+    await invoke("set_autoplay", { enabled });
   }
 
   async toggleFavorite(track: Track) {
@@ -210,4 +275,4 @@ class PlayerState {
   }
 }
 
-export const player = new PlayerState();
+export const player = new PlayerStore();

@@ -20,6 +20,7 @@
     import EditPlaylistDialog from "./Dialog/EditPlaylistDialog.svelte";
     import EditAlbumDialog from "./Dialog/EditAlbumDialog.svelte";
     import EditArtistDialog from "./Dialog/EditArtistDialog.svelte";
+    import type { Context } from "$lib/types";
 
     type ColumnKey = (typeof COLUMN_ORDER)[number];
 
@@ -30,8 +31,6 @@
         "dateAdded",
         "duration",
     ] as const;
-
-    type Context = "playlist" | "album" | "artist" | "liked";
 
     type MenuItem = {
         label: string;
@@ -46,43 +45,20 @@
 
     interface TrackTableProps {
         tracks: Track[];
-        context?: Context;
+        context: Context;
         visibleColumns?: ColumnKey[] | null;
         canEdit?: boolean;
         canSort?: boolean;
         canToggleColumns?: boolean;
-        playlists?: { id: number; name: string }[];
-        extraActions?: MenuItem[];
-        playlistId?: number | null;
-        playlistName?: string;
-        playlistCoverArt?: string | null;
-        albumId?: number | null;
-        albumName?: string;
-        albumCoverArt?: string | null;
-        artistId?: number | null;
-        artistName?: string;
-        artistProfileImage?: string | null;
-        artistBannerImage?: string | null;
     }
 
     let {
         tracks = [],
-        context = "playlist",
+        context,
         visibleColumns = null,
-        canEdit = false,
+        canEdit = true,
         canSort = true,
         canToggleColumns = true,
-        extraActions = [],
-        playlistId = null,
-        playlistName = "",
-        playlistCoverArt = null,
-        albumId = null,
-        albumName = "",
-        albumCoverArt = null,
-        artistId = null,
-        artistName = "",
-        artistProfileImage = null,
-        artistBannerImage = null,
     }: TrackTableProps = $props();
 
     const COLUMN_META: Record<
@@ -153,10 +129,10 @@
     };
 
     const CONTEXT_DEFAULT_COLUMNS: Record<string, ColumnKey[]> = {
-        playlist: ["index", "title", "album", "dateAdded", "duration"],
-        liked: ["index", "title", "album", "dateAdded", "duration"],
-        album: ["index", "title", "duration"],
-        artist: ["index", "title", "album", "duration"],
+        Playlist: ["index", "title", "album", "dateAdded", "duration"],
+        Favorites: ["index", "title", "album", "dateAdded", "duration"],
+        Album: ["index", "title", "duration"],
+        Artist: ["index", "title", "album", "duration"],
     };
 
     let columns = $state(
@@ -166,7 +142,7 @@
                 {
                     visible: (
                         visibleColumns ??
-                        CONTEXT_DEFAULT_COLUMNS[context] ??
+                        CONTEXT_DEFAULT_COLUMNS[context.type] ??
                         COLUMN_ORDER
                     ).includes(key),
                     width: COLUMN_META[key].width,
@@ -200,7 +176,7 @@
     }
 
     let orderedTracks = $derived.by(() => {
-        if (context === "album") {
+        if (context.type === "Album") {
             const sorted = [...tracks].sort((a, b) => {
                 const aNum = a.track_number ?? Number.MAX_SAFE_INTEGER;
                 const bNum = b.track_number ?? Number.MAX_SAFE_INTEGER;
@@ -215,7 +191,7 @@
     });
 
     function toggleSort(key: ColumnKey) {
-        if (!canSort || context === "album") return;
+        if (!canSort || context.type === "Album") return;
         if (!COLUMN_META[key].sortable) return;
         if (sortKey !== key) {
             sortKey = key;
@@ -319,26 +295,20 @@
         });
     }
 
-    function sourceType(): string {
-        return context === "liked" ? "favorites" : context;
-    }
-
     function handleMainPlay() {
-        const first = orderedTracks[0];
-        console.log("handleMainPlay", orderedTracks, sourceType());
-        if (!first) return;
+        if (!orderedTracks) return;
         if (
             player.isPlaying &&
             orderedTracks.some((x) => player.currentTrack?.id === x.id)
         )
-            player.togglePlay();
-        else player.play(first, orderedTracks, sourceType() as any);
+            player.playPause();
+        else player.play(orderedTracks, context, 0);
     }
 
-    function handleRowActivate(track: Track) {
+    function handleRowActivate(track: Track, index: number) {
         if (player.currentTrack?.id === track.id && player.isPlaying)
-            player.togglePlay();
-        else player.play(track, orderedTracks, sourceType() as any);
+            player.playPause();
+        else player.play(orderedTracks, context, index);
     }
 
     let actionMenuItems = $derived.by(() => {
@@ -348,12 +318,12 @@
                 icon: "list-plus",
                 onClick: () => {
                     for (const t of orderedTracks) {
-                        player.addToQueue(t);
+                        player.enqueueEnd(t);
                     }
                 },
             },
         ];
-        if (context !== "liked" && canEdit) {
+        if (canEdit) {
             items.push({
                 label: "Edit",
                 icon: "edit",
@@ -362,9 +332,7 @@
                 },
             });
         }
-        if (extraActions.length) {
-            items.push({ type: "separator" }, ...extraActions);
-        }
+
         return items;
     });
 
@@ -419,17 +387,10 @@
 
             <button
                 type="button"
-                class="flex h-14 w-14 items-center justify-center rounded-full transition-colors hover:text-white {focusRing} {player.shuffle
+                class="flex h-14 w-14 items-center justify-center rounded-full transition-colors hover:text-white {focusRing} {player.shuffleEnabled
                     ? 'text-accent'
                     : ''}"
-                onclick={async () => {
-                    await player.toggleShuffle();
-                    await player.play(
-                        orderedTracks[0],
-                        orderedTracks,
-                        sourceType() as any,
-                    );
-                }}
+                onclick={player.toggleShuffle}
                 aria-label="Shuffle play"
             >
                 <Shuffle size={30} />
@@ -616,11 +577,11 @@
                         ? 'py-1.5'
                         : 'py-3'}"
                     style="grid-template-columns:{gridTemplate}"
-                    ondblclick={() => handleRowActivate(track)}
+                    ondblclick={() => handleRowActivate(track, i)}
                     onauxclick={(e) => {
                         if (e.button === 1) {
                             e.preventDefault();
-                            player.addToQueue(track);
+                            player.enqueueEnd(track);
                         }
                     }}
                 >
@@ -640,7 +601,7 @@
                                     class="relative flex h-8 w-8 items-center justify-center rounded {active
                                         ? 'text-emerald-400'
                                         : ''} {focusRing}"
-                                    onclick={() => handleRowActivate(track)}
+                                    onclick={() => handleRowActivate(track, i)}
                                     aria-label={active && player.isPlaying
                                         ? "Pause"
                                         : "Play"}
@@ -703,7 +664,7 @@
                                                 ? 'text-emerald-400'
                                                 : 'text-zinc-50'} hover:underline {focusRing}"
                                             onclick={() =>
-                                                handleRowActivate(track)}
+                                                handleRowActivate(track, i)}
                                         >
                                             {track.title}
                                         </button>
@@ -814,33 +775,33 @@
     </div>
 </div>
 
-{#if showEditDialog && context === "playlist"}
+{#if showEditDialog && context.type === "Playlist"}
     <EditPlaylistDialog
         bind:open={showEditDialog}
-        playlistId={playlistId ?? 0}
-        name={playlistName}
-        coverArt={playlistCoverArt}
+        playlistId={context.id ?? 0}
+        name={context.name}
+        coverArt={context.coverArt}
         onClose={() => (showEditDialog = false)}
     />
 {/if}
 
-{#if showEditDialog && context === "album"}
+{#if showEditDialog && context.type === "Album"}
     <EditAlbumDialog
         bind:open={showEditDialog}
-        albumId={albumId ?? 0}
-        name={albumName}
-        coverArt={albumCoverArt}
+        albumId={context.id ?? 0}
+        name={context.name}
+        coverArt={context.coverArt}
         onClose={() => (showEditDialog = false)}
     />
 {/if}
 
-{#if showEditDialog && context === "artist"}
+{#if showEditDialog && context.type === "Artist"}
     <EditArtistDialog
         bind:open={showEditDialog}
-        artistId={artistId ?? 0}
-        name={artistName}
-        profileImage={artistProfileImage}
-        bannerImage={artistBannerImage}
+        artistId={context.id ?? 0}
+        name={context.name}
+        profileImage={context.profileImage}
+        bannerImage={context.bannerImage}
         onClose={() => (showEditDialog = false)}
     />
 {/if}

@@ -39,7 +39,7 @@
             <button
                 transition:fly={{ easing: bounceInOut }}
                 class="m-auto bg-gray-200 rounded-full p-4 text-black"
-                onclick={() => player.play(data)}
+                onclick={() => player.play([data])}
             >
                 <Play size={26} fill="black" />
             </button>

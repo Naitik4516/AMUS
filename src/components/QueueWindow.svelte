@@ -1,8 +1,9 @@
 <script lang="ts">
     import { X } from "@lucide/svelte";
     import TrackListSmall from "./ui/TrackListSmall.svelte";
+    import { player } from "$lib/player.svelte";
 
-    let { showQueue = $bindable(false), player } = $props();
+    let { showQueue = $bindable(false) }: { showQueue?: boolean } = $props();
 </script>
 
 {#if showQueue}
@@ -33,6 +34,7 @@
                     track={player.currentTrack}
                     titleColor="text-accent"
                     className="rounded-xl"
+                    onclick={() => {}}
                 />
             {/if}
 
@@ -44,12 +46,18 @@
                     Next in Queue
                 </h4>
                 {#each player.userQueue as track, i}
-                    <TrackListSmall {track} className="rounded-xl" />
+                    <TrackListSmall
+                        {track}
+                        className="rounded-xl"
+                        onclick={() => {
+                            player.contextPosition = i;
+                        }}
+                    />
                 {/each}
             {/if}
 
             <!-- Next from Playlist/Album/Artist -->
-            {#if player.playNext.length > 0}
+            <!-- {#if player.playNext.length > 0}
                 <p
                     class="py-2 text-[13px] font-bold uppercase tracking-wider text-stone-400"
                 >
@@ -64,7 +72,7 @@
                 <p class="px-4 py-8 text-center text-sm text-zinc-500">
                     No tracks in queue
                 </p>
-            {/if}
+            {/if} -->
         </div>
     </div>
 {/if}

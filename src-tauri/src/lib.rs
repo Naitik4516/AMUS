@@ -1,16 +1,16 @@
 pub mod artist_pic_fetcher;
 pub mod commands;
 pub mod db;
-pub mod engine;
 pub mod error;
 pub mod models;
+pub mod player;
 pub mod scanner;
 pub mod sync;
 
-use engine::{AudioEngine, Player};
+use crate::player::actor::PlayerCommand;
+
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
-use rodio::DeviceSinkBuilder;
 use std::sync::atomic::{AtomicBool, Ordering};
 use sync::SyncManager;
 use tauri::{
@@ -55,27 +55,27 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
     match event.id().as_ref() {
         "play_pause" => {
-            let player = app.state::<Player>();
-            let engine = player.engine.lock();
-            if engine.is_paused() {
-                engine.resume();
-            } else {
-                engine.pause();
-            }
+            // let player = app.state::<Player>();
+            // let engine = player.engine.lock();
+            // if engine.is_paused() {
+            //     engine.resume();
+            // } else {
+            //     engine.pause();
+            // }
         }
         "next" => {
-            let player = app.state::<Player>();
-            let mut engine = player.engine.lock();
-            let _ = engine.play_next();
-            let state = engine.get_playback_state();
-            let _ = app.emit("track-changed", &state);
+            // let player = app.state::<Player>();
+            // let mut engine = player.engine.lock();
+            // let _ = engine.play_next();
+            // let state = engine.get_playback_state();
+            // let _ = app.emit("track-changed", &state);
         }
         "previous" => {
-            let player = app.state::<Player>();
-            let mut engine = player.engine.lock();
-            let _ = engine.play_previous();
-            let state = engine.get_playback_state();
-            let _ = app.emit("track-changed", &state);
+            // let player = app.state::<Player>();
+            // let mut engine = player.engine.lock();
+            // let _ = engine.play_previous();
+            // let state = engine.get_playback_state();
+            // let _ = app.emit("track-changed", &state);
         }
         "show_miniplayer" => {
             toggle_popup(app);
@@ -201,28 +201,22 @@ pub fn run() {
                 )
             });
             let pool = Pool::new(manager).expect("failed to create db pool");
-            let monitor_pool = pool.clone();
+
             {
                 let mut conn = pool.get().expect("failed to get db connection");
                 db::init_db(&mut conn).expect("failed to initialize database");
             }
 
-            let stream = DeviceSinkBuilder::open_default_sink().expect("open default audio stream");
-            let engine = AudioEngine::new(&stream.mixer(), pool.clone());
-            let engine_arc = std::sync::Arc::new(parking_lot::Mutex::new(engine));
-
-            app.manage(pool);
-            app.manage(stream);
-            app.manage(Player {
-                engine: engine_arc.clone(),
-            });
+            let handle =
+                crate::player::actor::PlayerActor::spawn(app.handle().clone(), pool.clone());
+            app.manage(commands::PlayerHandle(handle));
 
             let sync_manager = SyncManager::new();
             sync_manager.init(app_handle);
             app.manage(sync_manager);
-            app.manage(MiniPlayerPinned(AtomicBool::new(true)));
 
-            engine::spawn_playback_monitor(app_handle.clone(), engine_arc, monitor_pool);
+            app.manage(pool);
+            app.manage(MiniPlayerPinned(AtomicBool::new(true)));
 
             // System Tray
             let tray_menu = build_tray_menu(app_handle)?;
@@ -264,6 +258,15 @@ pub fn run() {
 
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                // best-effort flush; the periodic 30s checkpoint is the real safety net
+                let _ = window
+                    .state::<commands::PlayerHandle>()
+                    .0
+                    .send(PlayerCommand::Shutdown);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::add_source,
             commands::get_source_dirs,
@@ -293,25 +296,20 @@ pub fn run() {
             commands::rename_playlist,
             commands::get_playlist,
             commands::toggle_favorite,
-            commands::get_similar_songs,
-            commands::get_playlist_cover_arts,
-            commands::get_track_playlist_ids,
-            commands::play_from_source,
-            commands::toggle_playback,
-            commands::set_volume,
+            commands::play_context,
+            commands::play_pause,
+            commands::next,
+            commands::previous,
             commands::seek,
-            commands::add_to_queue,
-            commands::insert_play_next_queue,
-            commands::remove_from_queue,
-            commands::clear_queue,
-            commands::play_next_track,
-            commands::play_previous_track,
-            commands::set_shuffle,
+            commands::set_volume,
             commands::set_repeat,
-            commands::get_queue_state,
-            commands::get_current_track,
-            commands::save_queue,
-            commands::load_queue,
+            commands::toggle_shuffle,
+            commands::enqueue_next,
+            commands::enqueue_end,
+            commands::remove_from_queue,
+            commands::reorder_queue,
+            commands::set_autoplay,
+            commands::get_current_state,
             commands::get_top_artists,
             commands::get_top_albums,
             commands::get_forgotten_tracks,

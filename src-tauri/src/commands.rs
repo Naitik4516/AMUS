@@ -1,14 +1,18 @@
 use crate::MiniPlayerPinned;
 use crate::artist_pic_fetcher;
 use crate::db::{self, DataAge, DbPool, SortBy, Timeframe};
-use crate::engine::Player;
 use crate::error::{Error, Result};
 use crate::models::*;
 use crate::scanner;
 use crate::sync::SyncManager;
-use tauri::Emitter;
+use crate::player::actor::{PlayerCommand, PlayerStateSnapshot};
+use crate::player::source::{PlaybackSource, RepeatMode};
 use tauri::Manager;
 use tauri::State;
+use std::sync::mpsc::Sender;
+use tokio::sync::oneshot;
+
+pub struct PlayerHandle(pub Sender<PlayerCommand>);
 
 #[tauri::command]
 pub async fn add_source(
@@ -272,221 +276,87 @@ pub async fn get_playlist(
 // Playback controls
 // ---------------------------------------------------------------------------
 
-fn record_current_track_async(pool: &State<'_, DbPool>, player: &State<'_, Player>) {
-    let info = {
-        let engine = player.engine.lock();
-        let Some(track) = engine.current_track() else {
-            return;
-        };
-        Some((
-            track.id,
-            engine.position_ms(),
-            track.duration_seconds,
-            engine.session_source_type(),
-        ))
-    };
-
-    if let Some((track_id, pos_ms, duration_sec, source_type)) = info {
-        let pool = pool.inner().clone();
-        std::thread::spawn(move || {
-            let duration_ms = (duration_sec as u64).saturating_mul(1000);
-            let completion = if duration_ms > 0 {
-                ((pos_ms as f64 / duration_ms as f64) * 100.0).clamp(0.0, 100.0)
-            } else {
-                100.0
-            };
-            if let Ok(conn) = pool.get() {
-                let _ =
-                    db::record_playback(&conn, track_id, source_type.to_db_string(), completion);
-            }
-        });
-    }
-}
-
-fn emit_state(app_handle: &tauri::AppHandle, engine: &crate::engine::engine::AudioEngine) {
-    let state = engine.get_playback_state();
-    let _ = app_handle.emit("track-changed", &state);
+fn send(handle: &State<PlayerHandle>, cmd: PlayerCommand) -> Result<()> {
+    handle.0.send(cmd).map_err(|e| Error::Audio(e.to_string()))
 }
 
 #[tauri::command]
-pub async fn play_from_source(
-    track_id: i64,
-    source_type: SourceType,
+pub fn play_context(
+    handle: State<PlayerHandle>,
+    tracks: Vec<Track>,
+    source_type: String,
     source_id: Option<i64>,
-    play_next_ids: Vec<i64>,
-    app_handle: tauri::AppHandle,
-    pool: State<'_, DbPool>,
-    player: State<'_, Player>,
+    start_index: usize,
 ) -> Result<()> {
-    // Record current track asynchronously (non-blocking)
-    record_current_track_async(&pool, &player);
-
-    let conn = pool.get().map_err(Error::Pool)?;
-    let track = db::get_track_details(&conn, track_id)?;
-
-    let play_next_tracks: Vec<TrackDetails> = play_next_ids
-        .iter()
-        .filter_map(|id| db::get_track_details(&conn, *id).ok())
-        .collect();
-
-    let mut engine = player.engine.lock();
-    engine
-        .play(&track, &play_next_tracks, source_type, source_id)
-        .map_err(|e| Error::Audio(e.to_string()))?;
-
-    emit_state(&app_handle, &engine);
-    Ok(())
+    let source = PlaybackSource::from_db(&source_type, source_id);
+    send(&handle, PlayerCommand::LoadContext { tracks, source, start_index })
 }
 
 #[tauri::command]
-pub async fn toggle_playback(player: State<'_, Player>, playing: bool) -> Result<()> {
-    let engine = player.engine.lock();
-    if playing {
-        engine.resume();
-    } else {
-        engine.pause();
-    }
-    Ok(())
+pub fn play_pause(handle: State<PlayerHandle>) -> Result<()> {
+    send(&handle, PlayerCommand::PlayPause)
 }
 
 #[tauri::command]
-pub async fn set_volume(volume: u32, player: State<'_, Player>) -> Result<()> {
-    let mut engine = player.engine.lock();
-    engine.set_volume(volume as f32 / 100.0);
-    Ok(())
+pub fn next(handle: State<PlayerHandle>) -> Result<()> {
+    send(&handle, PlayerCommand::Next)
 }
 
 #[tauri::command]
-pub async fn seek(seconds: u64, player: State<'_, Player>) -> Result<()> {
-    let engine = player.engine.lock();
-    engine
-        .seek(seconds)
-        .map_err(|e| Error::Audio(e.to_string()))
+pub fn previous(handle: State<PlayerHandle>) -> Result<()> {
+    send(&handle, PlayerCommand::Previous)
 }
 
 #[tauri::command]
-pub async fn add_to_queue(
-    track_id: i64,
-    pool: State<'_, DbPool>,
-    player: State<'_, Player>,
-) -> Result<()> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    let track = db::get_track_details(&conn, track_id)?;
-    let mut engine = player.engine.lock();
-    engine.add_to_queue(&track);
-    Ok(())
+pub fn seek(handle: State<PlayerHandle>, position_sec: f64) -> Result<()> {
+    send(&handle, PlayerCommand::Seek(position_sec))
 }
 
 #[tauri::command]
-pub async fn insert_play_next_queue(
-    track_id: i64,
-    pool: State<'_, DbPool>,
-    player: State<'_, Player>,
-) -> Result<()> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    let track = db::get_track_details(&conn, track_id)?;
-    let mut engine = player.engine.lock();
-    engine.play_next_in_queue(&track);
-    Ok(())
+pub fn set_volume(handle: State<PlayerHandle>, volume: f32) -> Result<()> {
+    send(&handle, PlayerCommand::SetVolume(volume))
 }
 
 #[tauri::command]
-pub async fn remove_from_queue(index: usize, player: State<'_, Player>) -> Result<()> {
-    let mut engine = player.engine.lock();
-    engine.remove_from_queue(index);
-    Ok(())
+pub fn set_repeat(handle: State<PlayerHandle>, mode: String) -> Result<()> {
+    send(&handle, PlayerCommand::SetRepeat(RepeatMode::from_str(&mode)))
 }
 
 #[tauri::command]
-pub async fn clear_queue(player: State<'_, Player>) -> Result<()> {
-    let mut engine = player.engine.lock();
-    engine.clear_queue();
-    Ok(())
+pub fn toggle_shuffle(handle: State<PlayerHandle>) -> Result<()> {
+    send(&handle, PlayerCommand::ToggleShuffle)
 }
 
 #[tauri::command]
-pub async fn play_next_track(
-    app_handle: tauri::AppHandle,
-    pool: State<'_, DbPool>,
-    player: State<'_, Player>,
-) -> Result<()> {
-    // Record current track before advancing
-    record_current_track_async(&pool, &player);
-
-    let mut engine = player.engine.lock();
-    engine
-        .play_next()
-        .map_err(|e| Error::Audio(e.to_string()))?;
-    emit_state(&app_handle, &engine);
-    Ok(())
+pub fn enqueue_next(handle: State<PlayerHandle>, track: Track) -> Result<()> {
+    send(&handle, PlayerCommand::EnqueueNext(track))
 }
 
 #[tauri::command]
-pub async fn play_previous_track(
-    app_handle: tauri::AppHandle,
-    pool: State<'_, DbPool>,
-    player: State<'_, Player>,
-) -> Result<()> {
-    // Record current track before going back
-    record_current_track_async(&pool, &player);
-
-    let mut engine = player.engine.lock();
-    engine
-        .play_previous()
-        .map_err(|e| Error::Audio(e.to_string()))?;
-    emit_state(&app_handle, &engine);
-    Ok(())
+pub fn enqueue_end(handle: State<PlayerHandle>, track: Track) -> Result<()> {
+    send(&handle, PlayerCommand::EnqueueEnd(track))
 }
 
 #[tauri::command]
-pub async fn set_shuffle(enabled: bool, player: State<'_, Player>) -> Result<()> {
-    let mut engine = player.engine.lock();
-    engine.set_shuffle(enabled);
-    Ok(())
+pub fn remove_from_queue(handle: State<PlayerHandle>, queue_id: i64) -> Result<()> {
+    send(&handle, PlayerCommand::RemoveFromQueue(queue_id))
 }
 
 #[tauri::command]
-pub async fn set_repeat(mode: u8, player: State<'_, Player>) -> Result<()> {
-    let repeat = match mode {
-        0 => RepeatMode::Off,
-        1 => RepeatMode::Track,
-        2 => RepeatMode::All,
-        _ => RepeatMode::Off,
-    };
-    let mut engine = player.engine.lock();
-    engine.set_repeat(repeat);
-    Ok(())
+pub fn reorder_queue(handle: State<PlayerHandle>, queue_id: i64, new_index: usize) -> Result<()> {
+    send(&handle, PlayerCommand::ReorderQueue { queue_id, new_index })
 }
 
 #[tauri::command]
-pub async fn get_queue_state(
-    player: State<'_, Player>,
-) -> Result<crate::engine::engine::PlaybackState> {
-    let engine = player.engine.lock();
-    Ok(engine.get_playback_state())
+pub fn set_autoplay(handle: State<PlayerHandle>, enabled: bool) -> Result<()> {
+    send(&handle, PlayerCommand::SetAutoplay(enabled))
 }
 
 #[tauri::command]
-pub async fn get_current_track(player: State<'_, Player>) -> Result<Option<TrackDetails>> {
-    let engine = player.engine.lock();
-    Ok(engine.current_track().cloned())
-}
-
-#[tauri::command]
-pub async fn save_queue(track_ids: Vec<i64>, pool: State<'_, DbPool>) -> Result<()> {
-    let mut conn = pool.get().map_err(Error::Pool)?;
-    db::save_user_queue(&mut conn, &track_ids)
-}
-
-#[tauri::command]
-pub async fn load_queue(pool: State<'_, DbPool>) -> Result<Vec<TrackDetails>> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    let ids = db::load_user_queue(&conn)?;
-    let tracks = ids
-        .into_iter()
-        .filter_map(|id| db::get_track_details(&conn, id).ok())
-        .collect::<Vec<_>>();
-    Ok(tracks)
+pub async fn get_current_state(handle: State<'_, PlayerHandle>) -> Result<PlayerStateSnapshot> {
+    let (tx, rx) = oneshot::channel();
+    handle.0.send(PlayerCommand::GetState(tx)).map_err(|e| Error::Audio(e.to_string()))?;
+    rx.await.map_err(|_| Error::Unknown("channel closed".to_string()))
 }
 
 #[tauri::command]

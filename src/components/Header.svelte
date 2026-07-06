@@ -107,7 +107,7 @@
 
     function handleResultClick(result: GlobalSearchResult) {
         if (result.result_type === "track" && result.track) {
-            player.play(result.track);
+            player.play([result.track], { type: "Search" });
         } else if (result.result_type === "artist" && result.artist) {
             goto(`/library/artists/${result.artist.id}`);
         } else if (result.result_type === "album" && result.album) {

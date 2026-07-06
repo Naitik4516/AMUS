@@ -4,11 +4,7 @@
     import TrackList from "$components/ui/TrackList.svelte";
     import { formatDuration } from "$lib/utils";
     import { Disc } from "@lucide/svelte";
-    import {
-        getSwatchesSync,
-        type HSL,
-        type Color,
-    } from "colorthief";
+    import { getSwatchesSync, type HSL, type Color } from "colorthief";
     import type { Attachment } from "svelte/attachments";
     import Artist from "$components/icons/Artist.svelte";
     import { getImageUrl } from "$lib/utils";
@@ -35,7 +31,7 @@
         const darkenedL = Math.min(hsl.l, targetLightness);
 
         const darkColor = `hsl(${hsl.h}, ${hsl.s}%, ${darkenedL}%)`;
-        const baseColor = `hsl(${hsl.h}, ${hsl.s }%, ${hsl.l}%)`;
+        const baseColor = `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)`;
 
         return `linear-gradient(to bottom, ${baseColor}, ${darkColor} 80%, transparent)`;
     }
@@ -121,12 +117,14 @@
     {#if tracks.length > 0}
         <div class="-translate-y-22">
             <TrackList
-                context="album"
+                context={{
+                    type: "Album",
+                    id: Number(data.albumInfo?.id ?? 0),
+                    name,
+                    coverArt: coverArtFilename,
+                }}
                 {tracks}
-                albumId={Number(data.albumInfo?.id ?? 0)}
-                albumName={name}
-                albumCoverArt={coverArtFilename}
-                canEdit={true}
+                canSort={false}
             />
         </div>
     {:else}

@@ -195,8 +195,7 @@ pub fn set_track_artists(conn: &Connection, track_id: i64, artist_ids: &[i64]) -
         return Ok(());
     }
 
-    conn
-        .prepare_cached("DELETE FROM track_artist WHERE track_id = ?")
+    conn.prepare_cached("DELETE FROM track_artist WHERE track_id = ?")
         .map_err(Error::Db)?
         .execute(params![track_id])
         .map_err(Error::Db)?;
@@ -218,8 +217,7 @@ pub fn set_track_artists(conn: &Connection, track_id: i64, artist_ids: &[i64]) -
     }
     let params_refs: Vec<&dyn ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
 
-    conn
-        .prepare_cached(&sql)
+    conn.prepare_cached(&sql)
         .map_err(Error::Db)?
         .execute(params_refs.as_slice())
         .map_err(Error::Db)?;
@@ -287,13 +285,12 @@ pub fn artist_has_banner(conn: &Connection, artist_id: i64) -> Result<bool> {
 }
 
 pub fn report_fetch_success(conn: &Connection, artist_id: i64) -> Result<()> {
-    conn
-        .prepare_cached(
-            "UPDATE artist SET fetch_attempts = 0, last_fetch_attempt = NULL WHERE id = ?",
-        )
-        .map_err(Error::Db)?
-        .execute(params![artist_id])
-        .map_err(Error::Db)?;
+    conn.prepare_cached(
+        "UPDATE artist SET fetch_attempts = 0, last_fetch_attempt = NULL WHERE id = ?",
+    )
+    .map_err(Error::Db)?
+    .execute(params![artist_id])
+    .map_err(Error::Db)?;
     Ok(())
 }
 
@@ -318,7 +315,9 @@ pub fn get_artists_needing_fetch(conn: &Connection) -> Result<Vec<(i64, String)>
         )
         .map_err(Error::Db)?;
     let rows = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(Error::Db)?;
     let mut artists = Vec::new();
     for row in rows {
@@ -333,28 +332,22 @@ pub fn get_or_create_album(
     cover_art: Option<&str>,
     year: Option<i32>,
 ) -> Result<i64> {
-    conn
-        .prepare_cached(
-            "INSERT INTO album (name, cover_art, year) VALUES (?1, ?2, ?3)
+    conn.prepare_cached(
+        "INSERT INTO album (name, cover_art, year) VALUES (?1, ?2, ?3)
              ON CONFLICT(name) DO UPDATE SET name=?1 RETURNING id",
-        )
-        .map_err(Error::Db)?
-        .query_row(params![name, cover_art, year], |row| row.get(0))
-        .map_err(Error::Db)
+    )
+    .map_err(Error::Db)?
+    .query_row(params![name, cover_art, year], |row| row.get(0))
+    .map_err(Error::Db)
 }
 
-pub fn set_album_artist(
-    conn: &Connection,
-    name: &str,
-    album_artist: &str,
-) -> Result<()> {
-    conn
-        .prepare_cached(
-            "UPDATE album SET album_artist = ? WHERE name = ? AND album_artist IS NULL",
-        )
-        .map_err(Error::Db)?
-        .execute(params![album_artist, name])
-        .map_err(Error::Db)?;
+pub fn set_album_artist(conn: &Connection, name: &str, album_artist: &str) -> Result<()> {
+    conn.prepare_cached(
+        "UPDATE album SET album_artist = ? WHERE name = ? AND album_artist IS NULL",
+    )
+    .map_err(Error::Db)?
+    .execute(params![album_artist, name])
+    .map_err(Error::Db)?;
     Ok(())
 }
 
@@ -368,9 +361,8 @@ pub fn update_track(
     file_size: i64,
     cover_art: Option<&str>,
 ) -> Result<i64> {
-    conn
-        .prepare_cached(
-            "INSERT INTO track (path, title, duration_sec, year, mtime, file_size, cover_art)
+    conn.prepare_cached(
+        "INSERT INTO track (path, title, duration_sec, year, mtime, file_size, cover_art)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             ON CONFLICT(path) DO UPDATE SET
             title = excluded.title,
@@ -380,10 +372,13 @@ pub fn update_track(
             file_size = excluded.file_size,
             cover_art = excluded.cover_art
             RETURNING id",
-        )
-        .map_err(Error::Db)?
-        .query_row(params![path, title, duration_sec, year, mtime, file_size, cover_art], |row| row.get(0))
-        .map_err(Error::Db)
+    )
+    .map_err(Error::Db)?
+    .query_row(
+        params![path, title, duration_sec, year, mtime, file_size, cover_art],
+        |row| row.get(0),
+    )
+    .map_err(Error::Db)
 }
 
 pub fn set_track_album(
@@ -407,19 +402,17 @@ pub fn set_track_album(
         return Ok(());
     }
 
-    conn
-        .prepare_cached("DELETE FROM album_track WHERE track_id = ?")
+    conn.prepare_cached("DELETE FROM album_track WHERE track_id = ?")
         .map_err(Error::Db)?
         .execute(params![track_id])
         .map_err(Error::Db)?;
 
-    conn
-        .prepare_cached(
-            "INSERT OR IGNORE INTO album_track (album_id, track_id, track_number) VALUES (?, ?, ?)",
-        )
-        .map_err(Error::Db)?
-        .execute(params![album_id, track_id, track_number])
-        .map_err(Error::Db)?;
+    conn.prepare_cached(
+        "INSERT OR IGNORE INTO album_track (album_id, track_id, track_number) VALUES (?, ?, ?)",
+    )
+    .map_err(Error::Db)?
+    .execute(params![album_id, track_id, track_number])
+    .map_err(Error::Db)?;
     Ok(())
 }
 
@@ -440,6 +433,52 @@ pub fn get_track_id_by_path(conn: &Connection, path: &str) -> Result<i64> {
         |row| row.get(0),
     )
     .map_err(Error::Db)
+}
+
+pub fn get_track_by_id(conn: &Connection, id: i64) -> Result<Track> {
+    conn.query_row(
+        "SELECT id, title, duration_sec, is_favorite, cover_art, added_at \
+         FROM track WHERE id = ?",
+        params![id],
+        |row| build_track(row),
+    )
+    .map_err(Error::Db)
+}
+
+pub fn get_track_path_by_id(conn: &Connection, id: i64) -> Result<String> {
+    conn.query_row("SELECT path FROM track WHERE id = ?", params![id], |row| {
+        row.get(0)
+    })
+    .map_err(Error::Db)
+}
+
+fn build_track(row: &rusqlite::Row) -> rusqlite::Result<Track> {
+    Ok(Track {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        artists: Vec::new(),
+        album: Album {
+            id: 0,
+            name: String::new(),
+            cover_art: None,
+            album_artist: None,
+            year: None,
+        },
+        duration_seconds: row.get(2)?,
+        is_favorite: row.get(3)?,
+        cover_art: row.get(4)?,
+        added_at: row
+            .get::<_, String>(5)?
+            .parse::<DateTime<Utc>>()
+            .map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    5,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?,
+        track_number: None,
+    })
 }
 
 pub fn toggle_favorite(conn: &Connection, track_id: i64) -> Result<bool> {
@@ -688,143 +727,6 @@ pub fn get_favorite_tracks(conn: &Connection, sort_by: Option<SortBy>) -> Result
         WHERE t.is_favorite = 1";
 
     prepare_sorted_tracks_list(conn, sql, [], sort_by)
-}
-
-pub fn get_recently_played_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>> {
-    let sql =
-        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
-        FROM track t
-        LEFT JOIN album_track alt ON t.id = alt.track_id
-        LEFT JOIN album al ON alt.album_id = al.id
-        JOIN track_stats s ON t.id = s.track_id
-        WHERE s.last_played_at IS NOT NULL
-        ORDER BY s.last_played_at DESC
-        LIMIT ?";
-
-    prepare_tracks_list(conn, sql, params![limit as i64])
-}
-
-pub fn get_most_played_tracks(
-    conn: &Connection,
-    limit: usize,
-    timeframe: Timeframe,
-) -> Result<Vec<Track>> {
-    let time_filter = timeframe_where_clause("s.last_played_at", timeframe);
-
-    let sql = format!(
-        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
-        FROM track t
-        LEFT JOIN album_track alt ON t.id = alt.track_id
-        LEFT JOIN album al ON alt.album_id = al.id
-        JOIN track_stats s ON t.id = s.track_id
-        WHERE s.play_count > 0 AND {}
-        ORDER BY s.play_count DESC
-        LIMIT ?",
-        time_filter
-    );
-
-    prepare_tracks_list(conn, &sql, params![limit as i64])
-}
-
-pub fn get_top_artists(conn: &Connection, limit: usize) -> Result<Vec<Artist>> {
-    let sql = "SELECT ar.id, ar.name, ar.profile_image, SUM(IFNULL(s.play_count, 0)) as total_plays
-        FROM artist ar
-        JOIN track_artist ta ON ta.artist_id = ar.id
-        JOIN track t ON t.id = ta.track_id
-        LEFT JOIN track_stats s ON t.id = s.track_id
-        GROUP BY ar.id
-        ORDER BY total_plays DESC
-        LIMIT ?";
-
-    let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
-    let artist_iter = stmt
-        .query_map(params![limit as i64], |row| {
-            Ok(Artist {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                profile_image: row.get(2)?,
-                banner_image: None,
-            })
-        })
-        .map_err(Error::Db)?;
-
-    artist_iter
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::Db)
-}
-
-pub fn get_top_albums(conn: &Connection, limit: usize) -> Result<Vec<Album>> {
-    let sql = "SELECT al.id, al.name, al.cover_art, al.album_artist, al.year, SUM(IFNULL(s.play_count, 0)) as total_plays
-        FROM album al
-        JOIN album_track alt ON alt.album_id = al.id
-        JOIN track t ON t.id = alt.track_id
-        LEFT JOIN track_stats s ON t.id = s.track_id
-        GROUP BY al.id
-        ORDER BY total_plays DESC
-        LIMIT ?";
-
-    let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
-    let raw: Vec<(Album, Option<String>)> = stmt
-        .query_map(params![limit as i64], |row| {
-            let album = Album {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                cover_art: row.get(2)?,
-                album_artist: None,
-                year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
-            };
-            Ok((album, row.get::<_, Option<String>>(3)?))
-        })
-        .map_err(Error::Db)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::Db)?;
-
-    let mut albums: Vec<Album> = Vec::with_capacity(raw.len());
-    for (mut album, aa) in raw {
-        album.album_artist = resolve_album_artist(conn, aa)?;
-        albums.push(album);
-    }
-    Ok(albums)
-}
-
-pub fn get_forgotten_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>> {
-    let sql =
-        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
-        FROM track t
-        LEFT JOIN album_track alt ON t.id = alt.track_id
-        LEFT JOIN album al ON alt.album_id = al.id
-        JOIN track_stats s ON t.id = s.track_id
-        WHERE s.play_count > 0 AND s.last_played_at <= datetime('now', '-180 days')
-        ORDER BY s.last_played_at ASC
-        LIMIT ?";
-
-    prepare_tracks_list(conn, sql, params![limit as i64])
-}
-
-pub fn get_unplayed_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>> {
-    let sql =
-        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
-        FROM track t
-        LEFT JOIN album_track alt ON t.id = alt.track_id
-        LEFT JOIN album al ON alt.album_id = al.id
-        LEFT JOIN track_stats s ON t.id = s.track_id
-        WHERE s.play_count IS NULL OR s.play_count = 0
-        ORDER BY t.added_at DESC
-        LIMIT ?";
-
-    prepare_tracks_list(conn, sql, params![limit as i64])
-}
-
-pub fn get_recently_added_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>> {
-    let sql =
-        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
-        FROM track t
-        LEFT JOIN album_track alt ON t.id = alt.track_id
-        LEFT JOIN album al ON alt.album_id = al.id
-        ORDER BY t.added_at DESC
-        LIMIT ?";
-
-    prepare_tracks_list(conn, sql, params![limit as i64])
 }
 
 pub fn get_track_details(conn: &Connection, track_id: i64) -> Result<TrackDetails> {
@@ -1320,7 +1222,11 @@ fn resolve_album_artist(
     }
 }
 
-fn prepare_tracks_list<P: Params>(conn: &Connection, sql: &str, params: P) -> Result<Vec<Track>> {
+pub fn prepare_tracks_list<P: Params>(
+    conn: &Connection,
+    sql: &str,
+    params: P,
+) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(sql).map_err(Error::Db)?;
 
     struct RawTrack {
@@ -1483,36 +1389,146 @@ fn prepare_sorted_tracks_list<P: Params>(
     prepare_tracks_list(conn, &sql, params)
 }
 
-pub fn save_user_queue(conn: &mut Connection, track_ids: &[i64]) -> Result<()> {
-    let tx = conn.transaction().map_err(Error::Db)?;
-    tx.execute("DELETE FROM user_queue", [])
-        .map_err(Error::Db)?;
-    for (i, id) in track_ids.iter().enumerate() {
-        tx.execute(
-            "INSERT INTO user_queue (track_id, position) VALUES (?, ?)",
-            params![id, i as i64],
-        )
-        .map_err(Error::Db)?;
-    }
-    tx.commit().map_err(Error::Db)?;
-    Ok(())
-}
-
-pub fn load_user_queue(conn: &Connection) -> Result<Vec<i64>> {
-    let mut stmt = conn
-        .prepare("SELECT track_id FROM user_queue ORDER BY position ASC")
-        .map_err(Error::Db)?;
-    let ids = stmt
-        .query_map([], |row| row.get::<_, i64>(0))
-        .map_err(Error::Db)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::Db)?;
-    Ok(ids)
-}
-
 // ---------------------------------------------------------------------------
 // Stats queries
 // ---------------------------------------------------------------------------
+
+pub fn get_recently_played_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>> {
+    let sql =
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        FROM track t
+        LEFT JOIN album_track alt ON t.id = alt.track_id
+        LEFT JOIN album al ON alt.album_id = al.id
+        JOIN track_stats s ON t.id = s.track_id
+        WHERE s.last_played_at IS NOT NULL
+        ORDER BY s.last_played_at DESC
+        LIMIT ?";
+
+    prepare_tracks_list(conn, sql, params![limit as i64])
+}
+
+pub fn get_most_played_tracks(
+    conn: &Connection,
+    limit: usize,
+    timeframe: Timeframe,
+) -> Result<Vec<Track>> {
+    let time_filter = timeframe_where_clause("s.last_played_at", timeframe);
+
+    let sql = format!(
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        FROM track t
+        LEFT JOIN album_track alt ON t.id = alt.track_id
+        LEFT JOIN album al ON alt.album_id = al.id
+        JOIN track_stats s ON t.id = s.track_id
+        WHERE s.play_count > 0 AND {}
+        ORDER BY s.play_count DESC
+        LIMIT ?",
+        time_filter
+    );
+
+    prepare_tracks_list(conn, &sql, params![limit as i64])
+}
+
+pub fn get_top_artists(conn: &Connection, limit: usize) -> Result<Vec<Artist>> {
+    let sql = "SELECT ar.id, ar.name, ar.profile_image, SUM(IFNULL(s.play_count, 0)) as total_plays
+        FROM artist ar
+        JOIN track_artist ta ON ta.artist_id = ar.id
+        JOIN track t ON t.id = ta.track_id
+        LEFT JOIN track_stats s ON t.id = s.track_id
+        GROUP BY ar.id
+        ORDER BY total_plays DESC
+        LIMIT ?";
+
+    let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
+    let artist_iter = stmt
+        .query_map(params![limit as i64], |row| {
+            Ok(Artist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                profile_image: row.get(2)?,
+                banner_image: None,
+            })
+        })
+        .map_err(Error::Db)?;
+
+    artist_iter
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Error::Db)
+}
+
+pub fn get_top_albums(conn: &Connection, limit: usize) -> Result<Vec<Album>> {
+    let sql = "SELECT al.id, al.name, al.cover_art, al.album_artist, al.year, SUM(IFNULL(s.play_count, 0)) as total_plays
+        FROM album al
+        JOIN album_track alt ON alt.album_id = al.id
+        JOIN track t ON t.id = alt.track_id
+        LEFT JOIN track_stats s ON t.id = s.track_id
+        GROUP BY al.id
+        ORDER BY total_plays DESC
+        LIMIT ?";
+
+    let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
+    let raw: Vec<(Album, Option<String>)> = stmt
+        .query_map(params![limit as i64], |row| {
+            let album = Album {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                cover_art: row.get(2)?,
+                album_artist: None,
+                year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+            };
+            Ok((album, row.get::<_, Option<String>>(3)?))
+        })
+        .map_err(Error::Db)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Error::Db)?;
+
+    let mut albums: Vec<Album> = Vec::with_capacity(raw.len());
+    for (mut album, aa) in raw {
+        album.album_artist = resolve_album_artist(conn, aa)?;
+        albums.push(album);
+    }
+    Ok(albums)
+}
+
+pub fn get_forgotten_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>> {
+    let sql =
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        FROM track t
+        LEFT JOIN album_track alt ON t.id = alt.track_id
+        LEFT JOIN album al ON alt.album_id = al.id
+        JOIN track_stats s ON t.id = s.track_id
+        WHERE s.play_count > 0 AND s.last_played_at <= datetime('now', '-180 days')
+        ORDER BY s.last_played_at ASC
+        LIMIT ?";
+
+    prepare_tracks_list(conn, sql, params![limit as i64])
+}
+
+pub fn get_unplayed_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>> {
+    let sql =
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        FROM track t
+        LEFT JOIN album_track alt ON t.id = alt.track_id
+        LEFT JOIN album al ON alt.album_id = al.id
+        LEFT JOIN track_stats s ON t.id = s.track_id
+        WHERE s.play_count IS NULL OR s.play_count = 0
+        ORDER BY t.added_at DESC
+        LIMIT ?";
+
+    prepare_tracks_list(conn, sql, params![limit as i64])
+}
+
+pub fn get_recently_added_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>> {
+    let sql =
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        FROM track t
+        LEFT JOIN album_track alt ON t.id = alt.track_id
+        LEFT JOIN album al ON alt.album_id = al.id
+        ORDER BY t.added_at DESC
+        LIMIT ?";
+
+    prepare_tracks_list(conn, sql, params![limit as i64])
+}
 
 pub fn get_stats_overview(conn: &Connection, timeframe: Timeframe) -> Result<StatsOverview> {
     let time_filter = timeframe_where_clause("ph.played_at", timeframe);

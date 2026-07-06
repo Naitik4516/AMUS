@@ -34,7 +34,7 @@
         try {
             const tracks = await invoke("get_all_tracks", { sortBy: null });
             if (tracks.length > 0) {
-                await player.play(tracks[0], tracks, "other");
+                await player.play(tracks, { type: "Other" }, 0);
             }
         } catch (e) {
             console.error("Failed to play all tracks", e);
@@ -44,12 +44,14 @@
     async function resumeListening() {
         if (player.currentTrack) {
             if (player.isPlaying) return;
-            await player.togglePlay();
+            await player.playPause();
         } else {
             try {
-                const tracks = await invoke("get_recently_played", { limit: 1 });
+                const tracks = await invoke("get_recently_played", {
+                    limit: 1,
+                });
                 if (tracks.length > 0) {
-                    await player.play(tracks[0], tracks, "other");
+                    await player.play(tracks, { type: "Other" }, 0);
                 } else {
                     await playAllTracks();
                 }
@@ -64,9 +66,9 @@
         try {
             const tracks = await invoke("get_all_tracks", { sortBy: null });
             if (tracks.length > 0) {
-                if (!player.shuffle) await player.toggleShuffle();
+                if (!player.shuffleEnabled) await player.toggleShuffle();
                 const randomIndex = Math.floor(Math.random() * tracks.length);
-                await player.play(tracks[randomIndex], tracks, "other");
+                await player.play(tracks, { type: "Other" }, randomIndex);
             }
         } catch (e) {
             console.error("Failed to play random mix", e);
@@ -91,7 +93,7 @@
     </div>
 
     <div
-        class="absolute inset-0 p-8 md:p-12 flex flex-col justify-end w-full md:w-2/3 "
+        class="absolute inset-0 p-8 md:p-12 flex flex-col justify-end w-full md:w-2/3"
     >
         <div>
             <span
@@ -111,18 +113,27 @@
                 >
             </h1>
             <p class="text md:text-xl text-foreground/80 font-medium mb-8 px-2">
-                • {totalTracks.toLocaleString()} Songs • {totalArtists.toLocaleString()} Artists • {totalAlbums.toLocaleString()} Albums
+                • {totalTracks.toLocaleString()} Songs • {totalArtists.toLocaleString()}
+                Artists • {totalAlbums.toLocaleString()} Albums
             </p>
 
             <div class="flex items-center gap-4">
                 {#if hasMusic}
                     {#if hasRecentTracks}
-                        <Button size="xl" class="font-semibold roounded-full" onclick={resumeListening}>
+                        <Button
+                            size="xl"
+                            class="font-semibold roounded-full"
+                            onclick={resumeListening}
+                        >
                             <Play class="w-5 h-5 fill-current" />
                             Resume Listening
                         </Button>
                     {:else}
-                        <Button size="xl" class="font-semibold roounded-full" onclick={playAllTracks}>
+                        <Button
+                            size="xl"
+                            class="font-semibold roounded-full"
+                            onclick={playAllTracks}
+                        >
                             <Play class="w-5 h-5 fill-current" />
                             Play All
                         </Button>

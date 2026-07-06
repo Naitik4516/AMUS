@@ -22,7 +22,7 @@ pub struct TrackDetails {
     pub year: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Track {
     pub id: i64,
     pub title: String,
@@ -49,7 +49,7 @@ pub struct Playlist {
     pub name: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Artist {
     pub id: i64,
     pub name: String,
@@ -57,7 +57,7 @@ pub struct Artist {
     pub banner_image: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Album {
     pub id: i64,
     pub name: String,
@@ -66,35 +66,6 @@ pub struct Album {
     pub year: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum RepeatMode {
-    Off = 0,
-    Track = 1,
-    All = 2,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum SourceType {
-    Album = 0,
-    Playlist = 1,
-    Artist = 2,
-    Favorites = 3,
-    Other = 4,
-}
-
-impl SourceType {
-    pub fn to_db_string(&self) -> &'static str {
-        match self {
-            SourceType::Album => "ALBUM",
-            SourceType::Playlist => "PLAYLIST",
-            SourceType::Artist => "ARTIST",
-            SourceType::Favorites => "FAVORITES",
-            SourceType::Other => "OTHER",
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Stats models

@@ -104,7 +104,7 @@
                     </button>
                     <button
                         class="text-white"
-                        onclick={() => player.togglePlay()}
+                        onclick={() => player.playPause()}
                     >
                         {#if player.isPlaying}
                             <Pause size={40} fill="currentColor" />
@@ -147,11 +147,11 @@
                 <div class="flex items-center justify-between w-full px-4">
                     <button
                         class="hover:text-white transition-colors"
-                        class:text-gray-100={player.shuffle}
-                        class:text-stone-300={!player.shuffle}
+                        class:text-white={player.shuffleEnabled}
+                        class:text-gray-300={!player.shuffleEnabled}
                         onclick={() => player.toggleShuffle()}
                     >
-                        <Shuffle size={20} strokeWidth={2.5} />
+                        <Shuffle size={18} />
                     </button>
                     <button
                         onclick={toggleFavorite}
@@ -170,14 +170,14 @@
                     </button>
                     <button
                         class="hover:text-white transition-colors"
-                        class:text-gray-100={player.repeat !== "none"}
-                        class:text-stone-300={player.repeat === "none"}
-                        onclick={() => player.toggleRepeat()}
+                        class:text-white={player.repeatMode !== "OFF"}
+                        class:text-gray-300={player.repeatMode === "OFF"}
+                        onclick={() => player.cycleRepeat()}
                     >
-                        {#if player.repeat === "one"}
-                            <Repeat1 size={20} strokeWidth={2.5} />
+                        {#if player.repeatMode === "ONE"}
+                            <Repeat1 size={18} />
                         {:else}
-                            <Repeat size={20} strokeWidth={2.5} />
+                            <Repeat size={18} />
                         {/if}
                     </button>
                 </div>

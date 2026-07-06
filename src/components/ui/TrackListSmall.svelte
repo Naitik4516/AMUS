@@ -1,7 +1,6 @@
 <script lang="ts">
     import { Music } from "@lucide/svelte";
     import { getImageUrl } from "$lib/utils";
-    import type { Snippet } from "svelte";
     import type { Track } from "$lib/types";
     import { player } from "$lib/player.svelte";
 
@@ -13,7 +12,7 @@
         coverArtSize = "w-10 h-10",
     }: {
         track: Track;
-        onclick?: () => void;
+        onclick: () => void;
         titleColor?: string;
         className?: string;
         coverArtSize?: string;
@@ -22,10 +21,7 @@
 
 <button
     class="w-full flex items-center gap-4 px-2 py-2 hover:bg-white/5 transition-colors group text-left {className} "
-    onclick={() => {
-        player.play(track);
-        onclick?.();
-    }}
+    {onclick}
 >
     <div
         class="{coverArtSize} relative rounded-lg bg-neutral-800 flex items-center justify-center overflow-hidden"

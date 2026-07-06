@@ -16,13 +16,14 @@
     import { formatDuration, getImageUrl } from "$lib/utils";
     import { invoke } from "@tauri-apps/api/core";
     import { invalidate } from "$app/navigation";
+    import type { Track } from "$lib/types";
 
     let { data }: PageProps = $props();
     let track = $derived(data.trackDetails);
 
     async function toggleFavorite() {
         try {
-            const isFav = await invoke<boolean>("toggle_favorite", {
+            await invoke<boolean>("toggle_favorite", {
                 id: track.id,
             });
             invalidate("app:track-details");
@@ -103,7 +104,7 @@
                 class="flex items-center gap-4 mt-4 justify-center md:justify-start"
             >
                 <button
-                    onclick={() => player.play(track)}
+                    onclick={() => player.play([track])}
                     class="size-16 bg-accent text-accent-foreground rounded-full flex items-center justify-center hover:scale-105 transition-transform shadow-xl"
                 >
                     {#if player.currentTrack?.id === track.id && player.isPlaying}
