@@ -39,7 +39,7 @@
 {#if tracks.length > 0}
     <HorizontalScroll {title}>
         {#each tracks as track (track.id)}
-            <TrackCard data={track} />
+            <TrackCard data={track} label={title} />
         {/each}
     </HorizontalScroll>
 {/if}

@@ -3,13 +3,13 @@ use crate::artist_pic_fetcher;
 use crate::db::{self, DataAge, DbPool, SortBy, Timeframe};
 use crate::error::{Error, Result};
 use crate::models::*;
-use crate::scanner;
-use crate::sync::SyncManager;
 use crate::player::actor::{PlayerCommand, PlayerStateSnapshot};
 use crate::player::source::{PlaybackSource, RepeatMode};
+use crate::scanner;
+use crate::sync::SyncManager;
+use std::sync::mpsc::Sender;
 use tauri::Manager;
 use tauri::State;
-use std::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 
 pub struct PlayerHandle(pub Sender<PlayerCommand>);
@@ -287,9 +287,18 @@ pub fn play_context(
     source_type: String,
     source_id: Option<i64>,
     start_index: usize,
+    context_label: Option<String>,
 ) -> Result<()> {
     let source = PlaybackSource::from_db(&source_type, source_id);
-    send(&handle, PlayerCommand::LoadContext { tracks, source, start_index })
+    send(
+        &handle,
+        PlayerCommand::LoadContext {
+            tracks,
+            source,
+            start_index,
+            context_label,
+        },
+    )
 }
 
 #[tauri::command]
@@ -319,7 +328,10 @@ pub fn set_volume(handle: State<PlayerHandle>, volume: f32) -> Result<()> {
 
 #[tauri::command]
 pub fn set_repeat(handle: State<PlayerHandle>, mode: String) -> Result<()> {
-    send(&handle, PlayerCommand::SetRepeat(RepeatMode::from_str(&mode)))
+    send(
+        &handle,
+        PlayerCommand::SetRepeat(RepeatMode::from_str(&mode)),
+    )
 }
 
 #[tauri::command]
@@ -343,8 +355,19 @@ pub fn remove_from_queue(handle: State<PlayerHandle>, queue_id: i64) -> Result<(
 }
 
 #[tauri::command]
+pub fn clear_queue(handle: State<PlayerHandle>) -> Result<()> {
+    send(&handle, PlayerCommand::ClearQueue)
+}
+
+#[tauri::command]
 pub fn reorder_queue(handle: State<PlayerHandle>, queue_id: i64, new_index: usize) -> Result<()> {
-    send(&handle, PlayerCommand::ReorderQueue { queue_id, new_index })
+    send(
+        &handle,
+        PlayerCommand::ReorderQueue {
+            queue_id,
+            new_index,
+        },
+    )
 }
 
 #[tauri::command]
@@ -355,8 +378,12 @@ pub fn set_autoplay(handle: State<PlayerHandle>, enabled: bool) -> Result<()> {
 #[tauri::command]
 pub async fn get_current_state(handle: State<'_, PlayerHandle>) -> Result<PlayerStateSnapshot> {
     let (tx, rx) = oneshot::channel();
-    handle.0.send(PlayerCommand::GetState(tx)).map_err(|e| Error::Audio(e.to_string()))?;
-    rx.await.map_err(|_| Error::Unknown("channel closed".to_string()))
+    handle
+        .0
+        .send(PlayerCommand::GetState(tx))
+        .map_err(|e| Error::Audio(e.to_string()))?;
+    rx.await
+        .map_err(|_| Error::Unknown("channel closed".to_string()))
 }
 
 #[tauri::command]

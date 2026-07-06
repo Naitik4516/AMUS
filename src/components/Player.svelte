@@ -23,7 +23,7 @@
 
     import { ui } from "$lib/shortcut-handler.svelte";
     import Marquee from "./ui/Marquee.svelte";
-    import QueueWindow from "./QueueWindow.svelte";
+    import QueueView from "./QueueView.svelte";
 
     let volumeValue = $state(player.volume);
     let showQueue = $state(false);
@@ -224,7 +224,7 @@
                 </div>
             </div>
 
-            <QueueWindow bind:showQueue />
+            <QueueView bind:showQueue />
         </div>
     </div>
 {/if}

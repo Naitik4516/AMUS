@@ -37,10 +37,8 @@ impl AudioEngine {
         })
     }
 
-    /// Loads a new file and starts it paused-at-zero; caller decides whether
-    /// to immediately `.play()`.
     pub fn load(&self, path: &str) -> Result<(), EngineError> {
-        let file = BufReader::new(File::open(path)?);
+        let file = File::open(path)?;             
         let source = Decoder::try_from(file)?;
         let player = Player::connect_new(&self.handle.mixer());
         player.append(source);

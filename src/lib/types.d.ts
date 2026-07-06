@@ -56,17 +56,23 @@ export type SortBy =
 export type RepeatMode = "OFF" | "ALL" | "ONE";
 
 export type PlaybackSource =
-	| { type: 'Album'; id: number }
-	| { type: 'Playlist'; id: number }
-	| { type: 'Artist'; id: number }
-	| { type: 'Favorites' }
-	| { type: 'Search' }
-	| { type: 'Recommendation' }
-	| { type: 'Queue' }
-	| { type: 'Other' };
+  | { type: "Album"; id: number }
+  | { type: "Playlist"; id: number }
+  | { type: "Artist"; id: number }
+  | { type: "Favorites" }
+  | { type: "Search" }
+  | { type: "Direct" }
+  | { type: "Queue" }
+  | { type: "Other" };
 
-export type Context = 
-    | {type: "Playlist", id: number, name: string, coverArt: string | null}
-    | {type: "Album", id: number, name: string, coverArt: string | null}
-    | {type: "Artist", id: number, name: string, profileImage: string | null, bannerImage: string | null}
-    | { type: 'Favorites' }
+export type Context =
+  | { type: "Playlist"; id: number; name: string; coverArt: string | null }
+  | { type: "Album"; id: number; name: string; coverArt: string | null }
+  | {
+      type: "Artist";
+      id: number;
+      name: string;
+      profileImage: string | null;
+      bannerImage: string | null;
+    }
+  | { type: "Favorites"; name: "Favorites" };

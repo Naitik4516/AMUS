@@ -8,6 +8,8 @@ pub enum PlaybackSource {
     Artist(i64),
     Favorites,
     Queue, 
+    Direct,
+    Search,
     Other,
 }
 
@@ -18,6 +20,8 @@ impl PlaybackSource {
             PlaybackSource::Playlist(_) => "PLAYLIST",
             PlaybackSource::Artist(_) => "ARTIST",
             PlaybackSource::Favorites => "FAVORITES",
+            PlaybackSource::Direct => "DIRECT",
+            PlaybackSource::Search => "SEARCH",
             PlaybackSource::Queue | PlaybackSource::Other => "OTHER",
         }
     }
@@ -35,6 +39,8 @@ impl PlaybackSource {
             "PLAYLIST" => PlaybackSource::Playlist(id.unwrap_or_default()),
             "ARTIST" => PlaybackSource::Artist(id.unwrap_or_default()),
             "FAVORITES" => PlaybackSource::Favorites,
+            "DIRECT" => PlaybackSource::Direct,
+            "SEARCH" => PlaybackSource::Search,
             _ => PlaybackSource::Other,
         }
     }

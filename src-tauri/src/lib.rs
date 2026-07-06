@@ -66,7 +66,7 @@ fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
         "next" => {
             // let player = app.state::<Player>();
             // let mut engine = player.engine.lock();
-            // let _ = engine.play_next();
+            // let _ = engine.upcoming_context();
             // let state = engine.get_playback_state();
             // let _ = app.emit("track-changed", &state);
         }
@@ -307,6 +307,7 @@ pub fn run() {
             commands::enqueue_next,
             commands::enqueue_end,
             commands::remove_from_queue,
+            commands::clear_queue,
             commands::reorder_queue,
             commands::set_autoplay,
             commands::get_current_state,

@@ -17,6 +17,7 @@ type PlayerEvent =
         user_queue: Track[];
         context_len: number;
         context_position: number | null;
+        queue_view: QueueView;
       };
     }
   | {
@@ -36,6 +37,13 @@ interface StateSnapshot {
   shuffle: boolean;
   volume: number;
   user_queue: Track[];
+  queue_view: QueueView;
+}
+
+export interface QueueView {
+  context_source_type: string;
+  context_label: string | null;
+  upcoming_context: Track[];
 }
 
 const EVENT_NAME = "player://event";
@@ -55,8 +63,8 @@ function toBackendSource(source: PlaybackSource): {
       return { sourceType: "FAVORITES", sourceId: null };
     case "Search":
       return { sourceType: "SEARCH", sourceId: null };
-    case "Recommendation":
-      return { sourceType: "RECOMMENDATION", sourceId: null };
+    case "Direct":
+      return { sourceType: "DIRECT", sourceId: null };
     default:
       return { sourceType: "OTHER", sourceId: null };
   }
@@ -79,10 +87,23 @@ class PlayerStore {
   errorMessage = $state<string | null>(null);
   /** False until the initial get_current_state() hydration completes. */
   isReady = $state(false);
+  contextSourceType = $state<string>("OTHER");
+  contextLabel = $state<string | null>(null);
+  playNext = $state<Track[]>([]);
 
-  /** 0..1, handy for progress bars. */
   get progress(): number {
     return this.duration > 0 ? Math.min(this.position / this.duration, 1) : 0;
+  }
+
+  get nextSectionTitle(): string {
+    const namedContextTypes = ["ALBUM", "PLAYLIST", "ARTIST", "FAVORITES"];
+    if (
+      namedContextTypes.includes(this.contextSourceType) &&
+      this.contextLabel
+    ) {
+      return `Next from: ${this.contextLabel}`;
+    }
+    return "Next up";
   }
 
   // ---------- internal, non-reactive ----------
@@ -117,12 +138,19 @@ class PlayerStore {
       this.shuffleEnabled = snapshot.shuffle;
       this.volume = snapshot.volume;
       this.userQueue = snapshot.user_queue;
+      this.#applyQueueView(snapshot.queue_view);
       this.#setPosition(snapshot.position_sec);
     } catch (err) {
       console.error("failed to hydrate player state", err);
     } finally {
       this.isReady = true;
     }
+  }
+
+  #applyQueueView(view: QueueView) {
+    this.contextSourceType = view.context_source_type;
+    this.contextLabel = view.context_label;
+    this.playNext = view.upcoming_context;
   }
 
   // ---------- events: backend -> frontend ----------
@@ -146,6 +174,7 @@ class PlayerStore {
         this.userQueue = evt.payload.user_queue;
         this.contextLength = evt.payload.context_len;
         this.contextPosition = evt.payload.context_position;
+        this.#applyQueueView(evt.payload.queue_view);
         break;
       case "RepeatShuffleChanged":
         this.repeatMode = evt.payload.repeat;
@@ -196,11 +225,18 @@ class PlayerStore {
   /** Play an album/playlist/artist/favorites/search result list starting at `startIndex`. */
   async play(
     tracks: Track[],
-    source: PlaybackSource = { type: "Recommendation" },
-    startIndex = 0,
+    source: PlaybackSource = { type: "Direct" },
+    startIndex: number = 0,
+    label?: string,
   ) {
     const { sourceType, sourceId } = toBackendSource(source);
-    await invoke("play_context", { tracks, sourceType, sourceId, startIndex });
+    await invoke("play_context", {
+      tracks,
+      sourceType,
+      sourceId,
+      startIndex,
+      contextLabel: label ?? null,
+    });
   }
 
   async playPause() {
@@ -251,6 +287,10 @@ class PlayerStore {
 
   async removeFromQueue(queueId: number) {
     await invoke("remove_from_queue", { queueId });
+  }
+
+  async clearQueue() {
+    await invoke("clear_queue");
   }
 
   async reorderQueue(queueId: number, newIndex: number) {

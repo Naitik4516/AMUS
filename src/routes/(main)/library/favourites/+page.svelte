@@ -39,7 +39,7 @@
     {#if tracks.length > 0}
         <div class="-translate-y-22">
             <TrackList
-                context={{ type: "Favorites" }}
+                context={{ type: "Favorites", name: "Favorites" }}
                 {tracks}
                 canEdit={false}
             />

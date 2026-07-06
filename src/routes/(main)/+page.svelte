@@ -1,5 +1,5 @@
 <script lang="ts">
-    import Banner from "$components/ui/Home/Banner.svelte";
+    import HeroSection from "$components/ui/Home/HeroSection.svelte";
     import TracksSection from "$components/ui/Home/TracksSection.svelte";
     import ArtistsSection from "$components/ui/Home/ArtistsSection.svelte";
     import AlbumsSection from "$components/ui/Home/AlbumsSection.svelte";
@@ -35,7 +35,7 @@
 
 <div class="pb-12 mr-6">
     <div>
-        <Banner hasMusic={data.hasMusic} />
+        <HeroSection hasMusic={data.hasMusic} />
     </div>
 
     <div class="flex flex-col gap-10 py-10">

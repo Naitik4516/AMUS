@@ -60,6 +60,11 @@ pub fn queue_remove(conn: &Conn, queue_id: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
+pub fn queue_clear_all(conn: &Conn) -> rusqlite::Result<()> {
+    conn.execute("DELETE FROM user_queue", [])?;
+    Ok(())
+}
+
 pub fn queue_pop_front(conn: &Conn) -> rusqlite::Result<()> {
     conn.execute(
         "DELETE FROM user_queue WHERE id = (SELECT id FROM user_queue ORDER BY position ASC LIMIT 1)",

@@ -32,16 +32,6 @@
         "duration",
     ] as const;
 
-    type MenuItem = {
-        label: string;
-        icon?: string;
-        onClick?: () => void;
-        href?: string;
-        danger?: boolean;
-        disabled?: boolean;
-        type?: string;
-        items?: MenuItem[];
-    };
 
     interface TrackTableProps {
         tracks: Track[];
@@ -302,13 +292,13 @@
             orderedTracks.some((x) => player.currentTrack?.id === x.id)
         )
             player.playPause();
-        else player.play(orderedTracks, context, 0);
+        else player.play(orderedTracks, context, 0, context.name);
     }
 
     function handleRowActivate(track: Track, index: number) {
         if (player.currentTrack?.id === track.id && player.isPlaying)
             player.playPause();
-        else player.play(orderedTracks, context, index);
+        else player.play(orderedTracks, context, index, context.name);
     }
 
     let actionMenuItems = $derived.by(() => {
