@@ -11,12 +11,12 @@
     let playlistCoverArt = $derived(data.coverArtFilename ?? null);
 </script>
 
-
 <TrackList
     {tracks}
-    context="playlist"
-    {playlistId}
-    {playlistName}
-    {playlistCoverArt}
-    canEdit={true}
+    context={{
+        type: "Playlist",
+        id: playlistId,
+        name: playlistName,
+        coverArt: playlistCoverArt,
+    }}
 />

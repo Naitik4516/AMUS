@@ -19,27 +19,18 @@
     import Slider from "./ui/Slider.svelte";
     import { player } from "$lib/player.svelte";
     import { getImageUrl } from "$lib/utils";
-    import TrackListSmall from "./ui/TrackListSmall.svelte";
     import { formatDurationColon } from "$lib/utils";
 
     import { ui } from "$lib/shortcut-handler.svelte";
     import Marquee from "./ui/Marquee.svelte";
-    import QueueWindow from "./QueueWindow.svelte";
+    import QueueView from "./QueueView.svelte";
+
     let volumeValue = $state(player.volume);
     let showQueue = $state(false);
-    let seekDragPercent = $state<number | null>(null);
 
     $effect(() => {
         if (ui.queueVisible) showQueue = true;
     });
-
-    let displayProgress = $derived(
-        seekDragPercent !== null && player.currentTrack
-            ? (seekDragPercent / 100) *
-                  player.currentTrack.duration_seconds *
-                  1000
-            : player.progress,
-    );
 
     $effect(() => {
         player.setVolume(volumeValue);
@@ -52,15 +43,13 @@
     }
 </script>
 
-<div class="fixed bottom-0 left-0 w-full px-4 pb-2 z-15">
-    <div
-        class="bg-neutral-950/60 border-2 border-neutral-800/40 backdrop-blur-xl flex items-center justify-between px-6 py-4 shadow-2xl rounded-3xl relative"
-    >
-        {#if !player.currentTrack}
-            <p class="text-sm text-gray-400">No track playing</p>
-        {:else}
+{#if player.currentTrack}
+    <div class="fixed bottom-0 left-0 w-full px-4 pb-3 z-15">
+        <div
+            class="bg-zinc-950/50 border-2 border-neutral-800/40 backdrop-blur-xl grid grid-cols-3 items-center justify-between px-6 py-3 shadow-lg  rounded-3xl relative"
+        >
             <!-- Track Info -->
-            <div class="flex items-center gap-4 w-1/4">
+            <div class="flex items-center gap-4 pr-10">
                 <div
                     class="w-14 h-14 rounded-lg bg-neutral-800 shadow-md flex items-center justify-center overflow-hidden shrink-0"
                 >
@@ -76,7 +65,7 @@
                         <Music2 size={32} />
                     {/if}
                 </div>
-                <div class="flex flex-col min-w-0 flex-1 overflow-hidden">
+                <div class="flex flex-col overflow-hidden">
                     <Marquee>
                         <a
                             href="/library/track/{player.currentTrack?.id}"
@@ -105,7 +94,6 @@
                     class="ml-2 {player.currentTrack?.is_favorite
                         ? 'text-rose-600 fill-rose-600'
                         : 'text-gray-300'}  hover:text-secondary transition-colors"
-                    class:text-secondary={player.currentTrack?.is_favorite}
                 >
                     <Heart
                         size={18}
@@ -117,12 +105,12 @@
             </div>
 
             <!-- Controls -->
-            <div class="flex flex-col items-center gap-2 w-1/2 max-w-2xl">
+            <div class="flex flex-col items-center gap-2">
                 <div class="flex items-center gap-6">
                     <button
                         class="hover:text-white transition-colors"
-                        class:text-white={player.shuffle}
-                        class:text-gray-300={!player.shuffle}
+                        class:text-white={player.shuffleEnabled}
+                        class:text-muted-foreground={!player.shuffleEnabled}
                         onclick={() => player.toggleShuffle()}
                     >
                         <Shuffle size={18} />
@@ -135,7 +123,7 @@
                     </button>
                     <button
                         class="bg-white text-black rounded-full p-3 hover:scale-105 transition-transform shadow-lg"
-                        onclick={() => player.togglePlay()}
+                        onclick={() => player.playPause()}
                     >
                         {#if player.isPlaying}
                             <Pause size={24} fill="currentColor" />
@@ -144,18 +132,19 @@
                         {/if}
                     </button>
                     <button
-                        class="text-gray-300 hover:text-white transition-colors"
+                        class="text-gray-200 hover:text-white transition-colors"
                         onclick={() => player.next()}
                     >
                         <SkipForward size={22} fill="currentColor" />
                     </button>
                     <button
                         class="hover:text-white transition-colors"
-                        class:text-white={player.repeat !== "none"}
-                        class:text-gray-300={player.repeat === "none"}
-                        onclick={() => player.toggleRepeat()}
+                        class:text-accent={player.repeatMode !== "OFF"}
+                        class:text-muted-foreground={player.repeatMode ===
+                            "OFF"}
+                        onclick={() => player.cycleRepeat()}
                     >
-                        {#if player.repeat === "one"}
+                        {#if player.repeatMode === "ONE"}
                             <Repeat1 size={18} />
                         {:else}
                             <Repeat size={18} />
@@ -166,19 +155,17 @@
                     <span
                         class="text-[10px] font-medium text-gray-400 w-10 text-right"
                     >
-                        {formatDurationColon(
-                            Math.floor(displayProgress / 1000),
-                        )}
+                        {formatDurationColon(player.position)}
                     </span>
                     <Slider
-                        value={(player.progress /
-                            1000 /
-                            player.currentTrack.duration_seconds) *
-                            100}
-                        onDragChange={(val) => (seekDragPercent = val)}
+                        value={player.progress}
                         onValueChange={(val) => {
-                            seekDragPercent = null;
-                            player.seek(val);
+                            if (player.currentTrack) {
+                                let seekVal =
+                                    val * player.currentTrack.duration_seconds;
+
+                                player.seek(seekVal);
+                            }
                         }}
                     />
                     <span class="text-[10px] font-medium text-gray-400 w-10">
@@ -190,11 +177,11 @@
             </div>
 
             <!-- Volume & Queue -->
-            <div class="flex items-center gap-4 w-1/4 justify-end">
+            <div class="flex items-center gap-4 justify-end">
                 <button
                     onclick={() => (showQueue = !showQueue)}
                     class="text-gray-300 hover:text-white transition-colors"
-                    class:text-secondary={showQueue}
+                    class:text-accent={showQueue}
                 >
                     <ListMusic size={20} />
                 </button>
@@ -215,13 +202,13 @@
                         onclick={() =>
                             volumeValue != 0
                                 ? (volumeValue = 0)
-                                : (volumeValue = 100)}
+                                : (volumeValue = 1)}
                     >
                         {#if volumeValue === 0}
                             <VolumeX size={18} />
-                        {:else if volumeValue < 33}
+                        {:else if volumeValue < 0.33}
                             <Volume size={18} />
-                        {:else if volumeValue < 66}
+                        {:else if volumeValue < 0.66}
                             <Volume1 size={18} />
                         {:else}
                             <Volume2 size={18} />
@@ -233,7 +220,7 @@
                 </div>
             </div>
 
-            <QueueWindow bind:showQueue {player} />
-        {/if}
+            <QueueView bind:showQueue />
+        </div>
     </div>
-</div>
+{/if}

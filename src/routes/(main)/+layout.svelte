@@ -75,7 +75,6 @@
         let cleanupGlobal: (() => void) | undefined;
 
         const handler = (e: KeyboardEvent) => {
-            if (shortcutModalOpen) return;
             const action = findAction(e);
             if (action) {
                 e.preventDefault();
@@ -204,7 +203,7 @@
         ? 'rounded-none'
         : 'rounded-3xl'}"
 >
-    <Header {isMaximized} />
+    <Header bind:isMaximized />
     <ScanProgress />
     <Sidebar />
     <Toaster

@@ -4,14 +4,12 @@
     interface Props {
         value?: number;
         onValueChange?: (val: number) => void;
-        onDragChange?: (val: number) => void;
         [key: string]: any;
     }
 
     let {
         value = $bindable(0),
         onValueChange = () => {},
-        onDragChange,
         ...props
     }: Props = $props();
 
@@ -24,21 +22,19 @@
 
     function getValueFromPointer(e: PointerEvent): number {
         const rect = slider.getBoundingClientRect();
-        const raw = ((e.clientX - rect.left) / rect.width) * 100;
-        return Math.max(0, Math.min(100, Math.round(raw)));
+        const raw = (e.clientX - rect.left) / rect.width;
+        return Math.max(0, Math.min(1, Math.round(raw * 100) / 100));
     }
 
     function startDrag(e: PointerEvent) {
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
         dragging = true;
         dragValue = getValueFromPointer(e);
-        onDragChange?.(dragValue);
     }
 
     function moveDrag(e: PointerEvent) {
         if (!dragging || !e.buttons) return;
         dragValue = getValueFromPointer(e);
-        onDragChange?.(dragValue);
     }
 
     function commitDrag(e: PointerEvent) {
@@ -56,7 +52,7 @@
     title="Seek"
     role="slider"
     aria-valuemin="0"
-    aria-valuemax="100"
+    aria-valuemax="1"
     aria-valuenow={displayValue}
     tabindex="0"
     onpointerdown={startDrag}
@@ -70,8 +66,8 @@
     <div
         class="{hovering
             ? 'h-2 bg-white'
-            : 'h-full bg-gray-200'} rounded-full absolute top-0 left-0 pl-1.5 transition-all"
-        style:width={`${displayValue}%`}
+            : 'h-full bg-gray-200'} rounded-full absolute top-0 left-0 pl-1.5 transition-all ease-out duration-200"
+        style:width={`${displayValue * 100}%`}
         role="presentation"
     >
         {#if hovering || dragging}

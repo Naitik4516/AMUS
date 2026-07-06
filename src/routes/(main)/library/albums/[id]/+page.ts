@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Track, SortBy, Album } from "$lib/types";
 import { getImageUrl } from "$lib/utils";
 
-export const load: PageLoad = async ({ params, url }) => {
+export const load: PageLoad = async ({ params, url, depends }) => {
+  depends(`Album:${params.id}`);
   const sortParam = url.searchParams.get("sortBy");
   const sortBy: SortBy | null = sortParam ? (sortParam as SortBy) : null;
   const id = Number(params.id);

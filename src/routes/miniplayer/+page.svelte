@@ -19,16 +19,7 @@
     import Marquee from "$components/ui/Marquee.svelte";
 
     let volumeValue = $state(player.volume);
-    let seekDragPercent = $state<number | null>(null);
     let isPinned = $state(true);
-
-    let displayProgress = $derived(
-        seekDragPercent !== null && player.currentTrack
-            ? (seekDragPercent / 100) *
-                  player.currentTrack.duration_seconds *
-                  1000
-            : player.progress,
-    );
 
     $effect(() => {
         player.setVolume(volumeValue);
@@ -58,7 +49,7 @@
         <div class="absolute top-3 right-3 z-20">
             <button
                 onclick={togglePin}
-                class="text-gray-300 hover:text-white transition-colors"
+                class="text-muted-foreground hover:text-white transition-colors"
                 title={isPinned ? "Unpin Mini Player" : "Pin Mini Player"}
             >
                 {#if isPinned}
@@ -89,7 +80,7 @@
                         </div>
                     </Marquee>
                     <Marquee>
-                        <span class=" text-gray-300" id="text"
+                        <span class="text-gray-300 font-medium" id="text"
                             >{player.currentTrack?.artists?.[0]?.name ??
                                 ""}</span
                         >
@@ -97,14 +88,14 @@
                 </div>
                 <div class="flex items-center gap-6">
                     <button
-                        class="text-gray-300 hover:text-white transition-colors"
+                        class="text-muted-foreground hover:text-white transition-colors"
                         onclick={() => player.previous()}
                     >
                         <SkipBack size={26} fill="currentColor" />
                     </button>
                     <button
                         class="text-white"
-                        onclick={() => player.togglePlay()}
+                        onclick={() => player.playPause()}
                     >
                         {#if player.isPlaying}
                             <Pause size={40} fill="currentColor" />
@@ -113,7 +104,7 @@
                         {/if}
                     </button>
                     <button
-                        class="text-gray-300 hover:text-white transition-colors"
+                        class="text-muted-foreground hover:text-white transition-colors"
                         onclick={() => player.next()}
                     >
                         <SkipForward size={26} fill="currentColor" />
@@ -123,19 +114,16 @@
                     <span
                         class="text-[10px] font-medium text-gray-400 w-10 text-right"
                     >
-                        {formatDurationColon(
-                            Math.floor(displayProgress / 1000),
-                        )}
+                        {formatDurationColon(player.position)}
                     </span>
                     <Slider
-                        value={(player.progress /
-                            1000 /
-                            player.currentTrack.duration_seconds) *
-                            100}
-                        onDragChange={(val) => (seekDragPercent = val)}
+                        value={player.progress}
                         onValueChange={(val) => {
-                            seekDragPercent = null;
-                            player.seek(val);
+                            if (player.currentTrack) {
+                                player.seek(
+                                    val * player.currentTrack.duration_seconds,
+                                );
+                            }
                         }}
                     />
                     <span class="text-[10px] font-medium text-gray-400 w-10">
@@ -147,37 +135,37 @@
                 <div class="flex items-center justify-between w-full px-4">
                     <button
                         class="hover:text-white transition-colors"
-                        class:text-gray-100={player.shuffle}
-                        class:text-stone-300={!player.shuffle}
+                        class:text-white={player.shuffleEnabled}
+                        class:text-muted-foreground={!player.shuffleEnabled}
                         onclick={() => player.toggleShuffle()}
                     >
-                        <Shuffle size={20} strokeWidth={2.5} />
+                        <Shuffle size={18} />
                     </button>
                     <button
                         onclick={toggleFavorite}
                         class="ml-2 {player.currentTrack?.is_favorite
                             ? 'text-rose-600 fill-rose-600'
-                            : 'text-gray-300'}  hover:text-secondary transition-colors"
-                        class:text-secondary={player.currentTrack?.is_favorite}
+                            : 'text-muted-foreground'}  hover:text-secondary transition-colors"
                     >
                         <Heart
                             size={24}
                             class={player.currentTrack?.is_favorite
                                 ? "text-rose-600 fill-rose-600"
-                                : "text-gray-300"}
+                                : "text-muted-foreground"}
                             strokeWidth={2.5}
                         ></Heart>
                     </button>
                     <button
                         class="hover:text-white transition-colors"
-                        class:text-gray-100={player.repeat !== "none"}
-                        class:text-stone-300={player.repeat === "none"}
-                        onclick={() => player.toggleRepeat()}
+                        class:text-white={player.repeatMode !== "OFF"}
+                        class:text-muted-foreground={player.repeatMode ===
+                            "OFF"}
+                        onclick={() => player.cycleRepeat()}
                     >
-                        {#if player.repeat === "one"}
-                            <Repeat1 size={20} strokeWidth={2.5} />
+                        {#if player.repeatMode === "ONE"}
+                            <Repeat1 size={18} />
                         {:else}
-                            <Repeat size={20} strokeWidth={2.5} />
+                            <Repeat size={18} />
                         {/if}
                     </button>
                 </div>

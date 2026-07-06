@@ -2,10 +2,12 @@ import type { PageLoad } from "./$types";
 import { invoke } from "@tauri-apps/api/core";
 import type { Track, SortBy } from "$lib/types";
 
-export const load: PageLoad = async ({ params, url }) => {
+export const load: PageLoad = async ({ params, url, depends }) => {  
   const sortBy = (url.searchParams.get("sortBy") as SortBy) || "title";
   const id = Number(params.id);
   const name = url.searchParams.get("name") || "All Tracks";
+  
+  depends(`Playlist:${id}`);
 
   try {
     if (id === 0) {

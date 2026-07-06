@@ -20,6 +20,11 @@
     import EditPlaylistDialog from "./Dialog/EditPlaylistDialog.svelte";
     import EditAlbumDialog from "./Dialog/EditAlbumDialog.svelte";
     import EditArtistDialog from "./Dialog/EditArtistDialog.svelte";
+    import type { Context } from "$lib/types";
+    import PlayingVisualizer from "./PlayingVisualizer.svelte";
+    import { toast } from "svelte-sonner";
+    import { invoke } from "@tauri-apps/api/core";
+    import { invalidate } from "$app/navigation";
 
     type ColumnKey = (typeof COLUMN_ORDER)[number];
 
@@ -31,58 +36,22 @@
         "duration",
     ] as const;
 
-    type Context = "playlist" | "album" | "artist" | "liked";
-
-    type MenuItem = {
-        label: string;
-        icon?: string;
-        onClick?: () => void;
-        href?: string;
-        danger?: boolean;
-        disabled?: boolean;
-        type?: string;
-        items?: MenuItem[];
-    };
-
     interface TrackTableProps {
         tracks: Track[];
-        context?: Context;
+        context: Context;
         visibleColumns?: ColumnKey[] | null;
         canEdit?: boolean;
         canSort?: boolean;
         canToggleColumns?: boolean;
-        playlists?: { id: number; name: string }[];
-        extraActions?: MenuItem[];
-        playlistId?: number | null;
-        playlistName?: string;
-        playlistCoverArt?: string | null;
-        albumId?: number | null;
-        albumName?: string;
-        albumCoverArt?: string | null;
-        artistId?: number | null;
-        artistName?: string;
-        artistProfileImage?: string | null;
-        artistBannerImage?: string | null;
     }
 
     let {
         tracks = [],
-        context = "playlist",
+        context,
         visibleColumns = null,
-        canEdit = false,
+        canEdit = true,
         canSort = true,
         canToggleColumns = true,
-        extraActions = [],
-        playlistId = null,
-        playlistName = "",
-        playlistCoverArt = null,
-        albumId = null,
-        albumName = "",
-        albumCoverArt = null,
-        artistId = null,
-        artistName = "",
-        artistProfileImage = null,
-        artistBannerImage = null,
     }: TrackTableProps = $props();
 
     const COLUMN_META: Record<
@@ -112,11 +81,11 @@
         title: {
             label: "Title",
             settingsLabel: "Title",
-            width: 320,
+            width: 300,
             minWidth: 160,
             maxWidth: 640,
             sortable: true,
-            locked: true,
+            locked: false,
             resizable: true,
         },
         album: {
@@ -153,10 +122,10 @@
     };
 
     const CONTEXT_DEFAULT_COLUMNS: Record<string, ColumnKey[]> = {
-        playlist: ["index", "title", "album", "dateAdded", "duration"],
-        liked: ["index", "title", "album", "dateAdded", "duration"],
-        album: ["index", "title", "duration"],
-        artist: ["index", "title", "album", "duration"],
+        Playlist: ["index", "title", "album", "dateAdded", "duration"],
+        Favorites: ["index", "title", "album", "dateAdded", "duration"],
+        Album: ["index", "title", "duration"],
+        Artist: ["index", "title", "album", "duration"],
     };
 
     let columns = $state(
@@ -166,7 +135,7 @@
                 {
                     visible: (
                         visibleColumns ??
-                        CONTEXT_DEFAULT_COLUMNS[context] ??
+                        CONTEXT_DEFAULT_COLUMNS[context.type] ??
                         COLUMN_ORDER
                     ).includes(key),
                     width: COLUMN_META[key].width,
@@ -200,7 +169,7 @@
     }
 
     let orderedTracks = $derived.by(() => {
-        if (context === "album") {
+        if (context.type === "Album") {
             const sorted = [...tracks].sort((a, b) => {
                 const aNum = a.track_number ?? Number.MAX_SAFE_INTEGER;
                 const bNum = b.track_number ?? Number.MAX_SAFE_INTEGER;
@@ -215,7 +184,7 @@
     });
 
     function toggleSort(key: ColumnKey) {
-        if (!canSort || context === "album") return;
+        if (!canSort || context.type === "Album") return;
         if (!COLUMN_META[key].sortable) return;
         if (sortKey !== key) {
             sortKey = key;
@@ -319,52 +288,58 @@
         });
     }
 
-    function sourceType(): string {
-        return context === "liked" ? "favorites" : context;
-    }
-
     function handleMainPlay() {
-        const first = orderedTracks[0];
-        console.log("handleMainPlay", orderedTracks, sourceType());
-        if (!first) return;
+        if (!orderedTracks) return;
         if (
             player.isPlaying &&
             orderedTracks.some((x) => player.currentTrack?.id === x.id)
         )
-            player.togglePlay();
-        else player.play(first, orderedTracks, sourceType() as any);
+            player.playPause();
+        else player.play(orderedTracks, context, 0, context.name);
     }
 
-    function handleRowActivate(track: Track) {
+    function handleRowActivate(track: Track, index: number) {
         if (player.currentTrack?.id === track.id && player.isPlaying)
-            player.togglePlay();
-        else player.play(track, orderedTracks, sourceType() as any);
+            player.playPause();
+        else player.play(orderedTracks, context, index, context.name);
+    }
+
+    async function toggleFavorite(track: Track) {
+        try {
+            await invoke<boolean>("toggle_favorite", {
+                id: track.id,
+            });
+            if (context.type === "Favorites") {
+                invalidate(context.type);
+            } else {
+                invalidate(`${context.type}:${context.id ?? ""}`);
+            }
+        } catch (e) {
+            console.error("Failed to toggle favorite", e);
+        }
     }
 
     let actionMenuItems = $derived.by(() => {
         const items: any[] = [
             {
-                label: "Add all to queue",
+                label: "Add to queue",
                 icon: "list-plus",
                 onClick: () => {
-                    for (const t of orderedTracks) {
-                        player.addToQueue(t);
-                    }
+                    player.enqueueEndMany(orderedTracks);
+                    toast.success("Added to queue");
                 },
             },
         ];
-        if (context !== "liked" && canEdit) {
+        if (canEdit) {
             items.push({
-                label: "Edit",
+                label: "Edit details",
                 icon: "edit",
                 onClick: () => {
                     showEditDialog = true;
                 },
             });
         }
-        if (extraActions.length) {
-            items.push({ type: "separator" }, ...extraActions);
-        }
+
         return items;
     });
 
@@ -399,7 +374,7 @@
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
 </script>
 
-<div class="w-full rounded-b-2xl px-2 pb-4 h-full backdrop-blur-lg bg-black/5">
+<div class="w-full rounded-b-2xl px-2 pb-4 h-full">
     <!-- ============================== ACTION BAR ============================== -->
     <div>
         <div class="pointer-events-none absolute inset-0"></div>
@@ -419,17 +394,10 @@
 
             <button
                 type="button"
-                class="flex h-14 w-14 items-center justify-center rounded-full transition-colors hover:text-white {focusRing} {player.shuffle
+                class="flex h-14 w-14 items-center justify-center rounded-full transition-colors hover:text-white {focusRing} {player.shuffleEnabled
                     ? 'text-accent'
                     : ''}"
-                onclick={async () => {
-                    await player.toggleShuffle();
-                    await player.play(
-                        orderedTracks[0],
-                        orderedTracks,
-                        sourceType() as any,
-                    );
-                }}
+                onclick={player.toggleShuffle}
                 aria-label="Shuffle play"
             >
                 <Shuffle size={30} />
@@ -616,11 +584,11 @@
                         ? 'py-1.5'
                         : 'py-3'}"
                     style="grid-template-columns:{gridTemplate}"
-                    ondblclick={() => handleRowActivate(track)}
+                    ondblclick={() => handleRowActivate(track, i)}
                     onauxclick={(e) => {
                         if (e.button === 1) {
                             e.preventDefault();
-                            player.addToQueue(track);
+                            player.enqueueEnd(track);
                         }
                     }}
                 >
@@ -640,32 +608,17 @@
                                     class="relative flex h-8 w-8 items-center justify-center rounded {active
                                         ? 'text-emerald-400'
                                         : ''} {focusRing}"
-                                    onclick={() => handleRowActivate(track)}
+                                    onclick={() => handleRowActivate(track, i)}
                                     aria-label={active && player.isPlaying
                                         ? "Pause"
                                         : "Play"}
                                 >
                                     {#if active && player.isPlaying}
-                                        <span
-                                            class="flex items-end gap-0.5 group-hover:hidden"
+                                        <div
+                                            class="absolute inset-0 flex items-end justify-between px-1"
                                         >
-                                            <span
-                                                class="eq-bar"
-                                                style="animation-delay:0ms"
-                                            ></span>
-                                            <span
-                                                class="eq-bar"
-                                                style="animation-delay:160ms"
-                                            ></span>
-                                            <span
-                                                class="eq-bar"
-                                                style="animation-delay:300ms"
-                                            ></span>
-                                        </span>
-                                        <Pause
-                                            size={14}
-                                            class="hidden text-white group-hover:block"
-                                        />
+                                            <PlayingVisualizer />
+                                        </div>
                                     {:else}
                                         <span class="group-hover:hidden"
                                             >{i + 1}</span
@@ -700,10 +653,10 @@
                                         <button
                                             type="button"
                                             class="block max-w-full truncate rounded text-left text-base font-medium {active
-                                                ? 'text-emerald-400'
+                                                ? 'text-accent'
                                                 : 'text-zinc-50'} hover:underline {focusRing}"
                                             onclick={() =>
-                                                handleRowActivate(track)}
+                                                handleRowActivate(track, i)}
                                         >
                                             {track.title}
                                         </button>
@@ -736,27 +689,21 @@
                                 <div class="flex items-center gap-3">
                                     <button
                                         type="button"
-                                        class="hidden hover:text-white group-hover:flex {track.is_favorite
+                                        class="hidden group-hover:flex {track.is_favorite
                                             ? 'flex!'
-                                            : ''} {focusRing}"
-                                        onclick={async (e) => {
-                                            track.is_favorite =
-                                                await player.toggleFavorite(
-                                                    track,
-                                                );
-                                        }}
+                                            : ''} {track.is_favorite
+                                            ? 'text-rose-600 fill-rose-600'
+                                            : 'text-gray-300'}  hover:text-secondary transition-colors {focusRing}"
+                                        onclick={() => toggleFavorite(track)}
                                         aria-label={track.is_favorite
                                             ? "Remove from Liked Songs"
                                             : "Save to Liked Songs"}
                                     >
                                         <Heart
-                                            fill={track.is_favorite
-                                                ? "red"
-                                                : ""}
                                             size={16}
                                             class={track.is_favorite
-                                                ? "text-emerald-400"
-                                                : ""}
+                                                ? "text-rose-600 fill-rose-600"
+                                                : "text-gray-300"}
                                         />
                                     </button>
                                     <span class="text-sm"
@@ -814,33 +761,33 @@
     </div>
 </div>
 
-{#if showEditDialog && context === "playlist"}
+{#if showEditDialog && context.type === "Playlist"}
     <EditPlaylistDialog
         bind:open={showEditDialog}
-        playlistId={playlistId ?? 0}
-        name={playlistName}
-        coverArt={playlistCoverArt}
+        playlistId={context.id ?? 0}
+        name={context.name}
+        coverArt={context.coverArt}
         onClose={() => (showEditDialog = false)}
     />
 {/if}
 
-{#if showEditDialog && context === "album"}
+{#if showEditDialog && context.type === "Album"}
     <EditAlbumDialog
         bind:open={showEditDialog}
-        albumId={albumId ?? 0}
-        name={albumName}
-        coverArt={albumCoverArt}
+        albumId={context.id ?? 0}
+        name={context.name}
+        coverArt={context.coverArt}
         onClose={() => (showEditDialog = false)}
     />
 {/if}
 
-{#if showEditDialog && context === "artist"}
+{#if showEditDialog && context.type === "Artist"}
     <EditArtistDialog
         bind:open={showEditDialog}
-        artistId={artistId ?? 0}
-        name={artistName}
-        profileImage={artistProfileImage}
-        bannerImage={artistBannerImage}
+        artistId={context.id ?? 0}
+        name={context.name}
+        profileImage={context.profileImage}
+        bannerImage={context.bannerImage}
         onClose={() => (showEditDialog = false)}
     />
 {/if}

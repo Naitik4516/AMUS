@@ -6,8 +6,7 @@
     import type { Track } from "$lib/types";
     import PlaylistMenu from "./PlaylistMenu.svelte";
     import ArtistsMenu from "./ArtistsMenu.svelte";
-
-    type Context = "playlist" | "album" | "artist" | "liked";
+    import type { Context } from "$lib/types";
 
     const ALL_OPTIONS = [
         "addToQueue",
@@ -49,7 +48,7 @@
                 label: "Add to queue",
                 icon: "list-plus",
                 onClick: () => {
-                    player.addToQueue(track);
+                    player.enqueueEnd(track);
                     toast.success("Added to queue");
                 },
             });
@@ -60,7 +59,7 @@
                 label: "Play next",
                 icon: "skip-forward",
                 onClick: () => {
-                    player.playNextInQueue(track);
+                    player.enqueueNext(track);
                     toast.success("Will play next");
                 },
             });
@@ -103,7 +102,11 @@
         }
 
         // Album link
-        if (!isExcluded("goToAlbum") && context !== "album" && track.album) {
+        if (
+            !isExcluded("goToAlbum") &&
+            context.type !== "Album" &&
+            track.album
+        ) {
             items.push({
                 label: "Go to album",
                 icon: "disc",
@@ -114,7 +117,7 @@
         // Remove from playlist (only in playlist context)
         if (
             !isExcluded("removeFromPlaylist") &&
-            context === "playlist" &&
+            context.type === "Playlist" &&
             playlistId
         ) {
             items.push({ type: "separator" });
