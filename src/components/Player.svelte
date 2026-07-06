@@ -25,15 +25,10 @@
     import Marquee from "./ui/Marquee.svelte";
     import QueueView from "./QueueView.svelte";
 
-    let volumeValue = $state(player.volume);
     let showQueue = $state(false);
 
     $effect(() => {
         if (ui.queueVisible) showQueue = true;
-    });
-
-    $effect(() => {
-        player.setVolume(volumeValue);
     });
 
     async function toggleFavorite() {
@@ -46,7 +41,7 @@
 {#if player.currentTrack}
     <div class="fixed bottom-0 left-0 w-full px-4 pb-3 z-15">
         <div
-            class="bg-zinc-950/50 border-2 border-neutral-800/40 backdrop-blur-xl grid grid-cols-3 items-center justify-between px-6 py-3 shadow-lg  rounded-3xl relative"
+            class="bg-zinc-950/50 border-2 border-neutral-800/40 backdrop-blur-xl grid grid-cols-3 items-center justify-between px-6 py-3 shadow-lg rounded-3xl relative"
         >
             <!-- Track Info -->
             <div class="flex items-center gap-4 pr-10">
@@ -75,7 +70,7 @@
                         </a>
                     </Marquee>
                     <Marquee>
-                        <p class=" text-gray-300 truncate -mt-1">
+                        <p class=" text-gray-300 truncate -mt-2">
                             {#each player.currentTrack?.artists as artist, ai (artist.id)}
                                 {#if ai > 0}
                                     <span>, </span>
@@ -190,32 +185,31 @@
                     class="flex items-center gap-2 group"
                     onwheel={(e) => {
                         e.preventDefault();
-                        const delta = e.deltaY > 0 ? -5 : 5;
-                        volumeValue = Math.max(
-                            0,
-                            Math.min(100, volumeValue + delta),
+                        const delta = e.deltaY > 0 ? -0.05 : 0.05;
+                        player.setVolume(
+                            Math.max(0, Math.min(1, player.volume + delta)),
                         );
                     }}
                 >
                     <button
                         class="text-gray-300 group-hover:text-white transition-colors"
                         onclick={() =>
-                            volumeValue != 0
-                                ? (volumeValue = 0)
-                                : (volumeValue = 1)}
+                            player.volume != 0
+                                ? player.setVolume(0)
+                                : player.setVolume(1)}
                     >
-                        {#if volumeValue === 0}
+                        {#if player.volume === 0}
                             <VolumeX size={18} />
-                        {:else if volumeValue < 0.33}
+                        {:else if player.volume < 0.33}
                             <Volume size={18} />
-                        {:else if volumeValue < 0.66}
+                        {:else if player.volume < 0.66}
                             <Volume1 size={18} />
                         {:else}
                             <Volume2 size={18} />
                         {/if}
                     </button>
                     <div class="w-24">
-                        <Slider bind:value={volumeValue} />
+                        <Slider bind:value={player.volume} />
                     </div>
                 </div>
             </div>

@@ -28,10 +28,12 @@
     import { settings, setSetting, initSettings } from "$lib/settings.svelte";
     import { updater } from "$lib/update.svelte";
     import { Keyboard } from "@lucide/svelte";
+    import ShortcutSettingsModal from "$components/ShortcutSettingsModal.svelte";
 
     let sources = $state<string[]>([]);
     let loading = $state(true);
     let syncing = $state(false);
+    let showShortcutModal = $state(false);
 
     async function loadSources() {
         loading = true;
@@ -74,6 +76,8 @@
         updater.loadCurrentVersion();
     });
 </script>
+
+<ShortcutSettingsModal bind:open={showShortcutModal} />
 
 <div class="p-8 max-w-4xl mx-auto">
     <div class="mb-12">
@@ -236,10 +240,13 @@
                 class="flex items-center justify-between w-full px-8 py-4 bg-card/50 backdrop-blur-lg rounded-3xl shadow-lg border border-border cursor-pointer hover:bg-card/70 transition-colors text-left"
                 command="show-modal"
                 commandfor="shortcut-settings-modal"
+                onclick={() => (showShortcutModal = true)}
             >
                 <div class="flex items-center gap-3">
                     <Keyboard size={20} class="text-foreground" />
-                    <Label class="text-xl font-bold text-white">Keyboard Shortcuts</Label>
+                    <Label class="text-xl font-bold text-white"
+                        >Keyboard Shortcuts</Label
+                    >
                 </div>
                 <span class="text-gray-400 text-sm">Customize</span>
             </button>
@@ -281,7 +288,7 @@
                                     : "Install"}
                             </Button>
                         {:else if updater.checking}
-                            <Button disabled variant="outline" >
+                            <Button disabled variant="outline">
                                 <RotateCcw size={20} class="animate-spin" />
                                 Checking...
                             </Button>

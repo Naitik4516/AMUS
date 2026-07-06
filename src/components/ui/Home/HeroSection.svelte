@@ -66,9 +66,8 @@
         try {
             const tracks = await invoke("get_all_tracks", { sortBy: null });
             if (tracks.length > 0) {
-                if (!player.shuffleEnabled) await player.toggleShuffle();
                 const randomIndex = Math.floor(Math.random() * tracks.length);
-                await player.play(tracks, { type: "Other" }, randomIndex);
+                await player.play([tracks[randomIndex]]);
             }
         } catch (e) {
             console.error("Failed to play random mix", e);
@@ -102,14 +101,16 @@
         </span>
 
         <h1
-            class="text-3xl md:text-5xl lg:text-7xl font-black text-light mb-4 tracking-tight drop-shadow-2xl font-satoshi"
+            class="text-3xl md:text-4xl lg:text-6xl xl:text-7xl font-black text-light mb-4 tracking-tight drop-shadow-2xl font-satoshi"
         >
             <div class="mb-3">Your Library</div>
-            Your
-            <span
-                class="bg-clip-text bg-linear-to-br from-blue-500 to-purple-700 text-transparent"
-                >Soundtrack</span
-            >
+            <div class="whitespace-nowrap">
+                Your
+                <span
+                    class="bg-clip-text bg-linear-to-br from-blue-500 to-purple-700 text-transparent"
+                    >Soundtrack</span
+                >
+            </div>
         </h1>
         <p class="text md:text-xl text-foreground/80 font-medium mb-8 px-2">
             • {totalTracks.toLocaleString()} Songs • {totalArtists.toLocaleString()}

@@ -1,8 +1,8 @@
 <script lang="ts">
-    import { X, Trash2 } from "@lucide/svelte";
+    import { X } from "@lucide/svelte";
     import TrackListSmall from "./ui/TrackListSmall.svelte";
     import { player } from "$lib/player.svelte";
-    import Button from "./ui/button/button.svelte";
+    import {  slide } from "svelte/transition";
 
     let { showQueue = $bindable(false) }: { showQueue?: boolean } = $props();
 </script>
@@ -10,6 +10,7 @@
 {#if showQueue}
     <div
         class="absolute bottom-full right-1 mb-4 w-90 bg-card/60 backdrop-blur-lg border-2 border-border/70 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[75vh]"
+        transition:slide
     >
         <div
             class="p-4 border-b border-neutral-800 flex justify-between items-center bg-neutral-900/50"

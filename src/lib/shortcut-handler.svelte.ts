@@ -4,9 +4,12 @@ import { goto } from "$app/navigation";
 import { player } from "./player.svelte";
 import { handlerMap } from "./shortcuts.svelte";
 import { scanLibrary } from "./commands.svelte";
+import Clock_1 from "@lucide/svelte/icons/clock-1";
 
 export const ui = $state({ queueVisible: false });
-export function toggleQueue() { ui.queueVisible = !ui.queueVisible; }
+export function toggleQueue() {
+  ui.queueVisible = !ui.queueVisible;
+}
 
 export const shortcutSettings = $state({ open: false });
 
@@ -14,9 +17,9 @@ export function installHandlers() {
   const seekSec = (sec: number) => {
     if (!player.currentTrack) return;
     const dur = player.currentTrack.duration_seconds;
-    const currentSec = player.progress / 1000;
+    const currentSec = player.position;
     const newSec = Math.max(0, Math.min(dur, currentSec + sec));
-    player.seek((newSec / dur) * 100);
+    player.seek(newSec);
   };
 
   handlerMap.set("play_pause", () => player.playPause());
@@ -35,13 +38,13 @@ export function installHandlers() {
   handlerMap.set("seek_backward_10", () => seekSec(-10));
 
   handlerMap.set("volume_up", () => {
-    player.setVolume(Math.min(100, player.volume + 5));
+    player.setVolume(Math.min(1, player.volume + 0.05));
   });
   handlerMap.set("volume_down", () => {
-    player.setVolume(Math.max(0, player.volume - 5));
+    player.setVolume(Math.max(0, player.volume - 0.05));
   });
   handlerMap.set("mute", () => {
-    player.setVolume(player.volume > 0 ? 0 : 100);
+    player.setVolume(player.volume > 0 ? 0 : 1);
   });
 
   handlerMap.set("focus_search", () => {
@@ -87,13 +90,13 @@ export function installHandlers() {
     if (player.isPlaying) player.playPause();
   });
   handlerMap.set("global_volume_up", () => {
-    player.setVolume(Math.min(100, player.volume + 5));
+    player.setVolume(Math.min(1, player.volume + 0.05));
   });
   handlerMap.set("global_volume_down", () => {
-    player.setVolume(Math.max(0, player.volume - 5));
+    player.setVolume(Math.max(0, player.volume - 0.05));
   });
   handlerMap.set("global_toggle_mute", () => {
-    player.setVolume(player.volume > 0 ? 0 : 100);
+    player.setVolume(player.volume > 0 ? 0 : 1);
   });
   handlerMap.set("global_seek_forward", () => {
     if (player.currentTrack) seekSec(5);
