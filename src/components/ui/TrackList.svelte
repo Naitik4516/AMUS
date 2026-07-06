@@ -374,7 +374,7 @@
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
 </script>
 
-<div class="w-full rounded-b-2xl px-2 pb-4 h-full backdrop-blur-lg bg-black/5">
+<div class="w-full rounded-b-2xl px-2 pb-4 h-full">
     <!-- ============================== ACTION BAR ============================== -->
     <div>
         <div class="pointer-events-none absolute inset-0"></div>

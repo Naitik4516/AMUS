@@ -61,27 +61,20 @@
 </script>
 
 <div
-    class="relative flex flex-col rounded-2xl h-full w-full overflow-y-scroll px-4 pb-10"
+    class="relative flex flex-col h-full w-full overflow-y-scroll px-6 pb-10 z-1"
 >
-    <div
-        class="flex gap-15 items-end p-5 pb-30 rounded-t-2xl"
-        style="background: {dominantColor
-            ? getDarkenedHslGradient(dominantColor.hsl())
-            : 'linear-gradient(to bottom, #000000, #000000 80%, transparent)'}"
-    >
-        <div class="aspect-square w-60 shrink-0">
-            <img
-                src={coverArt ? coverArt : "/PhonographRecord.png"}
-                alt={name}
-                class="w-full h-full object-cover rounded-lg shadow-2xl"
-                crossorigin="anonymous"
-                {@attach CoverImage}
-            />
-        </div>
+    <div class="flex gap-15 items-end p-5 pb-30">
+        <img
+            src={coverArt ? coverArt : "/PhonographRecord.png"}
+            alt={name}
+            class="w-64 rounded-xl shadow-xl"
+            crossorigin="anonymous"
+            {@attach CoverImage}
+        />
 
         <div class="flex flex-col gap-4 min-w-0 pb-2">
             <h1
-                class="text-3xl md:text-5xl lg:text-[5cqw] max-text-[6rem] font-black drop-shadow-lg line-clamp-2"
+                class="text-3xl md:text-5xl lg:text-[5cqw] max-text-[6rem] font-switzer font-black drop-shadow-lg line-clamp-2"
             >
                 {name}
             </h1>
@@ -136,13 +129,17 @@
             <p class="text-sm">This album doesn't have any tracks yet.</p>
         </div>
     {/if}
-
-    <div
-        class="fixed w-100 h-100 blur-[180px] -bottom-40 left-30 rounded-full -z-15"
-        style:background="{color1?.hex()}4D"
-    ></div>
-    <div
-        class="absolute w-90 h-90 blur-[150px] bottom-10 right-20 rounded-full -z-15"
-        style:background="{color2?.hex()}99"
-    ></div>
 </div>
+<div
+    class="fixed w-100 h-100 blur-[180px] -bottom-40 left-30 rounded-full"
+    style:background="{color1?.hex()}4D"
+></div>
+<div
+    class="absolute w-90 h-90 blur-[150px] bottom-10 right-20 rounded-full"
+    style:background="{color2?.hex()}99"
+></div>
+
+<div
+    class="fixed w-[80vw] h-50 top-30 right-5 blur-[150px]"
+    style:background={dominantColor?.css()}
+></div>

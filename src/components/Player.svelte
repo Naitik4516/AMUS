@@ -44,9 +44,9 @@
 </script>
 
 {#if player.currentTrack}
-    <div class="fixed bottom-0 left-0 w-full px-4 pb-2 z-15">
+    <div class="fixed bottom-0 left-0 w-full px-4 pb-3 z-15">
         <div
-            class="bg-neutral-950/60 border-2 border-neutral-800/40 backdrop-blur-xl grid grid-cols-3 items-center justify-between px-6 py-3 shadow-lg shadow-black/60 rounded-3xl relative"
+            class="bg-zinc-950/50 border-2 border-neutral-800/40 backdrop-blur-xl grid grid-cols-3 items-center justify-between px-6 py-3 shadow-lg  rounded-3xl relative"
         >
             <!-- Track Info -->
             <div class="flex items-center gap-4 pr-10">

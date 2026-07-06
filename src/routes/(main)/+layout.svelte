@@ -203,7 +203,7 @@
         ? 'rounded-none'
         : 'rounded-3xl'}"
 >
-    <Header {isMaximized} />
+    <Header bind:isMaximized />
     <ScanProgress />
     <Sidebar />
     <Toaster
