@@ -2,6 +2,7 @@ use r2d2::PooledConnection;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{OptionalExtension, params};
 
+use crate::models::Track;
 use crate::player::source::RepeatMode;
 
 type Conn = PooledConnection<SqliteConnectionManager>;
@@ -53,6 +54,30 @@ pub fn queue_insert_back(conn: &Conn, track_id: i64) -> rusqlite::Result<i64> {
         params![track_id, new_pos],
     )?;
     Ok(conn.last_insert_rowid())
+}
+
+pub fn queue_insert_back_many(
+    conn: &mut Conn,
+    tracks: &[Track],
+) -> rusqlite::Result<Vec<i64>> {
+    let max_pos: Option<f64> = conn
+        .query_row("SELECT MAX(position) FROM user_queue", [], |r| r.get(0))
+        .optional()?
+        .flatten();
+    let mut start = max_pos.unwrap_or(1.0);
+
+    let tx = conn.transaction()?;
+    let mut ids = Vec::with_capacity(tracks.len());
+    for track in tracks {
+        tx.execute(
+            "INSERT INTO user_queue (track_id, position) VALUES (?, ?)",
+            params![track.id, start],
+        )?;
+        ids.push(tx.last_insert_rowid());
+        start += 1.0;
+    }
+    tx.commit()?;
+    Ok(ids)
 }
 
 pub fn queue_remove(conn: &Conn, queue_id: i64) -> rusqlite::Result<()> {

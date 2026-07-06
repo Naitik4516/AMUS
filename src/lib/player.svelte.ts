@@ -285,6 +285,10 @@ class PlayerStore {
     await invoke("enqueue_end", { track });
   }
 
+  async enqueueEndMany(tracks: Track[]) {
+    await invoke("enqueue_end_many", { tracks });
+  }
+
   async removeFromQueue(queueId: number) {
     await invoke("remove_from_queue", { queueId });
   }

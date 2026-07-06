@@ -1,7 +1,8 @@
 <script lang="ts">
-    import { X } from "@lucide/svelte";
+    import { X, Trash2 } from "@lucide/svelte";
     import TrackListSmall from "./ui/TrackListSmall.svelte";
     import { player } from "$lib/player.svelte";
+    import Button from "./ui/button/button.svelte";
 
     let { showQueue = $bindable(false) }: { showQueue?: boolean } = $props();
 </script>
@@ -26,7 +27,7 @@
             {#if player.currentTrack}
                 <section>
                     <h4
-                        class="py-2 text-[13px] font-switzer font-bold uppercase tracking-wider text-stone-400"
+                        class="py-2 text-[13px] font-switzer font-bold uppercase tracking-wider text-stone-300"
                     >
                         Now Playing
                     </h4>
@@ -43,11 +44,19 @@
             <!-- Next in Queue -->
             {#if player.userQueue.length > 0}
                 <section>
-                    <h4
-                        class="py-2 text-[13px] font-bold uppercase tracking-wider text-stone-400"
-                    >
-                        Next in Queue
-                    </h4>
+                    <div class="flex items-center justify-between">
+                        <h4
+                            class="py-2 text-[13px] font-bold uppercase tracking-wider text-stone-300"
+                        >
+                            Next in Queue
+                        </h4>
+                        <button
+                            onclick={() => player.clearQueue()}
+                            class="text-sm font-semibold text-gray-400 hover:text-red-400 transition-colors font-switzer"
+                        >
+                            Clear Queue
+                        </button>
+                    </div>
                     {#each player.userQueue as track, i}
                         <TrackListSmall
                             {track}
@@ -63,7 +72,7 @@
             <!-- Next from Playlist/Album/Artist -->
             {#if player.playNext.length > 0}
                 <h4
-                    class="py-2 text-[13px] font-bold uppercase tracking-wider text-stone-400 truncate"
+                    class="py-2 text-[13px] font-bold uppercase tracking-wider text-stone-300 truncate"
                 >
                     {player.nextSectionTitle}
                 </h4>

@@ -350,6 +350,11 @@ pub fn enqueue_end(handle: State<PlayerHandle>, track: Track) -> Result<()> {
 }
 
 #[tauri::command]
+pub fn enqueue_end_many(handle: State<PlayerHandle>, tracks: Vec<Track>) -> Result<()> {
+    send(&handle, PlayerCommand::EnqueueEndMany(tracks))
+}
+
+#[tauri::command]
 pub fn remove_from_queue(handle: State<PlayerHandle>, queue_id: i64) -> Result<()> {
     send(&handle, PlayerCommand::RemoveFromQueue(queue_id))
 }

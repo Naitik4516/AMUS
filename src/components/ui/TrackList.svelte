@@ -21,6 +21,8 @@
     import EditAlbumDialog from "./Dialog/EditAlbumDialog.svelte";
     import EditArtistDialog from "./Dialog/EditArtistDialog.svelte";
     import type { Context } from "$lib/types";
+    import PlayingVisualizer from "./PlayingVisualizer.svelte";
+    import { toast } from "svelte-sonner";
 
     type ColumnKey = (typeof COLUMN_ORDER)[number];
 
@@ -31,7 +33,6 @@
         "dateAdded",
         "duration",
     ] as const;
-
 
     interface TrackTableProps {
         tracks: Track[];
@@ -304,18 +305,17 @@
     let actionMenuItems = $derived.by(() => {
         const items: any[] = [
             {
-                label: "Add all to queue",
+                label: "Add to queue",
                 icon: "list-plus",
                 onClick: () => {
-                    for (const t of orderedTracks) {
-                        player.enqueueEnd(t);
-                    }
+                    player.enqueueEndMany(orderedTracks);
+                    toast.success("Added to queue");
                 },
             },
         ];
         if (canEdit) {
             items.push({
-                label: "Edit",
+                label: "Edit details",
                 icon: "edit",
                 onClick: () => {
                     showEditDialog = true;
@@ -597,26 +597,11 @@
                                         : "Play"}
                                 >
                                     {#if active && player.isPlaying}
-                                        <span
-                                            class="flex items-end gap-0.5 group-hover:hidden"
+                                        <div
+                                            class="absolute inset-0 flex items-end justify-between px-1"
                                         >
-                                            <span
-                                                class="eq-bar"
-                                                style="animation-delay:0ms"
-                                            ></span>
-                                            <span
-                                                class="eq-bar"
-                                                style="animation-delay:160ms"
-                                            ></span>
-                                            <span
-                                                class="eq-bar"
-                                                style="animation-delay:300ms"
-                                            ></span>
-                                        </span>
-                                        <Pause
-                                            size={14}
-                                            class="hidden text-white group-hover:block"
-                                        />
+                                            <PlayingVisualizer />
+                                        </div>
                                     {:else}
                                         <span class="group-hover:hidden"
                                             >{i + 1}</span
@@ -651,7 +636,7 @@
                                         <button
                                             type="button"
                                             class="block max-w-full truncate rounded text-left text-base font-medium {active
-                                                ? 'text-emerald-400'
+                                                ? 'text-accent'
                                                 : 'text-zinc-50'} hover:underline {focusRing}"
                                             onclick={() =>
                                                 handleRowActivate(track, i)}

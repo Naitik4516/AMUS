@@ -3,6 +3,7 @@
     import { getImageUrl } from "$lib/utils";
     import type { Track } from "$lib/types";
     import { player } from "$lib/player.svelte";
+    import PlayingVisualizer from "./PlayingVisualizer.svelte";
 
     let {
         track,
@@ -39,9 +40,7 @@
             <div
                 class="absolute inset-0 bg-black/40 flex items-end justify-between px-2 py-1"
             >
-                <span class="playing__bar playing__bar1"></span>
-                <span class="playing__bar playing__bar2"></span>
-                <span class="playing__bar playing__bar3"></span>
+                <PlayingVisualizer />
             </div>
         {/if}
     </div>
@@ -54,50 +53,3 @@
         </p>
     </div>
 </button>
-
-<style>
-    .playing__bar {
-        display: inline-block;
-        background: lightgray;
-        width: 15%;
-        height: 80%;
-        animation: up-and-down 1.3s ease infinite alternate;
-        border-radius: 12px;
-    }
-
-    .playing__bar1 {
-        height: 60%;
-    }
-
-    .playing__bar2 {
-        height: 30%;
-        animation-delay: -2.2s;
-    }
-
-    .playing__bar3 {
-        height: 75%;
-        animation-delay: -3.7s;
-    }
-
-    @keyframes up-and-down {
-        10% {
-            height: 30%;
-        }
-
-        30% {
-            height: 100%;
-        }
-
-        60% {
-            height: 50%;
-        }
-
-        80% {
-            height: 75%;
-        }
-
-        100% {
-            height: 60%;
-        }
-    }
-</style>

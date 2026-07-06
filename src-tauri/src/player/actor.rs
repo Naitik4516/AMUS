@@ -31,6 +31,7 @@ pub enum PlayerCommand {
     ToggleShuffle,
     EnqueueNext(Track),
     EnqueueEnd(Track),
+    EnqueueEndMany(Vec<Track>),
     RemoveFromQueue(i64),
     ClearQueue,
     ReorderQueue {
@@ -176,6 +177,15 @@ impl PlayerActor {
                     let conn = self.conn();
                     if let Ok(db_id) = playback::queue_insert_back(&conn, track.id) {
                         self.queue.enqueue_end(db_id, track);
+                        self.emit_queue_changed();
+                    }
+                }
+                PlayerCommand::EnqueueEndMany(tracks) => {
+                    let mut conn = self.conn();
+                    if let Ok(db_ids) = playback::queue_insert_back_many(&mut conn, &tracks) {
+                        for (db_id, track) in db_ids.into_iter().zip(tracks) {
+                            self.queue.enqueue_end(db_id, track);
+                        }
                         self.emit_queue_changed();
                     }
                 }

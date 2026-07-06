@@ -4,14 +4,12 @@
     interface Props {
         value?: number;
         onValueChange?: (val: number) => void;
-        onDragChange?: (val: number) => void;
         [key: string]: any;
     }
 
     let {
         value = $bindable(0),
         onValueChange = () => {},
-        onDragChange,
         ...props
     }: Props = $props();
 
@@ -32,13 +30,11 @@
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
         dragging = true;
         dragValue = getValueFromPointer(e);
-        onDragChange?.(dragValue);
     }
 
     function moveDrag(e: PointerEvent) {
         if (!dragging || !e.buttons) return;
         dragValue = getValueFromPointer(e);
-        onDragChange?.(dragValue);
     }
 
     function commitDrag(e: PointerEvent) {
@@ -70,7 +66,7 @@
     <div
         class="{hovering
             ? 'h-2 bg-white'
-            : 'h-full bg-gray-200'} rounded-full absolute top-0 left-0 pl-1.5 transition-all"
+            : 'h-full bg-gray-200'} rounded-full absolute top-0 left-0 pl-1.5 transition-all ease-out duration-200"
         style:width={`${displayValue * 100}%`}
         role="presentation"
     >

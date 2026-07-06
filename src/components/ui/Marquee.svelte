@@ -3,8 +3,8 @@
 
     let { children } = $props();
 
-    let container;
-    let text;
+    let container: Element | null = null;
+    let text: Element | null = null;
 
     let shouldScroll = $state(false);
     let distance = $state(0);
@@ -18,6 +18,8 @@
     }
 
     onMount(() => {
+        if (!container || !text) return;
+
         update();
 
         const resize = new ResizeObserver(update);
@@ -33,7 +35,8 @@
         bind:this={text}
         class:scroll={shouldScroll}
         style="--distance: {distance}px; --duration: {duration}s;"
-        class="inline-block px-1"
+        class="inline-block px-2"
+        role="marquee"
     >
         {@render children()}
     </span>
@@ -43,6 +46,10 @@
     .scroll {
         animation: marquee var(--duration) linear infinite;
         animation-delay: 2s;
+    }
+
+    .scroll:hover {
+        animation-play-state: paused;
     }
 
     .container {

@@ -306,6 +306,7 @@ pub fn run() {
             commands::toggle_shuffle,
             commands::enqueue_next,
             commands::enqueue_end,
+            commands::enqueue_end_many,
             commands::remove_from_queue,
             commands::clear_queue,
             commands::reorder_queue,

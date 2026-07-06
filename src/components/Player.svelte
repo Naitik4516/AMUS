@@ -27,7 +27,6 @@
 
     let volumeValue = $state(player.volume);
     let showQueue = $state(false);
-    let seekDragPercent = $state<number | null>(null);
 
     $effect(() => {
         if (ui.queueVisible) showQueue = true;
@@ -47,10 +46,10 @@
 {#if player.currentTrack}
     <div class="fixed bottom-0 left-0 w-full px-4 pb-2 z-15">
         <div
-            class="bg-neutral-950/60 border-2 border-neutral-800/40 backdrop-blur-xl flex items-center justify-between px-6 py-4 shadow-2xl rounded-3xl relative"
+            class="bg-neutral-950/60 border-2 border-neutral-800/40 backdrop-blur-xl grid grid-cols-3 items-center justify-between px-6 py-3 shadow-lg shadow-black/60 rounded-3xl relative"
         >
             <!-- Track Info -->
-            <div class="flex items-center gap-4 w-1/4">
+            <div class="flex items-center gap-4 pr-10">
                 <div
                     class="w-14 h-14 rounded-lg bg-neutral-800 shadow-md flex items-center justify-center overflow-hidden shrink-0"
                 >
@@ -66,7 +65,7 @@
                         <Music2 size={32} />
                     {/if}
                 </div>
-                <div class="flex flex-col min-w-0 flex-1 overflow-hidden">
+                <div class="flex flex-col overflow-hidden">
                     <Marquee>
                         <a
                             href="/library/track/{player.currentTrack?.id}"
@@ -107,12 +106,12 @@
             </div>
 
             <!-- Controls -->
-            <div class="flex flex-col items-center gap-2 w-1/2 max-w-2xl">
+            <div class="flex flex-col items-center gap-2 ">
                 <div class="flex items-center gap-6">
                     <button
                         class="hover:text-white transition-colors"
                         class:text-white={player.shuffleEnabled}
-                        class:text-gray-300={!player.shuffleEnabled}
+                        class:text-muted-foreground={!player.shuffleEnabled}
                         onclick={() => player.toggleShuffle()}
                     >
                         <Shuffle size={18} />
@@ -134,15 +133,16 @@
                         {/if}
                     </button>
                     <button
-                        class="text-gray-300 hover:text-white transition-colors"
+                        class="text-gray-200 hover:text-white transition-colors"
                         onclick={() => player.next()}
                     >
                         <SkipForward size={22} fill="currentColor" />
                     </button>
                     <button
                         class="hover:text-white transition-colors"
-                        class:text-white={player.repeatMode !== "OFF"}
-                        class:text-gray-300={player.repeatMode === "OFF"}
+                        class:text-accent={player.repeatMode !== "OFF"}
+                        class:text-muted-foreground={player.repeatMode ===
+                            "OFF"}
                         onclick={() => player.cycleRepeat()}
                     >
                         {#if player.repeatMode === "ONE"}
@@ -160,14 +160,11 @@
                     </span>
                     <Slider
                         value={player.progress}
-                        onDragChange={(val) => (seekDragPercent = val)}
                         onValueChange={(val) => {
-                            seekDragPercent = null;
                             if (player.currentTrack) {
                                 let seekVal =
                                     val * player.currentTrack.duration_seconds;
 
-                                console.log("Seeking to: ", seekVal, "sec");
                                 player.seek(seekVal);
                             }
                         }}
@@ -181,11 +178,11 @@
             </div>
 
             <!-- Volume & Queue -->
-            <div class="flex items-center gap-4 w-1/4 justify-end">
+            <div class="flex items-center gap-4 justify-end ">
                 <button
                     onclick={() => (showQueue = !showQueue)}
                     class="text-gray-300 hover:text-white transition-colors"
-                    class:text-secondary={showQueue}
+                    class:text-accent={showQueue}
                 >
                     <ListMusic size={20} />
                 </button>
@@ -206,13 +203,13 @@
                         onclick={() =>
                             volumeValue != 0
                                 ? (volumeValue = 0)
-                                : (volumeValue = 100)}
+                                : (volumeValue = 1)}
                     >
                         {#if volumeValue === 0}
                             <VolumeX size={18} />
-                        {:else if volumeValue < 33}
+                        {:else if volumeValue < 0.33}
                             <Volume size={18} />
-                        {:else if volumeValue < 66}
+                        {:else if volumeValue < 0.66}
                             <Volume1 size={18} />
                         {:else}
                             <Volume2 size={18} />
