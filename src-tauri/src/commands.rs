@@ -276,7 +276,7 @@ pub async fn get_playlist(
 // Playback controls
 // ---------------------------------------------------------------------------
 
-fn send(handle: &State<PlayerHandle>, cmd: PlayerCommand) -> Result<()> {
+pub fn send(handle: &State<PlayerHandle>, cmd: PlayerCommand) -> Result<()> {
     handle.0.send(cmd).map_err(|e| Error::Audio(e.to_string()))
 }
 

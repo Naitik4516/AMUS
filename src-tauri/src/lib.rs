@@ -53,29 +53,16 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 }
 
 fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
+    let handle = app.state::<commands::PlayerHandle>();
     match event.id().as_ref() {
         "play_pause" => {
-            // let player = app.state::<Player>();
-            // let engine = player.engine.lock();
-            // if engine.is_paused() {
-            //     engine.resume();
-            // } else {
-            //     engine.pause();
-            // }
+             commands::send(&handle, PlayerCommand::PlayPause);
         }
         "next" => {
-            // let player = app.state::<Player>();
-            // let mut engine = player.engine.lock();
-            // let _ = engine.upcoming_context();
-            // let state = engine.get_playback_state();
-            // let _ = app.emit("track-changed", &state);
+             commands::send(&handle, PlayerCommand::Next);
         }
         "previous" => {
-            // let player = app.state::<Player>();
-            // let mut engine = player.engine.lock();
-            // let _ = engine.play_previous();
-            // let state = engine.get_playback_state();
-            // let _ = app.emit("track-changed", &state);
+            commands::send(&handle, PlayerCommand::Previous);
         }
         "show_miniplayer" => {
             toggle_popup(app);

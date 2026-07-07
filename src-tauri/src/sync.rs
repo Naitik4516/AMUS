@@ -22,7 +22,7 @@ impl SyncManager {
     pub fn init(&self, app: &AppHandle) {
         let app_handle = app.clone();
 
-        // 1. Startup Sync
+        // Startup Sync
         tauri::async_runtime::spawn(async move {
             if let Ok(sync_on_startup) = get_setting(&app_handle, "syncOnStartup", true) {
                 if sync_on_startup {
@@ -80,7 +80,7 @@ impl SyncManager {
                 }
             }
 
-            // 2. Real-time Watcher
+            // Real-time Watcher
             if let Ok(realtime_sync) = get_setting(&app_handle, "realtimeSync", true) {
                 if realtime_sync {
                     let manager = app_handle.state::<SyncManager>();
@@ -93,9 +93,7 @@ impl SyncManager {
     pub fn refresh_watcher(&self, app: &AppHandle) -> notify::Result<()> {
         let mut watcher_lock = self.watcher.lock();
 
-        // Stop existing watcher if any
         if let Some(old_watcher) = watcher_lock.take() {
-            // Watchers stop when dropped, but we can also explicitly unwatch if we want
             drop(old_watcher);
         }
 
@@ -130,7 +128,6 @@ impl SyncManager {
             }
         }
 
-        // Store the watcher
         *watcher_lock = Some(watcher);
 
         tauri::async_runtime::spawn(async move {

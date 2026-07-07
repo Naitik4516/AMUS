@@ -143,8 +143,6 @@ pub fn delete_tracks_by_paths(conn: &Connection, paths: &[String]) -> Result<usi
     for chunk in paths.chunks(900) {
         let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
 
-        // Delete the tracks. Cascading foreign keys will clean up track_artist, album_track,
-        // playlist_track, and playback_history.
         let sql = format!("DELETE FROM track WHERE path IN ({})", placeholders);
         let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
         let count = stmt
@@ -153,7 +151,6 @@ pub fn delete_tracks_by_paths(conn: &Connection, paths: &[String]) -> Result<usi
         total_deleted += count;
     }
 
-    // Clean up orphan artists and albums
     conn.execute(
         "DELETE FROM artist WHERE id NOT IN (SELECT DISTINCT artist_id FROM track_artist);",
         [],
@@ -180,7 +177,6 @@ pub fn get_or_create_artist(conn: &Connection, name: &str) -> Result<i64> {
 }
 
 pub fn set_track_artists(conn: &Connection, track_id: i64, artist_ids: &[i64]) -> Result<()> {
-    // Check if artists are unchanged to avoid unnecessary DELETE+INSERT
     let existing: HashSet<i64> = conn
         .prepare_cached("SELECT artist_id FROM track_artist WHERE track_id = ?")
         .map_err(Error::Db)?
@@ -387,7 +383,6 @@ pub fn set_track_album(
     album_id: i64,
     track_number: i32,
 ) -> Result<()> {
-    // Check if album assignment is unchanged to avoid unnecessary DELETE+INSERT
     let unchanged = conn
         .prepare_cached(
             "SELECT 1 FROM album_track WHERE track_id = ? AND album_id = ? AND track_number = ?",
@@ -802,7 +797,7 @@ pub fn global_search(
 
     let mut results: Vec<GlobalSearchResult> = Vec::new();
 
-    // --- Tracks ---
+    // --- Tracks 
     let track_sql =
         "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
         FROM track t
@@ -854,7 +849,7 @@ pub fn global_search(
         }
     }
 
-    // --- Artists ---
+    //  Artists 
     let mut stmt = conn
         .prepare(
             "SELECT id, name, profile_image, banner_image FROM artist WHERE name LIKE ? LIMIT ?",
@@ -884,7 +879,7 @@ pub fn global_search(
         });
     }
 
-    // --- Albums ---
+    //  Albums 
     let mut stmt = conn
         .prepare(
             "SELECT id, name, cover_art, album_artist, year FROM album WHERE name LIKE ? LIMIT ?",
@@ -917,7 +912,7 @@ pub fn global_search(
         });
     }
 
-    // --- Playlists ---
+    //  Playlists 
     let mut stmt = conn
         .prepare("SELECT id, name FROM playlist WHERE name LIKE ? LIMIT ?")
         .map_err(Error::Db)?;
@@ -1389,9 +1384,9 @@ fn prepare_sorted_tracks_list<P: Params>(
     prepare_tracks_list(conn, &sql, params)
 }
 
-// ---------------------------------------------------------------------------
+/////////////////////////////////////
 // Stats queries
-// ---------------------------------------------------------------------------
+/////////////////////////////////////
 
 pub fn get_recently_played_tracks(conn: &Connection, limit: usize) -> Result<Vec<Track>> {
     let sql =
@@ -1978,10 +1973,8 @@ pub fn get_streak_data(conn: &Connection, timeframe: Timeframe) -> Result<Streak
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::Db)?;
 
-    // Compute longest streak from all dates
     let longest = compute_longest_streak(&all_dates);
 
-    // Compute current streak from all dates
     let today = chrono::Utc::now().date_naive();
     let current = compute_current_streak(&all_dates, today);
 
@@ -2049,7 +2042,6 @@ fn parse_date(s: &str) -> Option<chrono::NaiveDate> {
 }
 
 pub fn get_library_growth(conn: &Connection, _timeframe: Timeframe) -> Result<Vec<GrowthPoint>> {
-    // Use dynamic grouping based on data span
     let (_data_span_days, period_fmt): (i64, String) = conn
         .query_row(
             "SELECT
@@ -2067,7 +2059,6 @@ pub fn get_library_growth(conn: &Connection, _timeframe: Timeframe) -> Result<Ve
 
     let pe = format!("strftime('{}', t.added_at)", period_fmt);
 
-    // Track growth: count per period
     let mut stmt = conn
         .prepare(&format!(
             "SELECT {pe} as period, COUNT(*) as tracks
@@ -2480,7 +2471,6 @@ pub fn get_playback_history_timeline(
     }
 
     if !raw_events.is_empty() {
-        // Resolve album artists
         let names: Vec<&str> = raw_events
             .iter()
             .filter_map(|r| r.album_artist_name.as_deref())
@@ -2552,7 +2542,6 @@ pub fn get_data_age(conn: &Connection) -> Result<DataAge> {
         .ok()
         .flatten();
 
-    // data_age_days: days since the earliest data point
     let now = chrono::Utc::now().naive_utc();
     let max_age = |s: &str| -> i64 {
         if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {

@@ -311,7 +311,6 @@ pub fn scan_files(
 
     println!("Extracted metadata for {} files", metadata_results.len());
 
-    // 4. Batch Database Update
     println!("Updating db...");
     let _ = app_handle.emit(
         "scan-progress",
@@ -321,10 +320,10 @@ pub fn scan_files(
             message: "Saving to database...".to_string(),
         },
     );
+    println!("Done!");
 
     let pool = app_handle.state::<db::DbPool>();
 
-    // Process all cover art in parallel before opening the DB transaction
     let metadata_with_covers: Vec<(TrackMetadata, Option<String>)> = metadata_results
         .into_par_iter()
         .map(|meta| {
@@ -435,7 +434,6 @@ pub fn scan_files(
     );
     let _ = app_handle.emit("library-updated", ());
 
-    // Background artist pic fetch for unique artists
     if !unique_artists_to_fetch.is_empty() {
         let fetch_pic = sync::get_setting(app_handle, "autoFetchArtistPic", true).unwrap_or(true);
         let fetch_banner =
