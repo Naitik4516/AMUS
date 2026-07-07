@@ -1,6 +1,5 @@
 use rodio::{Decoder, DeviceSinkBuilder, Player};
 use std::fs::File;
-use std::io::BufReader;
 use std::sync::Mutex;
 use std::time::Duration;
 use thiserror::Error;
@@ -20,9 +19,6 @@ pub enum EngineError {
 }
 
 pub struct AudioEngine {
-    // The OS-sink handle. Must stay alive for the whole app lifetime —
-    // dropping it stops all audio, same reason the old `OutputStream` had to
-    // be held. We never expose it outside `new`/`load`.
     handle: rodio::MixerDeviceSink,
     player: Mutex<Option<Player>>,
 }
@@ -91,7 +87,6 @@ impl AudioEngine {
         }
     }
 
-    /// True once the loaded track has finished playing (or nothing loaded).
     pub fn is_finished(&self) -> bool {
         self.player
             .lock()

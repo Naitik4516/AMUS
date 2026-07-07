@@ -6,7 +6,7 @@ use crate::models::Track;
 
 #[derive(Debug, Clone)]
 pub struct QueueItem {
-    pub db_id: i64, // row id in user_queue table, for removal/reorder by id
+    pub db_id: i64,
     pub track: Track,
 }
 
@@ -16,19 +16,13 @@ struct HistoryEntry {
     source: PlaybackSource,
 }
 
-/// What advancing forward should result in. The actor interprets this;
-/// the queue itself never touches the DB.
 pub enum NextOutcome {
     Track(Track, PlaybackSource),
-    /// Context + user queue both exhausted, repeat is Off, autoplay should
-    /// kick in. Actor fetches recommendations and calls `extend_with_autoplay`.
     NeedsAutoplay,
-    /// Nothing to play and autoplay is disabled/unavailable.
     End,
 }
 
 pub enum PreviousOutcome {
-    /// Just restart the current track (elapsed > threshold, or nothing before it).
     RestartCurrent,
     Track(Track, PlaybackSource),
 }
@@ -36,12 +30,12 @@ pub enum PreviousOutcome {
 pub struct PlaybackQueue {
     context: Vec<Track>,
     context_source: PlaybackSource,
-    context_position: Option<usize>, // index into `context` currently "checked out"
+    context_position: Option<usize>, 
     context_label: Option<String>,
 
     shuffle_enabled: bool,
-    shuffle_order: Option<Vec<usize>>, // permutation of context indices
-    shuffle_cursor: usize,             // index into shuffle_order
+    shuffle_order: Option<Vec<usize>>,
+    shuffle_cursor: usize,            
 
     user_queue: VecDeque<QueueItem>,
 
@@ -102,7 +96,6 @@ impl PlaybackQueue {
         self.context.len()
     }
 
-    /// "Up next" preview for UI — user queue first, then a few context tracks.
     pub fn peek_preview(&self, n: usize) -> Vec<Track> {
         let mut out: Vec<Track> = self.user_queue.iter().map(|q| q.track.clone()).collect();
         if out.len() >= n {
@@ -141,11 +134,6 @@ impl PlaybackQueue {
         result
     }
 
-    // ---------- loading a new context ----------
-
-    /// Load a fresh album/playlist/artist/favorites/search context and start
-    /// playback at `start_index` (index into `tracks` as passed in, i.e.
-    /// pre-shuffle order).
     pub fn load_context(
         &mut self,
         tracks: Vec<Track>,
@@ -159,8 +147,6 @@ impl PlaybackQueue {
         self.shuffle_order = None;
         // self.shuffle_cursor = 0;
         self.history.clear();
-        // Deliberately do NOT clear user_queue: an explicit queue outlives
-        // context switches, matching Spotify behavior.
         let start_index = start_index.min(self.context.len().saturating_sub(1));
 
         if self.shuffle_enabled && !self.context.is_empty() {
@@ -185,14 +171,11 @@ impl PlaybackQueue {
         self.current = None;
     }
 
-    /// Replace context with autoplay recommendations once the real context
-    /// + user queue are exhausted. Called by the actor after it fetches
-    /// `get_similar_tracks`.
     pub fn extend_with_autoplay(&mut self, tracks: Vec<Track>) {
         self.context = tracks;
         self.context_source = PlaybackSource::Direct;
         self.context_label = None;
-        self.shuffle_order = None; // recommendations are already varied, no need to reshuffle
+        self.shuffle_order = None; // recommendations are already varied
         self.context_position = if self.context.is_empty() {
             None
         } else {
@@ -226,8 +209,6 @@ impl PlaybackQueue {
             .collect()
     }
 
-    /// Fisher-Yates over context indices, with the currently playing index
-    /// pinned to the front so toggling shuffle doesn't yank playback elsewhere.
     fn regenerate_shuffle_order(&mut self, pin: Option<usize>) {
         if self.context.is_empty() {
             self.shuffle_order = None;
@@ -237,7 +218,7 @@ impl PlaybackQueue {
         if let Some(pin_idx) = pin {
             indices.retain(|&i| i != pin_idx);
         }
-        indices.shuffle(&mut rand::rng()); // was: &mut thread_rng()
+        indices.shuffle(&mut rand::rng());
         if let Some(pin_idx) = pin {
             indices.insert(0, pin_idx);
         }
@@ -248,8 +229,6 @@ impl PlaybackQueue {
     pub fn set_repeat(&mut self, mode: RepeatMode) {
         self.repeat_mode = mode;
     }
-
-    // ---------- user queue (explicit "play next" / "add to queue") ----------
 
     pub fn enqueue_next(&mut self, db_id: i64, track: Track) {
         self.user_queue.push_front(QueueItem { db_id, track });
@@ -277,15 +256,12 @@ impl PlaybackQueue {
         }
     }
 
-    // ---------- advance / rewind ----------
 
     pub fn advance_next(&mut self) -> NextOutcome {
-        // push whatever was current onto history before we move away from it
         if let Some((track, source)) = self.current.take() {
             self.history.push(HistoryEntry { track, source });
         }
 
-        // 1. RepeatOne short-circuits everything
         if self.repeat_mode == RepeatMode::One {
             if let Some(entry) = self.history.last() {
                 self.current = Some((entry.track.clone(), entry.source.clone()));
@@ -293,14 +269,12 @@ impl PlaybackQueue {
             }
         }
 
-        // 2. explicit user queue always wins next
         if let Some(item) = self.user_queue.pop_front() {
             let source = PlaybackSource::Queue;
             self.current = Some((item.track.clone(), source.clone()));
             return NextOutcome::Track(item.track, source);
         }
 
-        // 3. advance within context
         self.advance_context()
     }
 
@@ -316,7 +290,7 @@ impl PlaybackQueue {
                     self.shuffle_cursor = next_cursor;
                     Some(order[next_cursor])
                 } else {
-                    None // ran off the end of the shuffled order
+                    None
                 }
             }
             (None, Some(pos)) => {
@@ -361,9 +335,6 @@ impl PlaybackQueue {
         }
     
         if self.shuffle_enabled {
-            // Shuffle: go back through what was actually heard, not the
-            // shuffled index order — otherwise "previous" would just replay
-            // whatever happens to sit before the current shuffle cursor.
             return match self.history.pop() {
                 Some(entry) => {
                     if entry.source == self.context_source {
@@ -383,10 +354,6 @@ impl PlaybackQueue {
             };
         }
     
-        // Sequential: step back by context index, regardless of play history.
-        // This only applies when the currently playing track actually came
-        // from the context (not from an ad-hoc user_queue item) — if it came
-        // from the queue, there's no well-defined "previous index" to use.
         let currently_from_context = self
             .current
             .as_ref()

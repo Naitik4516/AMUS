@@ -21,10 +21,8 @@ pub fn record_playback(
     Ok(())
 }
 
-// ---------- user_queue persistence (fractional positions) ----------
 
 pub fn queue_load_all(conn: &Conn) -> rusqlite::Result<Vec<(i64, i64)>> {
-    // returns (user_queue.id, track_id) ordered by position
     let mut stmt = conn.prepare("SELECT id, track_id FROM user_queue ORDER BY position ASC")?;
     let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
     rows.collect()
@@ -98,8 +96,6 @@ pub fn queue_pop_front(conn: &Conn) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Reorders by placing `queue_id` between its new neighbors; renumbers the
-/// whole table on the rare occasion fractional gaps get too tight.
 pub fn queue_reorder(conn: &Conn, queue_id: i64, new_index: usize) -> rusqlite::Result<()> {
     let mut stmt = conn.prepare("SELECT id, position FROM user_queue ORDER BY position ASC")?;
     let mut rows: Vec<(i64, f64)> = stmt
@@ -128,7 +124,6 @@ pub fn queue_reorder(conn: &Conn, queue_id: i64, new_index: usize) -> rusqlite::
         (None, None) => 1.0,
     };
 
-    // gap collapsed too far -> renumber everything cleanly
     if let (Some((_, b)), Some((_, a))) = (before, after) {
         if (a - b).abs() < 1e-6 {
             renumber_queue(conn, &rows, item.0, insert_at)?;

@@ -41,7 +41,7 @@ pub enum PlayerCommand {
     SetAutoplay(bool),
     GetState(oneshot::Sender<PlayerStateSnapshot>),
     Shutdown,
-    Tick, // internal
+    Tick, 
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -85,10 +85,6 @@ const POSITION_EMIT_INTERVAL: Duration = Duration::from_millis(1000);
 const SESSION_CHECKPOINT_INTERVAL: Duration = Duration::from_secs(30);
 
 impl PlayerActor {
-    /// Spawns the actor on its own OS thread (audio output is not Send-safe
-    /// across an async runtime's worker threads, so it never leaves this
-    /// thread) plus a lightweight ticker thread that just posts `Tick`.
-    /// Returns a command sender the rest of the app talks to.
     pub fn spawn(app: AppHandle, pool: DbPool) -> Sender<PlayerCommand> {
         let (tx, rx) = std::sync::mpsc::channel::<PlayerCommand>();
         let tx_ticker = tx.clone();
@@ -231,8 +227,11 @@ impl PlayerActor {
         }
     }
 
+
+    
     // ---------- core transitions ----------
 
+    
     fn load_current_into_engine(&mut self, autoplay: bool) {
         let Some((track, source)) = self.queue.current().cloned() else {
             self.has_track_loaded = false;
@@ -295,7 +294,7 @@ impl PlayerActor {
                         track_id: Some(track.id),
                     },
                 );
-                self.handle_next(); // corrupted/missing file, skip forward
+                self.handle_next();
             }
         }
     }
@@ -321,7 +320,7 @@ impl PlayerActor {
             NextOutcome::End => {
                 self.has_track_loaded = false;
                 self.engine.stop();
-                emit(&self.app, PlayerEvent::StateChanged { is_playing: false }); // <- added
+                emit(&self.app, PlayerEvent::StateChanged { is_playing: false }); 
                 emit(&self.app, PlayerEvent::PlaybackEnded);
             }
         }
@@ -353,8 +352,6 @@ impl PlayerActor {
         }
     }
     
-    /// Single source of truth for "nothing left to play." Always stops the
-    /// actual engine, not just our bookkeeping flag.
     fn stop_playback(&mut self) {
         self.has_track_loaded = false;
         self.engine.stop();
@@ -413,12 +410,8 @@ impl PlayerActor {
         }
 
         if self.engine.is_finished() && !self.engine.is_paused() {
-            // is_paused() guards against the split second right after `load()`
-            // (paused, empty) being mistaken for "finished playing"
         }
 
-        // natural end-of-track detection: sink drained AND we've actually
-        // been playing (max_position_reached close to duration)
         let track_ended = self.now_playing.as_ref().map_or(false, |np| {
             self.engine.is_finished() && np.max_position_reached >= np.duration_sec - 0.5
         });
@@ -440,7 +433,6 @@ impl PlayerActor {
         }
     }
 
-    // ---------- playback recording ----------
 
     fn finalize_now_playing(&mut self) {
         if let Some(np) = self.now_playing.take() {
@@ -452,6 +444,8 @@ impl PlayerActor {
         }
     }
 
+
+    
     // ---------- session persistence ----------
 
     fn save_session(&self) {
@@ -464,7 +458,7 @@ impl PlayerActor {
             position_sec: self.engine.position().as_secs_f64(),
             repeat_mode: self.queue.repeat_mode(),
             shuffle: self.queue.shuffle_enabled(),
-            shuffle_order: None, // populated below if present
+            shuffle_order: None,
         };
         let _ = playback::session_save(&conn, &session);
     }
@@ -479,18 +473,6 @@ impl PlayerActor {
         self.queue.set_repeat(session.repeat_mode);
         self.queue.set_shuffle(session.shuffle);
 
-        // Re-fetch the actual context tracks from source of truth (album/
-        // playlist may have changed since last session) rather than trusting
-        // a stale snapshot. Left as a call-site TODO since it depends on
-        // your album/playlist fetch helpers:
-        //
-        // if let (Some(ctype), Some(cid)) = (&session.context_type, session.context_id) {
-        //     let tracks = fetch_context_tracks(ctype, cid);
-        //     self.queue.load_context(tracks, PlaybackSource::from_db(ctype, Some(cid)),
-        //                              session.context_position.unwrap_or(0) as usize);
-        // }
-        //
-        // Load track paused at saved position rather than autoplaying on launch:
         if session.current_track_id.is_some() {
             self.load_current_into_engine(false);
             let _ = self
@@ -498,7 +480,7 @@ impl PlayerActor {
                 .seek(Duration::from_secs_f64(session.position_sec));
         }
 
-        // restore explicit user queue
+        // restore user queue
         let conn = self.conn();
         if let Ok(rows) = playback::queue_load_all(&conn) {
             for (db_id, track_id) in rows {
@@ -554,22 +536,6 @@ impl PlayerActor {
             },
         );
     }
-
-    // fn emit_queue_changed(&self) {
-    //     emit(
-    //         &self.app,
-    //         PlayerEvent::QueueChanged {
-    //             user_queue: self
-    //                 .queue
-    //                 .user_queue()
-    //                 .iter()
-    //                 .map(|q| q.track.clone())
-    //                 .collect(),
-    //             context_len: self.queue.context_len(),
-    //             context_position: self.queue.context_position(),
-    //         },
-    //     );
-    // }
 
     fn emit_repeat_shuffle(&self) {
         emit(
