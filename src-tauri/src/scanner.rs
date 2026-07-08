@@ -13,9 +13,18 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use walkdir::WalkDir;
+
+const PHASE_META_START: usize = 25;
+const PHASE_META_END: usize = 55;
+const PHASE_COVER_START: usize = 55;
+const PHASE_COVER_END: usize = 75;
+const PHASE_DB_START: usize = 75;
+const PHASE_DB_END: usize = 95;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ScanProgress {
@@ -36,6 +45,20 @@ pub(crate) struct TrackMetadata {
     pub(crate) file_size: u64,
     pub(crate) picture: Option<Picture>,
     pub(crate) track_number: Option<u32>,
+}
+
+fn split_artists(input: &str) -> Vec<String> {
+    let normalized = input
+        .replace(" feat. ", ", ")
+        .replace(" ft. ", ", ")
+        .replace(" featuring ", ", ")
+        .replace("; ", ", ")
+        .replace(";", ", ");
+    normalized
+        .split(", ")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
@@ -64,12 +87,12 @@ pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
                         .unwrap_or("Unknown")
                         .to_string()
                 }),
-                t.artist()
-                    .map(|s| s.into_owned())
-                    .unwrap_or_else(|| "Unknown Artist".to_string())
-                    .split(", ")
-                    .map(String::from)
-                    .collect(),
+                split_artists(
+                    t.artist()
+                        .map(|s| s.into_owned())
+                        .unwrap_or_else(|| "Unknown Artist".to_string())
+                        .as_str(),
+                ),
                 t.album()
                     .map(|s| s.into_owned())
                     .unwrap_or_else(|| "Unknown Album".to_string()),
@@ -113,10 +136,7 @@ pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
 }
 
 pub fn save_image_to_app_dir(app_dir: &Path, source_path: &str, subdir: &str) -> Result<String> {
-    let img = image::open(source_path)
-        .map_err(|e| Error::Unknown(format!("Failed to open image: {e}")))?;
-
-    let data = std::fs::read(source_path).map_err(|e| Error::Io(e))?;
+    let data = std::fs::read(source_path).map_err(Error::Io)?;
     let mut hasher = Sha256::new();
     hasher.update(&data);
     let hash = hex::encode(hasher.finalize());
@@ -129,6 +149,8 @@ pub fn save_image_to_app_dir(app_dir: &Path, source_path: &str, subdir: &str) ->
 
     let dest_path = dest_dir.join(&filename);
     if !dest_path.exists() {
+        let img = image::load_from_memory(&data)
+            .map_err(|e| Error::Unknown(format!("Failed to open image: {e}")))?;
         img.save_with_format(&dest_path, ImageFormat::WebP)
             .map_err(|e| Error::Unknown(format!("Failed to save image: {e}")))?;
     }
@@ -279,6 +301,17 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
     Ok(())
 }
 
+fn emit_scan_progress(app_handle: &AppHandle, current: usize, total: usize, message: &str) {
+    let _ = app_handle.emit(
+        "scan-progress",
+        ScanProgress {
+            current,
+            total,
+            message: message.to_string(),
+        },
+    );
+}
+
 pub fn scan_files(
     conn: &mut Connection,
     app_handle: &AppHandle,
@@ -294,59 +327,88 @@ pub fn scan_files(
         return Ok(());
     }
 
-    let metadata_results: Vec<TrackMetadata> = to_scan
-        .into_par_iter()
-        .filter_map(|path| {
-            let result = extract_metadata(&path);
+    // Phase 1: Parallel metadata extraction with progress
+    emit_scan_progress(app_handle, PHASE_META_START, 100, "Reading metadata...");
+    let progress_step = (total / 15).max(15);
 
-            match result {
-                Ok(m) => Some(m),
-                Err(e) => {
-                    eprintln!("Failed to scan {:?}: {}", path, e);
-                    None
+    let metadata_results: Vec<TrackMetadata> = {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let ah = app_handle.clone();
+
+        to_scan
+            .into_par_iter()
+            .filter_map(|path| {
+                let result = extract_metadata(&path);
+                let done = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                if done % progress_step == 0 || done == total {
+                    let pct = PHASE_META_START
+                        + (done * (PHASE_META_END - PHASE_META_START) / total);
+                    let _ = ah.emit(
+                        "scan-progress",
+                        ScanProgress {
+                            current: pct,
+                            total: 100,
+                            message: format!("Reading metadata ({}/{})", done, total),
+                        },
+                    );
                 }
-            }
-        })
-        .collect();
+                match result {
+                    Ok(m) => Some(m),
+                    Err(e) => {
+                        eprintln!("Failed to scan {:?}: {}", path, e);
+                        None
+                    }
+                }
+            })
+            .collect()
+    };
 
-    println!("Extracted metadata for {} files", metadata_results.len());
+    let track_count = metadata_results.len();
+    if track_count == 0 {
+        return Ok(());
+    }
 
-    println!("Updating db...");
-    let _ = app_handle.emit(
-        "scan-progress",
-        ScanProgress {
-            current: 75,
-            total: 100,
-            message: "Saving to database...".to_string(),
-        },
-    );
-    println!("Done!");
+    // Phase 2: Parallel cover art saving with progress
+    emit_scan_progress(app_handle, PHASE_COVER_START, 100, "Saving cover art...");
 
-    let pool = app_handle.state::<db::DbPool>();
+    let metadata_with_covers: Vec<(TrackMetadata, Option<String>)> = {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let ah = app_handle.clone();
 
-    let metadata_with_covers: Vec<(TrackMetadata, Option<String>)> = metadata_results
-        .into_par_iter()
-        .map(|meta| {
-            let cover_url = meta.picture.as_ref().and_then(|pic| {
-                save_picture(&app_dir, pic)
-                    .inspect_err(|e| eprintln!("Failed to save picture: {e}"))
-                    .ok()
-            });
-            (meta, cover_url)
-        })
-        .collect();
+        metadata_results
+            .into_par_iter()
+            .map(|meta| {
+                let cover_url = meta.picture.as_ref().and_then(|pic| {
+                    save_picture(&app_dir, pic)
+                        .inspect_err(|e| eprintln!("Failed to save picture: {e}"))
+                        .ok()
+                });
+                let done = counter.fetch_add(1, Ordering::Relaxed) + 1;
+                if done % progress_step == 0 || done == track_count {
+                    let pct = PHASE_COVER_START
+                        + (done * (PHASE_COVER_END - PHASE_COVER_START) / track_count);
+                    let _ = ah.emit(
+                        "scan-progress",
+                        ScanProgress {
+                            current: pct,
+                            total: 100,
+                            message: format!("Saving cover art ({}/{})", done, track_count),
+                        },
+                    );
+                }
+                (meta, cover_url)
+            })
+            .collect()
+    };
 
+    // Phase 3: DB writes — batch artist, album, track; collect relationships for bulk insert
     let mut artist_cache = HashMap::new();
     let mut unique_artists_to_fetch = HashMap::new();
     let mut album_cache = HashMap::new();
     let mut album_artists: HashMap<String, String> = HashMap::new();
 
-    let track_count = metadata_with_covers.len();
-    let progress_step = if track_count > 0 {
-        (track_count / 20).max(1)
-    } else {
-        1
-    };
+    let mut track_artist_pairs: Vec<(i64, i64)> = Vec::new();
+    let mut track_album_entries: Vec<(i64, i64, i32)> = Vec::new();
 
     let save_start = Instant::now();
     let tx = conn.transaction().map_err(Error::Db)?;
@@ -396,26 +458,27 @@ pub fn scan_files(
             cover_url.as_deref(),
         )?;
 
-        db::set_track_artists(&tx, track_id, &artist_ids)?;
-        db::set_track_album(
-            &tx,
-            track_id,
-            album_id,
-            meta.track_number.unwrap_or(1) as i32,
-        )?;
+        db::clear_track_artists(&tx, track_id)?;
+        for &artist_id in &artist_ids {
+            track_artist_pairs.push((track_id, artist_id));
+        }
+
+        db::clear_track_album(&tx, track_id)?;
+        track_album_entries.push((album_id, track_id, meta.track_number.unwrap_or(1) as i32));
 
         if i % progress_step == 0 && i > 0 {
-            let pct = 75 + (i * 20 / track_count).min(20);
-            let _ = app_handle.emit(
-                "scan-progress",
-                ScanProgress {
-                    current: pct,
-                    total: 100,
-                    message: format!("Saving to database ({}/{})", i, track_count),
-                },
+            let pct = PHASE_DB_START + (i * (PHASE_DB_END - PHASE_DB_START) / track_count);
+            emit_scan_progress(
+                app_handle,
+                pct,
+                100,
+                &format!("Saving to database ({}/{})", i, track_count),
             );
         }
     }
+
+    db::bulk_insert_track_artists(&tx, &track_artist_pairs)?;
+    db::bulk_insert_track_albums(&tx, &track_album_entries)?;
 
     for (album_name, album_artist_name) in &album_artists {
         db::set_album_artist(&tx, album_name, album_artist_name)?;
@@ -424,22 +487,17 @@ pub fn scan_files(
     tx.commit().map_err(Error::Db)?;
     println!("DB save completed in {:?}", save_start.elapsed());
 
-    let _ = app_handle.emit(
-        "scan-progress",
-        ScanProgress {
-            current: 100,
-            total: 100,
-            message: "Updates saved".to_string(),
-        },
-    );
+    emit_scan_progress(app_handle, 100, 100, "Updates saved");
     let _ = app_handle.emit("library-updated", ());
 
     if !unique_artists_to_fetch.is_empty() {
-        let fetch_pic = sync::get_setting(app_handle, "autoFetchArtistPic", true).unwrap_or(true);
+        let fetch_pic =
+            sync::get_setting(app_handle, "autoFetchArtistPic", true).unwrap_or(true);
         let fetch_banner =
             sync::get_setting(app_handle, "autoFetchArtistBanner", true).unwrap_or(true);
 
         if fetch_pic || fetch_banner {
+            let pool = app_handle.state::<db::DbPool>();
             let app_handle_clone = app_handle.clone();
             let app_dir_clone = app_dir.clone();
             let pool_clone = pool.inner().clone();

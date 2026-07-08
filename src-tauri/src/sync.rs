@@ -7,15 +7,20 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_store::StoreExt;
+use tauri::async_runtime::JoinHandle;
+
+const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];
 
 pub struct SyncManager {
     watcher: Arc<parking_lot::Mutex<Option<RecommendedWatcher>>>,
+    task: Arc<parking_lot::Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl SyncManager {
     pub fn new() -> Self {
         Self {
             watcher: Arc::new(parking_lot::Mutex::new(None)),
+            task: Arc::new(parking_lot::Mutex::new(None)),
         }
     }
 
@@ -91,6 +96,14 @@ impl SyncManager {
     }
 
     pub fn refresh_watcher(&self, app: &AppHandle) -> notify::Result<()> {
+        // Cancel the previous watcher task
+        {
+            let mut task_lock = self.task.lock();
+            if let Some(old_task) = task_lock.take() {
+                old_task.abort();
+            }
+        }
+
         let mut watcher_lock = self.watcher.lock();
 
         if let Some(old_watcher) = watcher_lock.take() {
@@ -130,9 +143,7 @@ impl SyncManager {
 
         *watcher_lock = Some(watcher);
 
-        tauri::async_runtime::spawn(async move {
-            let audio_extensions = ["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];
-
+        let handle = tauri::async_runtime::spawn(async move {
             while let Some(event) = rx.recv().await {
                 match event.kind {
                     EventKind::Create(_) | EventKind::Modify(_) => {
@@ -145,7 +156,7 @@ impl SyncManager {
                                     .and_then(|e| e.to_str())
                                     .unwrap_or("")
                                     .to_lowercase();
-                                p.is_file() && audio_extensions.contains(&ext.as_ref())
+                                p.is_file() && AUDIO_EXTENSIONS.contains(&ext.as_ref())
                             })
                             .collect();
 
@@ -169,17 +180,40 @@ impl SyncManager {
                                 let _ = (|| -> Result<(), crate::error::Error> {
                                     let mut tracks_to_delete = Vec::new();
                                     for path in &paths_to_remove {
-                                        let mut stmt = conn.prepare(
-                                            "SELECT path FROM track WHERE path = ? OR path LIKE ? || '/%' OR path LIKE ? || '\\%'"
-                                        ).map_err(crate::error::Error::Db)?;
-                                        let rows = stmt
-                                            .query_map(rusqlite::params![path, path, path], |row| {
-                                                row.get::<_, String>(0)
-                                            })
+                                        let is_audio_file = Path::new(path)
+                                            .extension()
+                                            .and_then(|e| e.to_str())
+                                            .map(|e| AUDIO_EXTENSIONS.contains(&e))
+                                            .unwrap_or(false);
+
+                                        if is_audio_file {
+                                            let mut stmt = conn.prepare(
+                                                "SELECT path FROM track WHERE path = ?",
+                                            )
                                             .map_err(crate::error::Error::Db)?;
-                                        for r in rows {
-                                            if let Ok(p) = r {
-                                                tracks_to_delete.push(p);
+                                            let rows = stmt
+                                                .query_map(rusqlite::params![path], |row| {
+                                                    row.get::<_, String>(0)
+                                                })
+                                                .map_err(crate::error::Error::Db)?;
+                                            for r in rows {
+                                                if let Ok(p) = r {
+                                                    tracks_to_delete.push(p);
+                                                }
+                                            }
+                                        } else {
+                                            let mut stmt = conn.prepare(
+                                                "SELECT path FROM track WHERE path = ? OR path LIKE ? || '/%' OR path LIKE ? || '\\%'"
+                                            ).map_err(crate::error::Error::Db)?;
+                                            let rows = stmt
+                                                .query_map(rusqlite::params![path, path, path], |row| {
+                                                    row.get::<_, String>(0)
+                                                })
+                                                .map_err(crate::error::Error::Db)?;
+                                            for r in rows {
+                                                if let Ok(p) = r {
+                                                    tracks_to_delete.push(p);
+                                                }
                                             }
                                         }
                                     }
@@ -201,6 +235,8 @@ impl SyncManager {
                 }
             }
         });
+
+        self.task.lock().replace(handle);
 
         Ok(())
     }

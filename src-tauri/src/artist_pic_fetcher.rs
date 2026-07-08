@@ -11,12 +11,21 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::LazyLock;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::fs;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
-static FETCH_SEMAPHORE: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(5));
+static CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    Client::builder()
+        .impersonate(Impersonate::ChromeV146)
+        .timeout(Duration::from_secs(15))
+        .build()
+        .expect("failed to create HTTP client")
+});
+
+static FETCH_SEMAPHORE: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(15));
 
 #[derive(Deserialize)]
 struct BingMetadata {
@@ -50,12 +59,6 @@ pub enum ImageStatus {
 enum AspectRatio {
     Square,
     Wide,
-}
-
-async fn get_client() -> Result<Client> {
-    Ok(Client::builder()
-        .impersonate(Impersonate::ChromeV146)
-        .build()?)
 }
 
 async fn search_bing(
@@ -146,6 +149,18 @@ async fn search_duckduckgo(
     }
 }
 
+async fn search_images(
+    client: &Client,
+    query: &str,
+    aspect_ratio: AspectRatio,
+) -> Result<Vec<String>> {
+    let (bing, ddg) = tokio::join!(
+        search_bing(client, query, aspect_ratio),
+        search_duckduckgo(client, query, aspect_ratio),
+    );
+    bing.or_else(|_| ddg)
+}
+
 async fn download_image(
     query: &str,
     aspect_ratio: AspectRatio,
@@ -154,12 +169,9 @@ async fn download_image(
     app_dir: &Path,
 ) -> Result<String> {
     let _permit = FETCH_SEMAPHORE.acquire().await.map_err(|e| anyhow!(e))?;
-    let client = get_client().await?;
+    let client = &*CLIENT;
 
-    let image_urls = match search_bing(&client, query, aspect_ratio).await {
-        Ok(url) => url,
-        Err(_) => search_duckduckgo(&client, query, aspect_ratio).await?,
-    };
+    let image_urls = search_images(client, query, aspect_ratio).await?;
 
     let out_dir = app_dir.join(subdir);
     fs::create_dir_all(&out_dir).await?;
@@ -257,9 +269,7 @@ pub async fn fetch_single_artist_images(
             any_attempted = true;
             match download_and_save(artist_name, app_dir).await {
                 Ok(filename) => {
-                    if let Ok(conn) = pool.get() {
-                        let _ = db::update_artist_profile_image(&conn, artist_id, &filename);
-                    }
+                    let _ = db::update_artist_profile_image(&conn, artist_id, &filename);
                     any_succeeded = true;
                 }
                 Err(e) => {
@@ -275,9 +285,7 @@ pub async fn fetch_single_artist_images(
             any_attempted = true;
             match download_and_save_banner(artist_name, app_dir).await {
                 Ok(filename) => {
-                    if let Ok(conn) = pool.get() {
-                        let _ = db::update_artist_banner_image(&conn, artist_id, &filename);
-                    }
+                    let _ = db::update_artist_banner_image(&conn, artist_id, &filename);
                     any_succeeded = true;
                 }
                 Err(e) => {
@@ -287,12 +295,10 @@ pub async fn fetch_single_artist_images(
         }
     }
 
-    if let Ok(conn) = pool.get() {
-        if any_succeeded {
-            let _ = db::report_fetch_success(&conn, artist_id);
-        } else if any_attempted {
-            let _ = db::report_fetch_failure(&conn, artist_id);
-        }
+    if any_succeeded {
+        let _ = db::report_fetch_success(&conn, artist_id);
+    } else if any_attempted {
+        let _ = db::report_fetch_failure(&conn, artist_id);
     }
 
     Ok(())
@@ -312,20 +318,27 @@ pub async fn fetch_artist_images(
 
     let total = artists.len();
     let mut set = JoinSet::new();
+    let mut spawned_count: usize = 0;
+
+    // Reuse one connection for the pre-check loop
+    let check_conn = pool.get().ok();
 
     for (aid, name) in artists.iter() {
         if name == "Unknown Artist" {
             continue;
         }
 
-        let skip = pool.get().ok().map_or(false, |conn| {
-            let has_photo = fetch_pic && !db::artist_has_photo(&conn, *aid).unwrap_or(false);
-            let has_banner = fetch_banner && !db::artist_has_banner(&conn, *aid).unwrap_or(false);
-            !has_photo && !has_banner
+        let skip = check_conn.as_ref().map_or(false, |conn| {
+            let needs_photo = fetch_pic && !db::artist_has_photo(conn, *aid).unwrap_or(false);
+            let needs_banner = fetch_banner && !db::artist_has_banner(conn, *aid).unwrap_or(false);
+            !needs_photo && !needs_banner
         });
         if skip {
             continue;
         }
+
+        spawned_count += 1;
+        let idx = spawned_count;
 
         let app_dir = app_dir.to_path_buf();
         let artist_name = name.clone();
@@ -334,14 +347,16 @@ pub async fn fetch_artist_images(
         let app_handle_clone = app_handle.clone();
 
         set.spawn(async move {
+            // Get one connection to reuse across all DB ops
+            let conn = pool_clone.get().ok();
             let mut any_attempted = false;
             let mut any_succeeded = false;
 
             if fetch_pic {
                 match download_and_save(&artist_name, &app_dir).await {
                     Ok(filename) => {
-                        if let Ok(conn) = pool_clone.get() {
-                            let _ = db::update_artist_profile_image(&conn, artist_id, &filename);
+                        if let Some(ref conn) = conn {
+                            let _ = db::update_artist_profile_image(conn, artist_id, &filename);
                         }
                         any_succeeded = true;
                     }
@@ -355,8 +370,8 @@ pub async fn fetch_artist_images(
             if fetch_banner {
                 match download_and_save_banner(&artist_name, &app_dir).await {
                     Ok(filename) => {
-                        if let Ok(conn) = pool_clone.get() {
-                            let _ = db::update_artist_banner_image(&conn, artist_id, &filename);
+                        if let Some(ref conn) = conn {
+                            let _ = db::update_artist_banner_image(conn, artist_id, &filename);
                         }
                         any_succeeded = true;
                     }
@@ -367,18 +382,18 @@ pub async fn fetch_artist_images(
                 }
             }
 
-            if let Ok(conn) = pool_clone.get() {
+            if let Some(ref conn) = conn {
                 if any_succeeded {
-                    let _ = db::report_fetch_success(&conn, artist_id);
+                    let _ = db::report_fetch_success(conn, artist_id);
                 } else if any_attempted {
-                    let _ = db::report_fetch_failure(&conn, artist_id);
+                    let _ = db::report_fetch_failure(conn, artist_id);
                 }
             }
 
             let _ = app_handle_clone.emit(
                 "fetch-progress",
                 ScanProgress {
-                    current: 1,
+                    current: idx,
                     total,
                     message: format!("Fetching artist: {artist_name}"),
                 },
