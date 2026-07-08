@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AMUS",
-  "version": "0.3.0",
   "identifier": "AMUS",
   "build": {
     "beforeDevCommand": "bun run dev",
@@ -20,7 +19,10 @@
         "transparent": true,
         "resizable": true,
         "minHeight": 700,
-        "minWidth": 700
+        "minWidth": 700,
+        "shadow": false,
+        "theme": "Dark",
+        "center": true        
       }
     ],
     "security": {
@@ -30,7 +32,8 @@
         "scope": ["$APPDATA/**/*"]
       }
     },
-    "macOSPrivateApi": true
+    "macOSPrivateApi": true,
+    "enableGTKAppId": false
   },
   "bundle": {
     "active": true,
@@ -42,7 +45,61 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "category": "Music",
+    "license": "MPL-2.0",
+    "licenseFile": "LICENSE",
+    "fileAssociations": [
+      {
+            "ext": ["mp3"],
+            "name": "MP3 Audio",
+            "description": "MP3 Audio File",
+            "mimeType": "audio/mpeg",
+            "role": "Viewer"
+          },
+          {
+            "ext": ["flac"],
+            "name": "FLAC Audio",
+            "description": "FLAC Audio File",
+            "mimeType": "audio/flac",
+            "role": "Viewer"
+          },
+          {
+            "ext": ["wav"],
+            "name": "WAV Audio",
+            "description": "Wave Audio File",
+            "mimeType": "audio/wav",
+            "role": "Viewer"
+          },
+          {
+            "ext": ["ogg"],
+            "name": "OGG Audio",
+            "description": "OGG Audio File",
+            "mimeType": "audio/ogg",
+            "role": "Viewer"
+          },
+          {
+            "ext": ["m4a"],
+            "name": "M4A Audio",
+            "description": "M4A Audio File",
+            "mimeType": "audio/mp4",
+            "role": "Viewer"
+          },
+          {
+            "ext": ["aac"],
+            "name": "AAC Audio",
+            "description": "AAC Audio File",
+            "mimeType": "audio/aac",
+            "role": "Viewer"
+          },
+          {
+            "ext": ["opus"],
+            "name": "Opus Audio",
+            "description": "Opus Audio File",
+            "mimeType": "audio/opus",
+            "role": "Viewer"
+          }
+    ]
   },
   "plugins": {
     "updater": {
