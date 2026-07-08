@@ -2,11 +2,11 @@ import type { PageLoad } from "./$types";
 import { invoke } from "@tauri-apps/api/core";
 import type { Track, SortBy } from "$lib/types";
 
-export const load: PageLoad = async ({ params, url, depends }) => {  
+export const load: PageLoad = async ({ params, url, depends }) => {
   const sortBy = (url.searchParams.get("sortBy") as SortBy) || "title";
   const id = Number(params.id);
   const name = url.searchParams.get("name") || "All Tracks";
-  
+
   depends(`Playlist:${id}`);
 
   try {
@@ -22,15 +22,15 @@ export const load: PageLoad = async ({ params, url, depends }) => {
         playlistId: id,
         sortBy: sortBy,
       }),
-      invoke<[number, string, string | null]>("get_playlist", {
+      invoke<{ id: number; name: string; cover_art: string | null }>("get_playlist", {
         playlistId: id,
       }).catch(() => null),
     ]);
 
     return {
       data: data || [],
-      name: playlist?.[1] ?? name,
-      coverArtFilename: playlist?.[2] ?? null,
+      name: playlist?.name ?? name,
+      coverArtFilename: playlist?.cover_art ?? null,
     };
   } catch (e) {
     console.error("Failed to load playlist", e);

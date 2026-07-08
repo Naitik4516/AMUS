@@ -1,10 +1,9 @@
 <script lang="ts">
-    import type { PageProps } from "./$types";
     import AlbumCard from "$components/ui/Card/AlbumCard.svelte";
     import DisplayList from "$components/ui/DisplayList.svelte";
+    import { store } from "$lib/stores.svelte";
 
-    let { data }: PageProps = $props();
-    let albums = $derived(data.albums || []);
+    let albums = $derived(store.albums);
 </script>
 
 <DisplayList listItems={albums} title="Albums" Card={AlbumCard} />

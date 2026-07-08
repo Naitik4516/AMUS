@@ -1,59 +1,36 @@
 <script lang="ts">
-    import type { PageProps } from "./$types";
+    import { page } from "$app/state";
     import TrackList from "$components/ui/TrackList.svelte";
     import AlbumRow from "$components/ui/AlbumRow.svelte";
     import { User } from "@lucide/svelte";
-    import { formatDuration, getImageUrl } from "$lib/utils";
-    import { fetchArtistImages, getArtistDetails } from "$lib/data.svelte";
+    import { formatDuration } from "$lib/utils";
+    import { fetchArtistImages } from "$lib/data.svelte";
+    import { store } from "$lib/stores.svelte";
     import { onMount } from "svelte";
+    import type { Artist } from "$lib/types";
 
-    let { data }: PageProps = $props();
-    let artist = $derived(data.artist);
-    let tracks = $derived(data.tracks || []);
-    let albums = $derived(data.albums || []);
+    let artistId = $derived(Number(page.params.id));
+    let artist = $derived(store.artistsById.get(artistId) ?? {
+        id: artistId,
+        name: "Unknown Artist",
+        profile_image: undefined,
+        banner_image: undefined,
+    } as Artist);
+    let tracks = $derived(store.tracksByArtist(artistId));
+    let albums = $derived(store.albumsByArtist(artistId));
 
     let totalDuration = $derived(
         tracks.reduce((acc, track) => acc + track.duration_seconds, 0),
     );
 
-    let profileUrl = $state<string | null>(null);
-    let bgUrl = $state<string | null>(null);
-    let isBanner = $state(false);
-
-    $effect(() => {
-        getImageUrl(artist.profile_image, "artist").then(
-            (url) => (profileUrl = url),
-        );
-        if (artist.banner_image) {
-            getImageUrl(artist.banner_image, "banner").then((url) => {
-                bgUrl = url;
-                isBanner = true;
-            });
-        } else if (artist.profile_image) {
-            getImageUrl(artist.profile_image, "artist").then((url) => {
-                bgUrl = url;
-                isBanner = false;
-            });
-        } else {
-            bgUrl = null;
-            isBanner = false;
-        }
-    });
+    let profileUrl = $derived(store.getArtistProfileUrl(artist));
+    let bgUrl = $derived(store.getArtistBannerUrl(artist) ?? store.getArtistProfileUrl(artist));
+    let isBanner = $derived(!!artist.banner_image);
 
     onMount(async () => {
         if (!artist.banner_image) {
-            await fetchArtistImages(artist.id);
-            const result = await getArtistDetails(artist.id);
-            if (result?.artist?.banner_image) {
-                const url = await getImageUrl(
-                    result.artist.banner_image,
-                    "banner",
-                );
-                if (url) {
-                    bgUrl = url;
-                    isBanner = true;
-                }
-            }
+            await fetchArtistImages(artistId);
+            await store.reloadArtists();
         }
     });
 </script>
@@ -113,7 +90,7 @@
                     id: artist.id,
                     name: artist.name,
                     profileImage: profileUrl,
-                    bannerImage: bgUrl, 
+                    bannerImage: bgUrl,
                 }}
                 {tracks}
             />
@@ -137,7 +114,6 @@
 <style>
     .banner-wrapper {
         position: relative;
-        /* Adjust the percentage to control where the fade begins */
         mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
         -webkit-mask-image: linear-gradient(
             to bottom,

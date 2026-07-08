@@ -8,11 +8,10 @@
         Minimize2,
     } from "@lucide/svelte";
     import { getCurrentWindow } from "@tauri-apps/api/window";
-    import { invoke } from "@tauri-apps/api/core";
     import { goto } from "$app/navigation";
-    import { getImageUrl } from "$lib/utils";
     import { player } from "$lib/player.svelte";
     import type { GlobalSearchResult } from "$lib/types";
+    import { store } from "$lib/stores.svelte";
 
     let { isMaximized = $bindable(false) } = $props();
 
@@ -58,7 +57,7 @@
         searchQuery = "";
     }
 
-    async function handleSearch() {
+    function handleSearch() {
         if (searchTimeout) clearTimeout(searchTimeout);
 
         const trimmed = searchQuery.trim();
@@ -70,16 +69,9 @@
 
         selectedIndex = 0;
 
-        searchTimeout = setTimeout(async () => {
-            try {
-                results = await invoke("global_search", {
-                    query: trimmed,
-                    limit: 20,
-                });
-                showResults = true;
-            } catch (e) {
-                console.error("Search failed", e);
-            }
+        searchTimeout = setTimeout(() => {
+            results = store.globalSearch(trimmed, 20);
+            showResults = true;
         }, 300);
     }
 
@@ -118,6 +110,19 @@
         closeDropdown();
     }
 
+    function getCoverUrl(result: GlobalSearchResult): string | null {
+        if (result.result_type === "track" && result.track) {
+            return store.getTrackCoverUrl(result.track);
+        }
+        if (result.result_type === "album" && result.album) {
+            return store.getAlbumCoverUrl(result.album);
+        }
+        if (result.result_type === "artist" && result.artist) {
+            return store.getArtistProfileUrl(result.artist);
+        }
+        return null;
+    }
+
     function toggleMaximize() {
         const appWindow = getCurrentWindow();
         appWindow.toggleMaximize();
@@ -138,7 +143,7 @@
     <div class="h-2 shrink-0"></div>
     <div
         data-tauri-drag-region
-        class="flex items-center px-4 h-12 justify-between select-none text-white"
+        class="flex items-center px-4 h-12 justify-between select-none text-white cursor-grab"
     >
         <div class="w-16 flex justify-center shrink-0 mt-1 pointer-events-none">
             <img
@@ -199,29 +204,10 @@
                                 <div
                                     class="w-10 h-10 relative rounded-lg bg-neutral-800 flex items-center justify-center overflow-hidden shrink-0"
                                 >
-                                    {#if result.result_type === "track" && result.track?.cover_art}
+                                    {#if getCoverUrl(result)}
                                         <img
-                                            src={await getImageUrl(
-                                                result.track.cover_art,
-                                            )}
-                                            alt={result.track.title}
-                                            class="w-full h-full object-cover"
-                                        />
-                                    {:else if result.result_type === "album" && result.album?.cover_art}
-                                        <img
-                                            src={await getImageUrl(
-                                                result.album.cover_art,
-                                            )}
-                                            alt={result.album.name}
-                                            class="w-full h-full object-cover"
-                                        />
-                                    {:else if result.result_type === "artist" && result.artist?.profile_image}
-                                        <img
-                                            src={await getImageUrl(
-                                                result.artist.profile_image,
-                                                "artist",
-                                            )}
-                                            alt={result.artist.name}
+                                            src={getCoverUrl(result)!}
+                                            alt=""
                                             class="w-full h-full object-cover"
                                         />
                                     {:else}
@@ -338,6 +324,6 @@
     }
 
     .controls button.close-btn:hover {
-        background-color: rgba(225, 0, 0, 0.9); /* Standard close red accent */
+        background-color: rgba(225, 0, 0, 0.9);
     }
 </style>

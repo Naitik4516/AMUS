@@ -84,14 +84,6 @@ pub async fn get_all_tracks(
     db::get_all_tracks(&conn, sort_by)
 }
 
-#[tauri::command]
-pub async fn get_favorite_tracks(
-    sort_by: Option<SortBy>,
-    pool: State<'_, DbPool>,
-) -> Result<Vec<Track>> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    db::get_favorite_tracks(&conn, sort_by)
-}
 
 #[tauri::command]
 pub async fn get_recently_played(limit: usize, pool: State<'_, DbPool>) -> Result<Vec<Track>> {
@@ -115,26 +107,11 @@ pub async fn get_track_details(id: i64, pool: State<'_, DbPool>) -> Result<Track
     db::get_track_details(&conn, id)
 }
 
-#[tauri::command]
-pub async fn global_search(
-    query: String,
-    limit: usize,
-    pool: State<'_, DbPool>,
-) -> Result<Vec<GlobalSearchResult>> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    db::global_search(&conn, &query, limit)
-}
 
 #[tauri::command]
 pub async fn get_artists(pool: State<'_, DbPool>) -> Result<Vec<Artist>> {
     let conn = pool.get().map_err(Error::Pool)?;
     db::get_all_artists(&conn)
-}
-
-#[tauri::command]
-pub async fn get_artist(id: i64, pool: State<'_, DbPool>) -> Result<Artist> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    db::get_artist(&conn, id)
 }
 
 #[tauri::command]
@@ -144,41 +121,9 @@ pub async fn get_all_albums(pool: State<'_, DbPool>) -> Result<Vec<Album>> {
 }
 
 #[tauri::command]
-pub async fn get_album(id: i64, pool: State<'_, DbPool>) -> Result<Album> {
+pub async fn get_playlists(pool: State<'_, DbPool>) -> Result<Vec<PlaylistWithCovers>> {
     let conn = pool.get().map_err(Error::Pool)?;
-    db::get_album(&conn, id)
-}
-
-#[tauri::command]
-pub async fn get_albums(artist_id: i64, pool: State<'_, DbPool>) -> Result<Vec<Album>> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    db::get_albums_by_artist(&conn, artist_id)
-}
-
-#[tauri::command]
-pub async fn get_tracks_by_album(
-    album_id: i64,
-    sort_by: Option<SortBy>,
-    pool: State<'_, DbPool>,
-) -> Result<Vec<Track>> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    db::get_tracks_by_album(&conn, album_id, sort_by)
-}
-
-#[tauri::command]
-pub async fn get_tracks_by_artist(
-    artist_id: i64,
-    sort_by: Option<SortBy>,
-    pool: State<'_, DbPool>,
-) -> Result<Vec<Track>> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    db::get_tracks_by_artist(&conn, artist_id, sort_by)
-}
-
-#[tauri::command]
-pub async fn get_playlists(pool: State<'_, DbPool>) -> Result<Vec<Playlist>> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    db::get_all_playlists(&conn)
+    db::get_all_playlists_with_covers(&conn)
 }
 
 #[tauri::command]
@@ -192,7 +137,7 @@ pub async fn get_tracks_by_playlist(
 }
 
 #[tauri::command]
-pub async fn create_playlist(name: String, pool: State<'_, DbPool>) -> Result<i64> {
+pub async fn create_playlist(name: String, pool: State<'_, DbPool>) -> Result<Playlist> {
     let conn = pool.get().map_err(Error::Pool)?;
     db::create_playlist(&conn, &name)
 }
@@ -232,18 +177,9 @@ pub async fn delete_playlist(playlist_id: i64, pool: State<'_, DbPool>) -> Resul
     Ok(())
 }
 
-#[tauri::command]
-pub async fn rename_playlist(
-    playlist_id: i64,
-    new_name: String,
-    pool: State<'_, DbPool>,
-) -> Result<()> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    db::rename_playlist(&conn, playlist_id, &new_name)
-}
 
 #[tauri::command]
-pub async fn toggle_favorite(id: i64, pool: State<'_, DbPool>) -> Result<bool> {
+pub async fn toggle_favorite(id: i64, pool: State<'_, DbPool>) -> Result<Track> {
     let conn = pool.get().map_err(Error::Pool)?;
     db::toggle_favorite(&conn, id)
 }
@@ -267,9 +203,15 @@ pub async fn get_playlist_cover_arts(
 pub async fn get_playlist(
     playlist_id: i64,
     pool: State<'_, DbPool>,
-) -> Result<(i64, String, Option<String>)> {
+) -> Result<Playlist> {
     let conn = pool.get().map_err(Error::Pool)?;
     db::get_playlist(&conn, playlist_id)
+}
+
+#[tauri::command]
+pub async fn get_all_playlist_tracks(pool: State<'_, DbPool>) -> Result<Vec<(i64, Vec<i64>)>> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::get_all_playlist_tracks(&conn)
 }
 
 // ---------------------------------------------------------------------------
@@ -598,26 +540,9 @@ pub async fn update_artist(
     profile_image: Option<String>,
     banner_image: Option<String>,
     pool: State<'_, DbPool>,
-) -> Result<()> {
+) -> Result<Artist> {
     let conn = pool.get().map_err(Error::Pool)?;
-    if let Some(n) = name {
-        db::rename_artist(&conn, id, &n)?;
-    }
-    if let Some(pi) = profile_image {
-        if pi.is_empty() {
-            db::clear_artist_profile_image(&conn, id)?;
-        } else {
-            db::update_artist_profile_image(&conn, id, &pi)?;
-        }
-    }
-    if let Some(bi) = banner_image {
-        if bi.is_empty() {
-            db::clear_artist_banner_image(&conn, id)?;
-        } else {
-            db::update_artist_banner_image(&conn, id, &bi)?;
-        }
-    }
-    Ok(())
+    db::update_artist_full(&conn, id, name.as_deref(), profile_image.as_deref(), banner_image.as_deref())
 }
 
 #[tauri::command]
@@ -626,19 +551,9 @@ pub async fn update_album(
     name: Option<String>,
     cover_art: Option<String>,
     pool: State<'_, DbPool>,
-) -> Result<()> {
+) -> Result<Album> {
     let conn = pool.get().map_err(Error::Pool)?;
-    if let Some(n) = name {
-        db::rename_album(&conn, id, &n)?;
-    }
-    if let Some(ca) = cover_art {
-        if ca.is_empty() {
-            db::update_album_cover(&conn, id, None)?;
-        } else {
-            db::update_album_cover(&conn, id, Some(&ca))?;
-        }
-    }
-    Ok(())
+    db::update_album_full(&conn, id, name.as_deref(), cover_art.as_deref())
 }
 
 #[tauri::command]
@@ -647,11 +562,10 @@ pub async fn update_playlist(
     name: Option<String>,
     cover_art: Option<String>,
     pool: State<'_, DbPool>,
-) -> Result<()> {
+) -> Result<Playlist> {
     let conn = pool.get().map_err(Error::Pool)?;
     let ca = cover_art.as_deref();
-    db::update_playlist(&conn, id, name.as_deref(), ca)?;
-    Ok(())
+    db::update_playlist(&conn, id, name.as_deref(), ca)
 }
 
 #[tauri::command]
@@ -686,7 +600,7 @@ pub(crate) fn toggle_mini_player(app: tauri::AppHandle) -> std::result::Result<(
             window.set_focus().map_err(|e| e.to_string())?;
         }
     } else {
-        crate::toggle_popup(&app);
+        crate::toggle_miniplayer(&app);
     }
     Ok(())
 }

@@ -56,16 +56,16 @@ fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
     let handle = app.state::<commands::PlayerHandle>();
     match event.id().as_ref() {
         "play_pause" => {
-             commands::send(&handle, PlayerCommand::PlayPause);
+             let _ = commands::send(&handle, PlayerCommand::PlayPause);
         }
         "next" => {
-             commands::send(&handle, PlayerCommand::Next);
+             let _ = commands::send(&handle, PlayerCommand::Next);
         }
         "previous" => {
-            commands::send(&handle, PlayerCommand::Previous);
+            let _ = commands::send(&handle, PlayerCommand::Previous);
         }
         "show_miniplayer" => {
-            toggle_popup(app);
+            toggle_miniplayer(app);
         }
         "show" => {
             if let Some(window) = app.get_webview_window("main") {
@@ -84,7 +84,7 @@ fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
     }
 }
 
-fn toggle_popup(app: &tauri::AppHandle) {
+fn toggle_miniplayer(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("mini-player") {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
@@ -92,17 +92,18 @@ fn toggle_popup(app: &tauri::AppHandle) {
             let _ = window.show();
             let _ = window.set_focus();
         }
-    } else if let Ok(window) = create_popup(app) {
+    } else if let Ok(window) = create_miniplayer(app) {
         let _ = window.show();
+        let _ = window.move_window(Position::TrayRight);
         let _ = window.set_focus();
     }
 }
 
-fn create_popup(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
+fn create_miniplayer(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
     let window =
         WebviewWindowBuilder::new(app, "mini-player", WebviewUrl::App("/miniplayer".into()))
             .title("Amus - Mini Player")
-            .inner_size(400.0, 200.0)
+            .inner_size(420.0, 220.0)
             .resizable(false)
             .decorations(false)
             .transparent(true)
@@ -124,7 +125,6 @@ fn create_popup(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
                 if !state.0.load(Ordering::Relaxed) {
                     if let Some(w) = app_clone.get_webview_window("mini-player") {
                         let _ = w.hide();
-                        let _ = w.as_ref().window().move_window(Position::BottomRight);
                     }
                 }
             }
@@ -198,11 +198,11 @@ pub fn run() {
                 crate::player::actor::PlayerActor::spawn(app.handle().clone(), pool.clone());
             app.manage(commands::PlayerHandle(handle));
 
+            app.manage(pool);
+
             let sync_manager = SyncManager::new();
             sync_manager.init(app_handle);
             app.manage(sync_manager);
-
-            app.manage(pool);
             app.manage(MiniPlayerPinned(AtomicBool::new(true)));
 
             // System Tray
@@ -220,7 +220,7 @@ pub fn run() {
                         ..
                     } = event
                     {
-                        toggle_popup(tray.app_handle());
+                        toggle_miniplayer(tray.app_handle());
                     }
                 })
                 .on_menu_event(handle_tray_menu)
@@ -262,26 +262,19 @@ pub fn run() {
             commands::has_music,
             commands::scan_library,
             commands::get_all_tracks,
-            commands::get_favorite_tracks,
             commands::get_recently_played,
             commands::get_most_played_tracks,
             commands::get_track_details,
-            commands::global_search,
             commands::get_artists,
-            commands::get_artist,
             commands::get_all_albums,
-            commands::get_album,
-            commands::get_albums,
-            commands::get_tracks_by_album,
-            commands::get_tracks_by_artist,
             commands::get_playlists,
             commands::get_tracks_by_playlist,
             commands::create_playlist,
             commands::add_track_to_playlist,
             commands::remove_track_from_playlist,
             commands::delete_playlist,
-            commands::rename_playlist,
             commands::get_playlist,
+            commands::get_all_playlist_tracks,
             commands::toggle_favorite,
             commands::play_context,
             commands::play_pause,

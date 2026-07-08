@@ -4,18 +4,19 @@
     import ArtistsSection from "$components/ui/Home/ArtistsSection.svelte";
     import AlbumsSection from "$components/ui/Home/AlbumsSection.svelte";
     import type { InvokeArgs } from "@tauri-apps/api/core";
-
     import type { PageProps } from "./$types";
+    import { store } from "$lib/stores.svelte";
 
     let { data }: PageProps = $props();
+
+    let recentlyAdded = $derived(store.recentlyAddedTracks.slice(0, 10));
+    let favoriteTracks = $derived(store.favoriteTracks.slice(0, 10));
 
     type LoadFunction =
         | "get_recently_played"
         | "get_most_played_tracks"
-        | "get_favorite_tracks"
         | "get_forgotten_tracks"
-        | "get_unplayed_tracks"
-        | "get_recently_added";
+        | "get_unplayed_tracks";
 
     const trackSections: {
         title: string;
@@ -23,13 +24,7 @@
         args?: InvokeArgs;
     }[] = [
         { title: "Continue Listening", loadFunction: "get_recently_played" },
-        { title: "Recently Added", loadFunction: "get_recently_added" },
-        {
-            title: "On repeat",
-            loadFunction: "get_most_played_tracks",
-            args: { timeframe: "this_month" },
-        },
-        { title: "Favorites", loadFunction: "get_favorite_tracks" },
+        { title: "On repeat", loadFunction: "get_most_played_tracks", args: { timeframe: "this_month" } },
     ];
 </script>
 
@@ -48,6 +43,20 @@
                 />
             </div>
         {/each}
+
+        <div>
+            <TracksSection
+                title="Recently Added"
+                loadFunction="get_recently_added"
+            />
+        </div>
+
+        <div>
+            <TracksSection
+                title="Favorites"
+                tracks={favoriteTracks}
+            />
+        </div>
 
         <div data-scroll>
             <ArtistsSection

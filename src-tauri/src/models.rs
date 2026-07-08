@@ -47,6 +47,15 @@ pub struct PlaybackState {
 pub struct Playlist {
     pub id: i64,
     pub name: String,
+    pub cover_art: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlaylistWithCovers {
+    pub id: i64,
+    pub name: String,
+    pub cover_art: Option<String>,
+    pub cover_arts: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -153,16 +162,6 @@ pub struct PlaybackEvent {
     pub track: Track,
     pub completion_percent: f64,
     pub source_type: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct GlobalSearchResult {
-    pub result_type: String,
-    pub score: i32,
-    pub track: Option<Track>,
-    pub artist: Option<Artist>,
-    pub album: Option<Album>,
-    pub playlist: Option<Playlist>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Track, PlaybackSource, RepeatMode } from "./types";
+import { store } from "./stores.svelte";
 
 // discriminated union matching the #[serde(tag = "event", content = "payload")] enum
 type PlayerEvent =
@@ -307,11 +308,11 @@ class PlayerStore {
 
   async toggleFavorite(track: Track) {
     try {
-      const isFav = await invoke<boolean>("toggle_favorite", { id: track.id });
+      const updated = await store.toggleFavorite(track.id);
       if (this.currentTrack && this.currentTrack.id === track.id) {
-        this.currentTrack.is_favorite = isFav;
+        this.currentTrack.is_favorite = updated.is_favorite;
       }
-      return isFav;
+      return updated.is_favorite;
     } catch (e) {
       console.error("Failed to toggle favorite", e);
       return track.is_favorite;

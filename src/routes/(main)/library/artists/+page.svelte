@@ -1,10 +1,9 @@
 <script lang="ts">
     import ArtistCard from "$components/ui/Card/ArtistCard.svelte";
     import DisplayList from "$components/ui/DisplayList.svelte";
-    import type { PageProps } from "./$types";
+    import { store } from "$lib/stores.svelte";
 
-    let { data }: PageProps = $props();
-    let artists = $derived(data.artists || []);
+    let artists = $derived(store.artists);
 </script>
 
 <DisplayList listItems={artists} title="Artists" Card={ArtistCard} />

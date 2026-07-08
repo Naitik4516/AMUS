@@ -1,11 +1,10 @@
 <script lang="ts">
-    import type { PageProps } from "./$types";
     import TrackList from "$components/ui/TrackList.svelte";
     import { Heart } from "@lucide/svelte";
     import { formatDuration } from "$lib/utils";
+    import { store } from "$lib/stores.svelte";
 
-    let { data }: PageProps = $props();
-    let tracks = $derived(data.tracks);
+    let tracks = $derived(store.favoriteTracks);
 
     let totalDuration = $derived(
         tracks.reduce((sum, track) => sum + track.duration_seconds, 0),

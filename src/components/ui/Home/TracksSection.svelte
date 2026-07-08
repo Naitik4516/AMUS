@@ -17,22 +17,28 @@
         title,
         loadFunction,
         args,
-    }: { title: string; loadFunction: loadFunction; args?: InvokeArgs } =
-        $props();
+        tracks: tracksProp,
+    }: {
+        title: string;
+        loadFunction?: loadFunction;
+        args?: InvokeArgs;
+        tracks?: Track[];
+    } = $props();
 
     let tracks = $state([] as Track[]);
 
     onMount(() => {
-        invoke<Track[]>(loadFunction, {
-            limit: 10,
-            ...args,
-        })
-            .then((data) => {
-                tracks = data;
-            })
-            .catch((error) => {
-                console.error("Error loading tracks:", error);
-            });
+        if (tracksProp) {
+            tracks = tracksProp;
+        } else if (loadFunction) {
+            invoke<Track[]>(loadFunction, { limit: 10, ...args } as InvokeArgs)
+                .then((data) => {
+                    tracks = data;
+                })
+                .catch((error) => {
+                    console.error("Error loading tracks:", error);
+                });
+        }
     });
 </script>
 

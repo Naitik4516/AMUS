@@ -1,15 +1,12 @@
 <script lang="ts">
-    import { invoke } from "@tauri-apps/api/core";
     import PlaylistCard from "$components/ui/Card/PlaylistCard.svelte";
     import { Plus } from "@lucide/svelte";
-    import type { PageProps } from "./$types";
     import { fly, blur } from "svelte/transition";
-    import { invalidateAll } from "$app/navigation";
     import { Button } from "$components/ui/button/index.js";
     import { Input } from "$components/ui/input/index.js";
+    import { store } from "$lib/stores.svelte";
 
-    let { data }: PageProps = $props();
-    let playlists = $derived(data.playlists);
+    let playlists = $derived(store.playlists);
 
     let showCreateModal = $state(false);
     let newPlaylistName = $state("");
@@ -17,10 +14,9 @@
     async function createPlaylist() {
         if (!newPlaylistName.trim()) return;
         try {
-            await invoke("create_playlist", { name: newPlaylistName });
+            await store.createPlaylist(newPlaylistName);
             newPlaylistName = "";
             showCreateModal = false;
-            await invalidateAll();
         } catch (e) {
             console.error("Failed to create playlist", e);
         }

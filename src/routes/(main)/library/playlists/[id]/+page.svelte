@@ -3,6 +3,7 @@
     import type { Track } from "$lib/types";
     import type { PageProps } from "./$types";
     import TrackList from "$components/ui/TrackList.svelte";
+    import { store } from "$lib/stores.svelte";
 
     let { data }: PageProps = $props();
     let tracks = $derived((data.data as Track[]) || []);

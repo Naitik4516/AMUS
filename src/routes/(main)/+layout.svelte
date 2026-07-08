@@ -12,6 +12,7 @@
     import { getCurrentWindow, PhysicalSize } from "@tauri-apps/api/window";
     import { onMount } from "svelte";
     import { settings, flags, initSettings } from "$lib/settings.svelte";
+    import { store } from "$lib/stores.svelte";
     import { updater } from "$lib/update.svelte";
     import { toast } from "svelte-sonner";
     import LocomotiveScroll from "locomotive-scroll";
@@ -128,6 +129,7 @@
 
     onMount(() => {
         initSettings();
+        store.init();
 
         if (settings.autoCheckUpdates) {
             updater
@@ -246,6 +248,11 @@
         role="presentation"
         class="fixed top-0 right-0 bottom-0 w-1.5 cursor-e-resize z-999"
         onmousedown={(e) => startResize("right", e)}
+    ></div>
+    <div
+        role="presentation"
+        class="fixed top-0 left-0 bottom-0 w-1.5 cursor-e-resize z-999"
+        onmousedown={(e) => startResize("left", e)}
     ></div>
     <div
         role="presentation"

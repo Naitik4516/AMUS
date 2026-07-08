@@ -1,20 +1,20 @@
 <script lang="ts">
-    import type { Track } from "$lib/types.d.ts";
-    import type { PageProps } from "./$types";
+    import { page } from "$app/state";
     import TrackList from "$components/ui/TrackList.svelte";
     import { formatDuration } from "$lib/utils";
     import { Disc } from "@lucide/svelte";
     import { getSwatchesSync, type HSL, type Color } from "colorthief";
     import type { Attachment } from "svelte/attachments";
     import Artist from "$components/icons/Artist.svelte";
-    import { getImageUrl } from "$lib/utils";
+    import { store } from "$lib/stores.svelte";
 
-    let { data }: PageProps = $props();
-    let tracks = $derived((data.data as Track[]) || []);
-    let name = $derived(data.name || "Album");
-    let coverArtFilename = $derived(data.coverArtFilename ?? null);
-    let albumArtist = $derived(data.albumInfo?.album_artist || []);
-    let coverArt = $derived(data?.cover_art || null);
+    let albumId = $derived(Number(page.params.id));
+    let tracks = $derived(store.tracksByAlbum(albumId));
+    let album = $derived(store.albumsById.get(albumId));
+    let name = $derived(album?.name ?? "Album");
+    let coverArt = $derived(album ? store.getAlbumCoverUrl(album) : null);
+    let coverArtFilename = $derived(album?.cover_art ?? null);
+    let albumArtist = $derived(album?.album_artist || []);
 
     let dominantColor = $state<Color>();
     let color1 = $state<Color>();
@@ -29,18 +29,15 @@
         targetLightness: number = 15,
     ): string {
         const darkenedL = Math.min(hsl.l, targetLightness);
-
         const darkColor = `hsl(${hsl.h}, ${hsl.s}%, ${darkenedL}%)`;
         const baseColor = `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)`;
-
         return `linear-gradient(to bottom, ${baseColor}, ${darkColor} 80%, transparent)`;
     }
 
     const CoverImage: Attachment = (e) => {
         e.addEventListener("load", () => {
             try {
-                const swatches = getSwatchesSync(e);
-                console.log("Extracted swatches:", swatches);
+                const swatches = getSwatchesSync(e as unknown as HTMLVideoElement);
                 dominantColor = swatches.Vibrant
                     ? swatches.Vibrant.color
                     : swatches.Muted?.color;
@@ -83,10 +80,7 @@
                     <div class="flex gap-1 items-center font-medium">
                         {#if artist.profile_image}
                             <img
-                                src={await getImageUrl(
-                                    artist.profile_image,
-                                    "artist",
-                                )}
+                                src={store.getArtistProfileUrl(artist) ?? ""}
                                 alt={artist.name}
                                 class="w-6 h-6 rounded-full object-cover"
                             />
@@ -112,7 +106,7 @@
             <TrackList
                 context={{
                     type: "Album",
-                    id: Number(data.albumInfo?.id ?? 0),
+                    id: albumId,
                     name,
                     coverArt: coverArtFilename,
                 }}

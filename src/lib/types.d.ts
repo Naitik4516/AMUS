@@ -17,6 +17,7 @@ export interface Playlist {
   coverArts: string[];
   id: number;
   name: string;
+  coverArt?: string;
 }
 
 export interface Track {
