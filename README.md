@@ -24,12 +24,12 @@ AMUS is a fast, privacy-focused local music player built for users who own their
 - **Playback history & stats** — play counts, listening time trends, streaks, library growth, format distribution, hourly/weekday heatmaps, favorite trends
 - **Playlists** — create, rename, delete; add/remove tracks; auto-generated cover art
 - **Favorites** — one-click toggle per track
-- **Artist images** — automatic profile + banner fetching from Bing / DuckDuckGo
-- **System tray** — play/pause, previous/next, show/hide, quit\
-- **Auto-updater** — GitHub releases with passive install on Windows
-- **Smooth scrolling** — locomotive-scroll (toggleable in settings)
-- **Background playback** — keeps alive in system tray on window close
+- **Artist metadata** — automatic profile + banner fetching from Bing / DuckDuckGo
 - **Mini player** — compact window with album art, track info, and controls
+- **System tray** 
+- **Auto-updater**
+- **Background playback** 
+
 
 ## Installation
 <p align="center">
