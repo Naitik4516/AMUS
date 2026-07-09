@@ -8,15 +8,12 @@
     import { Toaster } from "$components/ui/sonner/index.js";
     import type { LayoutProps } from "./$types";
     import { player } from "$lib/player.svelte";
-    import { afterNavigate } from "$app/navigation";
     import { getCurrentWindow, PhysicalSize } from "@tauri-apps/api/window";
     import { onMount } from "svelte";
     import { settings, flags, initSettings } from "$lib/settings.svelte";
     import { store } from "$lib/stores.svelte";
     import { updater } from "$lib/update.svelte";
     import { toast } from "svelte-sonner";
-    import LocomotiveScroll from "locomotive-scroll";
-    import "locomotive-scroll/locomotive-scroll.css";
     import { listen } from "@tauri-apps/api/event";
     import {
         initShortcuts,
@@ -28,48 +25,7 @@
 
     let { children }: LayoutProps = $props();
 
-    let scrollContainer: HTMLDivElement | undefined = $state();
-    let scrollContent: HTMLDivElement | undefined = $state();
-    let scrollInstance: LocomotiveScroll | undefined;
-
     let isMaximized = $state(false);
-
-    $effect(() => {
-        if (!flags.ready) return;
-        document.documentElement.classList.toggle(
-            "smooth-scroll",
-            settings.useLocomotiveScroll,
-        );
-    });
-
-    function initScroll() {
-        scrollInstance?.destroy();
-        scrollInstance = new LocomotiveScroll({
-            lenisOptions: {
-                wrapper: scrollContainer,
-                content: scrollContent,
-                duration: 1.2,
-                smoothWheel: true,
-                orientation: "vertical",
-                gestureOrientation: "vertical",
-            },
-            autoStart: true,
-        });
-    }
-
-    function destroyScroll() {
-        scrollInstance?.destroy();
-        scrollInstance = undefined;
-    }
-
-    $effect(() => {
-        if (!flags.ready) return;
-        if (settings.useLocomotiveScroll && scrollContainer && scrollContent) {
-            initScroll();
-        } else {
-            destroyScroll();
-        }
-    });
 
     $effect(() => {
         let active = true;
@@ -159,15 +115,6 @@
         }
     });
 
-    afterNavigate(() => {
-        if (!scrollContainer || !scrollContent) return;
-        if (settings.useLocomotiveScroll) {
-            initScroll();
-        } else {
-            scrollContainer.scrollTop = 0;
-        }
-    });
-
     const MIN_W = 700;
     const MIN_H = 700;
 
@@ -222,43 +169,36 @@
         }}
     />
 
-    <div
-        bind:this={scrollContainer}
-        class="w-screen flex-1 min-h-0 {flags.ready &&
-        settings.useLocomotiveScroll
-            ? 'overflow-hidden'
-            : 'overflow-y-auto'}"
-    >
-        <div
-            bind:this={scrollContent}
-            class="pt-8 pl-30 {player.currentTrack ? 'pb-32' : ''}"
-        >
+    <div class="w-screen flex-1 min-h-0">
+        <div class="pt-8 pl-30 {player.currentTrack ? 'pb-32' : ''}">
             <div>
                 {@render children()}
             </div>
         </div>
     </div>
 
-    <div
-        role="presentation"
-        class="fixed bottom-0 left-0 right-0 h-1.5 cursor-s-resize z-999"
-        onmousedown={(e) => startResize("bottom", e)}
-    ></div>
-    <div
-        role="presentation"
-        class="fixed top-0 right-0 bottom-0 w-1.5 cursor-e-resize z-999"
-        onmousedown={(e) => startResize("right", e)}
-    ></div>
-    <div
-        role="presentation"
-        class="fixed top-0 left-0 bottom-0 w-1.5 cursor-e-resize z-999"
-        onmousedown={(e) => startResize("left", e)}
-    ></div>
-    <div
-        role="presentation"
-        class="fixed bottom-0 right-0 w-4 h-4 cursor-se-resize z-999"
-        onmousedown={(e) => startResize("bottom-right", e)}
-    ></div>
+    {#if !isMaximized}
+        <div
+            role="presentation"
+            class="fixed bottom-0 left-0 right-0 h-1.5 cursor-s-resize z-999"
+            onmousedown={(e) => startResize("bottom", e)}
+        ></div>
+        <div
+            role="presentation"
+            class="fixed top-0 right-0 bottom-0 w-1.5 cursor-e-resize z-999"
+            onmousedown={(e) => startResize("right", e)}
+        ></div>
+        <div
+            role="presentation"
+            class="fixed top-0 left-0 bottom-0 w-1.5 cursor-e-resize z-999"
+            onmousedown={(e) => startResize("left", e)}
+        ></div>
+        <div
+            role="presentation"
+            class="fixed bottom-0 right-0 w-4 h-4 cursor-se-resize z-999"
+            onmousedown={(e) => startResize("bottom-right", e)}
+        ></div>
+    {/if}
 </div>
 {#if player.currentTrack}
     <Player />
