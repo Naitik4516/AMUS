@@ -18,7 +18,7 @@
 </script>
 
 <div class="p-8 w-full flex flex-col h-full">
-    <div class="flex items-center justify-between mb-8">
+    <div class="flex items-center justify-between mb-8 ">
         <h1 class="text-6xl font-black text-white">{title}</h1>
 
         <div
@@ -52,7 +52,7 @@
         </div>
     {:else}
         <div
-            class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6  container overflow-scroll"
+            class="grid auto-cols-auto container grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-6 overflow-y-auto h-full"
         >
             {#each filteredItems as item}
                 <Card data={item} />

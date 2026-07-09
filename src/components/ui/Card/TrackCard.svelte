@@ -6,6 +6,7 @@
     import { fade, fly } from "svelte/transition";
     import { bounceInOut } from "svelte/easing";
     import { Music2 } from "@lucide/svelte";
+    import { store } from "$lib/stores.svelte";
 
     let { data }: { data: Track } = $props();
 
@@ -20,7 +21,7 @@
 >
     {#if data.cover_art}
         <img
-            src={await getImageUrl(data.cover_art)}
+            src={store.getTrackCoverUrl(data) ?? await getImageUrl(data.cover_art)}
             alt={data.title}
             class="w-full h-full object-cover"
         />

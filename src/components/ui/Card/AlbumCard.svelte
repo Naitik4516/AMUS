@@ -1,6 +1,6 @@
 <script lang="ts">
     import { Play } from "@lucide/svelte";
-    import { getImageUrl } from "$lib/utils";
+    import { store } from "$lib/stores.svelte";
     import type { Album } from "$lib/types";
 
     let { data }: { data: Album } = $props();
@@ -8,23 +8,17 @@
 
 <a
     href="/library/albums/{data.id}?album.name={data.name}"
-    class="group flex flex-col gap-3 p-4 rounded-2xl hover:bg-secondary transition-all duration-300 border border-transparent hover:border-neutral-700 w-auto h-auto max-h-72 shadow-xl"
+    class="group flex flex-col gap-3 p-4 rounded-2xl hover:bg-secondary transition-all duration-300 border border-transparent hover:border-neutral-700 h-auto min-w-64 w-64 shadow-xl"
 >
     <div
         class="aspect-square w-full rounded-3xl overflow-hidden bg-card border-border shadow-lg relative"
     >
         {#if data.cover_art}
-            {#await getImageUrl(data.cover_art)}
-                <div
-                    class="absolute inset-0 bg-card animate-pulse"
-                ></div>
-            {:then url}
-                <img
-                    src={url}
-                    alt={data.name}
-                    class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-            {/await}
+            <img
+                src={store.getAlbumCoverUrl(data)}
+                alt={data.name}
+                class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            />
         {:else}
             <div class="absolute inset-0 flex items-center justify-center p-5">
                 <img src="/PhonographRecord.png" alt="Album Icon" />
@@ -37,13 +31,18 @@
             <div
                 class="bg-accent text-black p-4 rounded-full shadow-xl transform translate-y-4 group-hover:translate-y-0 transition-transform"
             >
-                <Play size={28} fill="black"  />
+                <Play size={28} fill="black" />
             </div>
         </div>
     </div>
 
     <div class="flex flex-col">
-        <h3 class="font-bold truncate text-white">{data.name}</h3>
-        <p class="text-sm text-gray-400">Album</p>
+        <h3 class="font-semibold truncate text-white">{data.name}</h3>
+        <div class="flex text-sm text-gray-300 gap-2 font-mono mt-1 px-0.5">
+            <p>Album</p>
+            {#if data.year}
+                <p>•{data.year}</p>
+            {/if}
+        </div>
     </div>
 </a>
