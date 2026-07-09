@@ -26,9 +26,5 @@
 </script>
 
 {#if artists.length > 0}
-    <HorizontalScroll {title}>
-        {#each artists as artist (artist.id)}
-            <ArtistCard data={artist} />
-        {/each}
-    </HorizontalScroll>
+    <HorizontalScroll {title} data={artists} Card={ArtistCard} />
 {/if}

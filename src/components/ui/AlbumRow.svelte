@@ -6,8 +6,4 @@
     let { title, albums }: { title: string; albums: Album[] } = $props();
 </script>
 
-<HorizontalScroll {title}>
-    {#each albums as album}
-        <AlbumCard data={album} />
-    {/each}
-</HorizontalScroll>
+<HorizontalScroll {title} data={albums} Card={AlbumCard} />

@@ -43,9 +43,5 @@
 </script>
 
 {#if tracks.length > 0}
-    <HorizontalScroll {title}>
-        {#each tracks as track (track.id)}
-            <TrackCard data={track} />
-        {/each}
-    </HorizontalScroll>
+    <HorizontalScroll {title} data={tracks} Card={TrackCard} />
 {/if}

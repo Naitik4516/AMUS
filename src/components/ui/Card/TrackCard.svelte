@@ -14,7 +14,7 @@
 </script>
 
 <div
-    class="relative overflow-hidden rounded-4xl bg-secondary shadow-lg hover:shadow-xl transition-shadow duration-300 h-auto min-w-60 w-60"
+    class="relative overflow-hidden rounded-4xl bg-secondary  shadow-lg hover:shadow-xl transition-shadow duration-300 h-auto min-w-60 w-60"
     onmouseenter={() => (hovering = true)}
     onmouseleave={() => (hovering = false)}
     role="feed"
@@ -23,7 +23,7 @@
         <img
             src={store.getTrackCoverUrl(data) ?? await getImageUrl(data.cover_art)}
             alt={data.title}
-            class="w-full h-full object-cover"
+            class="w-full h-full object-cover {hovering ? 'scale-105' : ''} transition-transform"
         />
         <div
             class="absolute bottom-0 inset-x-0 bg-linear-to-t/hsl from-gray-950/80 from-50% to-gray-950/5 p-2 bg-blend-color"
