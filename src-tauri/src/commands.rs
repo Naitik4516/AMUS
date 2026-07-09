@@ -249,6 +249,11 @@ pub fn play_pause(handle: State<PlayerHandle>) -> Result<()> {
 }
 
 #[tauri::command]
+pub fn stop(handle: State<PlayerHandle>) -> Result<()> {
+    send(&handle, PlayerCommand::Stop)
+}
+
+#[tauri::command]
 pub fn next(handle: State<PlayerHandle>) -> Result<()> {
     send(&handle, PlayerCommand::Next)
 }

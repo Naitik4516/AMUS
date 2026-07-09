@@ -244,6 +244,10 @@ class PlayerStore {
     await invoke("play_pause");
   }
 
+  async stop() {
+    await invoke("stop");
+  }
+
   async next() {
     await invoke("next");
   }

@@ -38,6 +38,7 @@ pub enum PlayerCommand {
         queue_id: i64,
         new_index: usize,
     },
+    Stop,
     SetAutoplay(bool),
     GetState(oneshot::Sender<PlayerStateSnapshot>),
     Shutdown,
@@ -141,6 +142,7 @@ impl PlayerActor {
                     self.load_current_into_engine(true);
                 }
                 PlayerCommand::PlayPause => self.toggle_play_pause(),
+                PlayerCommand::Stop => self.stop_playback(),
                 PlayerCommand::Next => self.handle_next(),
                 PlayerCommand::Previous => self.handle_previous(),
                 PlayerCommand::Seek(pos) => self.handle_seek(pos),
