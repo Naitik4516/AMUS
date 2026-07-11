@@ -2,7 +2,6 @@
     import DropdownMenu from "./Menu/DropdownMenu.svelte";
     import TrackMenu from "./Menu/TrackMenu.svelte";
     import type { Track } from "$lib/types";
-    import { getImageUrl } from "$lib/utils";
     import {
         Heart,
         Play,
@@ -20,11 +19,13 @@
     import EditPlaylistDialog from "./Dialog/EditPlaylistDialog.svelte";
     import EditAlbumDialog from "./Dialog/EditAlbumDialog.svelte";
     import EditArtistDialog from "./Dialog/EditArtistDialog.svelte";
-    import type { Context } from "$lib/types";
+    import type { Context, MenuPosition } from "$lib/types";
     import PlayingVisualizer from "./PlayingVisualizer.svelte";
     import { toast } from "svelte-sonner";
     import { invoke } from "@tauri-apps/api/core";
     import { invalidate } from "$app/navigation";
+    import { store } from "$lib/stores.svelte";
+    import { VList } from "virtua/svelte";
 
     type ColumnKey = (typeof COLUMN_ORDER)[number];
 
@@ -82,7 +83,7 @@
             label: "Title",
             settingsLabel: "Title",
             width: 300,
-            minWidth: 160,
+            minWidth: 100,
             maxWidth: 640,
             sortable: true,
             locked: false,
@@ -92,7 +93,7 @@
             label: "Album",
             settingsLabel: "Album",
             width: 300,
-            minWidth: 120,
+            minWidth: 80,
             maxWidth: 420,
             sortable: true,
             locked: false,
@@ -151,10 +152,11 @@
     let settingsOpen = $state(false);
     let settingsBtn = $state<HTMLButtonElement | null>(null);
     let settingsPanel = $state<HTMLDivElement | null>(null);
-    let actionMenuOpen = $state(false);
     let showEditDialog = $state(false);
-    let openRowMenuId = $state<number | null>(null);
-    let rowMenuButtons = $state<Record<number, HTMLButtonElement>>({});
+
+    let actionMenuOpen = $state<MenuPosition | null>(null);
+    let rowMenuOpen = $state<[MenuPosition, Track] | null>(null);
+    // let rowMenuButtons = $state<Record<number, HTMLButtonElement>>({});
 
     function compareTracks(a: Track, b: Track, key: ColumnKey) {
         if (key === "title") return a.title.localeCompare(b.title);
@@ -177,7 +179,9 @@
             });
             return sorted;
         }
-        if (!sortKey) return tracks;
+        if (!sortKey) {
+            return [...tracks].sort((a, b) => a.id - b.id);
+        }
         const key = sortKey;
         const sorted = [...tracks].sort((a, b) => compareTracks(a, b, key));
         return sortDir === "desc" ? sorted.reverse() : sorted;
@@ -374,137 +378,139 @@
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
 </script>
 
-<div class="w-full rounded-b-2xl px-2 pb-4 h-full">
+<div class="w-full px-2 pb-4">
     <!-- ============================== ACTION BAR ============================== -->
-    <div>
-        <div class="pointer-events-none absolute inset-0"></div>
-        <div class="relative flex items-center gap-5 px-3 py-4 sm:px-4">
+    <div class="relative flex items-center gap-5 px-3 py-4 sm:px-4">
+        <button
+            type="button"
+            class="flex h-16 w-16 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-lg shadow-accent/20 transition-all hover:scale-105 hover:bg-accent/80 active:scale-95 {focusRing}"
+            onclick={handleMainPlay}
+            aria-label={isCurrentCollectionPlaying ? "Pause" : "Play"}
+        >
+            {#if isCurrentCollectionPlaying}
+                <Pause size={24} fill="var(--color-accent-foreground)" />
+            {:else}
+                <Play size={24} fill="var(--color-accent-foreground)" />
+            {/if}
+        </button>
+
+        <button
+            type="button"
+            class="flex h-14 w-14 items-center justify-center rounded-full transition-colors hover:text-white {focusRing} {player.shuffleEnabled
+                ? 'text-accent'
+                : ''}"
+            onclick={player.toggleShuffle}
+            aria-label="Shuffle play"
+        >
+            <Shuffle size={30} />
+        </button>
+
+        <button
+            type="button"
+            class="dropdown-trigger flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:text-white {focusRing}"
+            onclick={(e) =>
+                (actionMenuOpen = {
+                    type: "anchor",
+                    anchor: e.currentTarget as HTMLElement,
+                })}
+            aria-label="More options"
+            aria-haspopup="menu"
+        >
+            <Ellipsis size={22} />
+        </button>
+
+        {#if actionMenuOpen}
+            <DropdownMenu
+                position={actionMenuOpen}
+                items={actionMenuItems}
+                onClose={() => (actionMenuOpen = null)}
+            />
+        {/if}
+
+        <div class="flex-1"></div>
+
+        <div class="relative">
             <button
+                bind:this={settingsBtn}
                 type="button"
-                class="flex h-16 w-16 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-lg shadow-accent/20 transition-all hover:scale-105 hover:bg-accent/80 active:scale-95 {focusRing}"
-                onclick={handleMainPlay}
-                aria-label={isCurrentCollectionPlaying ? "Pause" : "Play"}
+                class="flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors hover:bg-white/5 hover:text-white {focusRing}"
+                onclick={() => (settingsOpen = !settingsOpen)}
+                aria-label="Table view settings"
+                aria-haspopup="true"
+                aria-expanded={settingsOpen}
             >
-                {#if isCurrentCollectionPlaying}
-                    <Pause size={24} fill="var(--color-accent-foreground)" />
-                {:else}
-                    <Play size={24} fill="var(--color-accent-foreground)" />
-                {/if}
+                <SlidersHorizontal size={15} />
+                <span class="hidden sm:inline">View</span>
             </button>
 
-            <button
-                type="button"
-                class="flex h-14 w-14 items-center justify-center rounded-full transition-colors hover:text-white {focusRing} {player.shuffleEnabled
-                    ? 'text-accent'
-                    : ''}"
-                onclick={player.toggleShuffle}
-                aria-label="Shuffle play"
-            >
-                <Shuffle size={30} />
-            </button>
-
-            <div class="relative">
-                <button
-                    type="button"
-                    class="dropdown-trigger flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:text-white {focusRing}"
-                    onclick={() => (actionMenuOpen = !actionMenuOpen)}
-                    aria-label="More options"
-                    aria-haspopup="menu"
-                    aria-expanded={actionMenuOpen}
-                >
-                    <Ellipsis size={22} />
-                </button>
-
-                {#if actionMenuOpen}
-                    <DropdownMenu
-                        items={actionMenuItems}
-                        onClose={() => (actionMenuOpen = false)}
-                    />
-                {/if}
-            </div>
-
-            <div class="flex-1"></div>
-
-            <div class="relative">
-                <button
-                    bind:this={settingsBtn}
-                    type="button"
-                    class="flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium transition-colors hover:bg-white/5 hover:text-white {focusRing}"
-                    onclick={() => (settingsOpen = !settingsOpen)}
+            {#if settingsOpen}
+                <div
+                    bind:this={settingsPanel}
+                    class="absolute right-0 top-full z-20 mt-2 w-60 rounded-2xl border border-white/10 bg-card/50 p-3 shadow-lg backdrop-blur-md"
+                    role="dialog"
                     aria-label="Table view settings"
-                    aria-haspopup="true"
-                    aria-expanded={settingsOpen}
                 >
-                    <SlidersHorizontal size={15} />
-                    <span class="hidden sm:inline">View</span>
-                </button>
-
-                {#if settingsOpen}
-                    <div
-                        bind:this={settingsPanel}
-                        class="absolute right-0 top-full z-50 mt-2 w-60 rounded-2xl border border-white/10 bg-card/50 p-3 shadow-lg backdrop-blur-md"
-                        role="dialog"
-                        aria-label="Table view settings"
+                    <p
+                        class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
                     >
+                        Density
+                    </p>
+                    <div class="mb-4 flex gap-1 rounded-lg bg-white/5 p-1">
+                        {#each ["compact", "relaxed"] as mode}
+                            <button
+                                type="button"
+                                class="flex-1 rounded-md py-1.5 text-[13px] capitalize transition-colors {density ===
+                                mode
+                                    ? 'bg-white text-zinc-900'
+                                    : 'text-zinc-300 hover:text-white'} {focusRing}"
+                                onclick={() =>
+                                    (density = mode as "relaxed" | "compact")}
+                            >
+                                {mode}
+                            </button>
+                        {/each}
+                    </div>
+
+                    {#if canToggleColumns}
                         <p
-                            class="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
+                            class="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
                         >
-                            Density
+                            Columns
                         </p>
-                        <div class="mb-4 flex gap-1 rounded-lg bg-white/5 p-1">
-                            {#each ["compact", "relaxed"] as mode}
-                                <button
-                                    type="button"
-                                    class="flex-1 rounded-md py-1.5 text-[13px] capitalize transition-colors {density ===
-                                    mode
-                                        ? 'bg-white text-zinc-900'
-                                        : 'text-zinc-300 hover:text-white'} {focusRing}"
-                                    onclick={() =>
-                                        (density = mode as
-                                            "relaxed" | "compact")}
-                                >
-                                    {mode}
-                                </button>
+                        <div class="flex flex-col">
+                            {#each COLUMN_ORDER as key (key)}
+                                {#if !COLUMN_META[key].locked}
+                                    <label
+                                        class="flex cursor-pointer items-center justify-between rounded-md px-1.5 py-1.5 text-[13px] text-zinc-200 hover:bg-white/5"
+                                    >
+                                        <span
+                                            >{COLUMN_META[key]
+                                                .settingsLabel}</span
+                                        >
+                                        <input
+                                            type="checkbox"
+                                            class="h-4 w-4 rounded accent-emerald-400 {focusRing}"
+                                            checked={columns[key].visible}
+                                            onchange={() =>
+                                                (columns[key].visible =
+                                                    !columns[key].visible)}
+                                        />
+                                    </label>
+                                {/if}
                             {/each}
                         </div>
-
-                        {#if canToggleColumns}
-                            <p
-                                class="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
-                            >
-                                Columns
-                            </p>
-                            <div class="flex flex-col">
-                                {#each COLUMN_ORDER as key (key)}
-                                    {#if !COLUMN_META[key].locked}
-                                        <label
-                                            class="flex cursor-pointer items-center justify-between rounded-md px-1.5 py-1.5 text-[13px] text-zinc-200 hover:bg-white/5"
-                                        >
-                                            <span
-                                                >{COLUMN_META[key]
-                                                    .settingsLabel}</span
-                                            >
-                                            <input
-                                                type="checkbox"
-                                                class="h-4 w-4 rounded accent-emerald-400 {focusRing}"
-                                                checked={columns[key].visible}
-                                                onchange={() =>
-                                                    (columns[key].visible =
-                                                        !columns[key].visible)}
-                                            />
-                                        </label>
-                                    {/if}
-                                {/each}
-                            </div>
-                        {/if}
-                    </div>
-                {/if}
-            </div>
+                    {/if}
+                </div>
+            {/if}
         </div>
     </div>
 
     <!-- ================================ TABLE ================================= -->
-    <div role="table" aria-label="Track list">
+    <div
+        class="mask-container overflow-x-scroll w-full"
+        role="table"
+        aria-label="Track list"
+    >
         <!-- header -->
         <div
             role="row"
@@ -573,193 +579,227 @@
         </div>
 
         <!-- rows -->
-        <div class="mt-1 flex flex-col gap-1">
-            {#each orderedTracks as track, i (track.id)}
-                {@const active = player.currentTrack?.id === track.id}
-                <div
-                    role="row"
-                    tabindex="0"
-                    class="group relative grid items-center rounded-lg px-2 transition-colors text-neutral-300 text-sm hover:bg-white/6 {density ===
-                    'compact'
-                        ? 'py-1.5'
-                        : 'py-3'}"
-                    style="grid-template-columns:{gridTemplate}"
-                    ondblclick={() => handleRowActivate(track, i)}
-                    onauxclick={(e) => {
-                        if (e.button === 1) {
-                            e.preventDefault();
-                            player.enqueueEnd(track);
-                        }
-                    }}
+        <div class="mt-1 w-full overflow-x-scroll">
+            {#if orderedTracks.length > 0}
+                <VList
+                    data={orderedTracks}
+                    style="height: {orderedTracks.length * 80}px;"
+                    getKey={(_, i) => i}
                 >
-                    {#each visibleColumnKeys as key (key)}
+                    {#snippet children(track, i)}
+                        {@const active = player.currentTrack?.id === track.id}
                         <div
-                            role="gridcell"
-                            class="flex min-w-0 items-center pr-3 {key ===
-                            'duration'
-                                ? 'justify-end'
-                                : key === 'index'
-                                  ? 'justify-center'
-                                  : 'justify-start'}"
+                            role="row"
+                            tabindex="0"
+                            class="group relative grid items-center rounded-lg px-2 transition-colors text-neutral-300 text-sm hover:bg-white/6 {density ===
+                            'compact'
+                                ? 'py-1.5'
+                                : 'py-3'}"
+                            style="grid-template-columns:{gridTemplate}"
+                            ondblclick={() => handleRowActivate(track, i)}
+                            onauxclick={(e) => {
+                                if (e.button === 1) {
+                                    e.preventDefault();
+                                    player.enqueueEnd(track);
+                                }
+                            }}
+                            oncontextmenu={(e) => {
+                                e.preventDefault();
+                                rowMenuOpen = [
+                                    {
+                                        type: "coordinates",
+                                        x: e.clientX,
+                                        y: e.clientY,
+                                    },
+                                    track,
+                                ];
+                            }}
                         >
-                            {#if key === "index"}
-                                <button
-                                    type="button"
-                                    class="relative flex h-8 w-8 items-center justify-center rounded {active
-                                        ? 'text-emerald-400'
-                                        : ''} {focusRing}"
-                                    onclick={() => handleRowActivate(track, i)}
-                                    aria-label={active && player.isPlaying
-                                        ? "Pause"
-                                        : "Play"}
+                            {#each visibleColumnKeys as key (key)}
+                                <div
+                                    role="gridcell"
+                                    class="flex min-w-0 items-center pr-3 {key ===
+                                    'duration'
+                                        ? 'justify-end'
+                                        : key === 'index'
+                                          ? 'justify-center'
+                                          : 'justify-start'}"
                                 >
-                                    {#if active && player.isPlaying}
-                                        <div
-                                            class="absolute inset-0 flex items-end justify-between px-1"
-                                        >
-                                            <PlayingVisualizer />
-                                        </div>
-                                    {:else}
-                                        <span class="group-hover:hidden"
-                                            >{i + 1}</span
-                                        >
-                                        <Play
-                                            size={13}
-                                            class="hidden text-white group-hover:block"
-                                        />
-                                    {/if}
-                                </button>
-                            {:else if key === "title"}
-                                <div class="flex min-w-0 items-center gap-3">
-                                    {#if density !== "compact"}
-                                        {#if track.cover_art}
-                                            {#await getImageUrl(track.cover_art) then url}
-                                                <img
-                                                    src={url}
-                                                    alt=""
-                                                    class="h-12 w-12 shrink-0 rounded-lg object-cover"
-                                                    loading="lazy"
-                                                />
-                                            {/await}
-                                        {:else}
-                                            <div
-                                                class="h-12 w-12 shrink-0 rounded-lg bg-zinc-800 flex items-center justify-center"
-                                            >
-                                                <Music2 size={20} />
-                                            </div>
-                                        {/if}
-                                    {/if}
-                                    <div class="min-w-0">
+                                    {#if key === "index"}
                                         <button
                                             type="button"
-                                            class="block max-w-full truncate rounded text-left text-base font-medium {active
-                                                ? 'text-accent'
-                                                : 'text-zinc-50'} hover:underline {focusRing}"
+                                            class="relative flex h-8 w-8 items-center justify-center rounded {active
+                                                ? 'text-emerald-400'
+                                                : ''} {focusRing}"
                                             onclick={() =>
                                                 handleRowActivate(track, i)}
+                                            aria-label={active &&
+                                            player.isPlaying
+                                                ? "Pause"
+                                                : "Play"}
                                         >
-                                            {track.title}
-                                        </button>
-                                        <div class="truncate text-stone-400">
-                                            {#each track.artists as artist, ai (artist.id)}
-                                                {#if ai > 0}
-                                                    <span>, </span>
-                                                {/if}
-                                                <a
-                                                    href="/library/artists/{artist.id}"
-                                                    class="rounded hover:text-white hover:underline {focusRing}"
-                                                    >{artist.name}</a
+                                            {#if active && player.isPlaying}
+                                                <div
+                                                    class="absolute inset-0 flex items-end justify-between px-1"
                                                 >
-                                            {/each}
+                                                    <PlayingVisualizer />
+                                                </div>
+                                            {:else}
+                                                <span class="group-hover:hidden"
+                                                    >{i + 1}</span
+                                                >
+                                                <Play
+                                                    size={13}
+                                                    class="hidden text-white group-hover:block"
+                                                />
+                                            {/if}
+                                        </button>
+                                    {:else if key === "title"}
+                                        <div
+                                            class="flex min-w-0 items-center gap-3"
+                                        >
+                                            {#if density !== "compact"}
+                                                {#if track.cover_art}
+                                                    <img
+                                                        src={store.getImageSrc(
+                                                            track.cover_art,
+                                                        )}
+                                                        alt=""
+                                                        class="h-12 w-12 shrink-0 rounded-lg object-cover"
+                                                        loading="lazy"
+                                                    />
+                                                {:else}
+                                                    <div
+                                                        class="h-12 w-12 shrink-0 rounded-lg bg-zinc-800 flex items-center justify-center"
+                                                    >
+                                                        <Music2 size={20} />
+                                                    </div>
+                                                {/if}
+                                            {/if}
+                                            <div class="min-w-0">
+                                                <button
+                                                    type="button"
+                                                    class="block max-w-full truncate rounded text-left text-base font-medium {active
+                                                        ? 'text-accent'
+                                                        : 'text-zinc-50'} hover:underline {focusRing}"
+                                                    onclick={() =>
+                                                        handleRowActivate(
+                                                            track,
+                                                            i,
+                                                        )}
+                                                >
+                                                    {track.title}
+                                                </button>
+                                                <div
+                                                    class="truncate text-stone-400"
+                                                >
+                                                    {#each track.artists as artist, ai (artist.id)}
+                                                        {#if ai > 0}
+                                                            <span>, </span>
+                                                        {/if}
+                                                        <a
+                                                            href="/library/artists/{artist.id}"
+                                                            class="rounded hover:text-white hover:underline {focusRing}"
+                                                            >{artist.name}</a
+                                                        >
+                                                    {/each}
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
+                                    {:else if key === "album"}
+                                        <a
+                                            href="/library/albums/{track.album
+                                                .id}"
+                                            class="truncate rounded hover:text-white hover:underline {focusRing}"
+                                        >
+                                            {track.album.name}
+                                        </a>
+                                    {:else if key === "dateAdded"}
+                                        <span class="truncate"
+                                            >{formatDateAdded(
+                                                track.added_at,
+                                            )}</span
+                                        >
+                                    {:else if key === "duration"}
+                                        <div class="flex items-center gap-3">
+                                            <button
+                                                type="button"
+                                                class="hidden group-hover:flex {track.is_favorite
+                                                    ? 'flex!'
+                                                    : ''} {track.is_favorite
+                                                    ? 'text-rose-600 fill-rose-600'
+                                                    : 'text-gray-300'}  hover:text-secondary transition-colors {focusRing}"
+                                                onclick={() =>
+                                                    toggleFavorite(track)}
+                                                aria-label={track.is_favorite
+                                                    ? "Remove from Liked Songs"
+                                                    : "Save to Liked Songs"}
+                                            >
+                                                <Heart
+                                                    size={16}
+                                                    class={track.is_favorite
+                                                        ? "text-rose-600 fill-rose-600"
+                                                        : "text-gray-300"}
+                                                />
+                                            </button>
+                                            <span class="text-sm"
+                                                >{formatDuration(
+                                                    track.duration_seconds,
+                                                )}</span
+                                            >
+                                        </div>
+                                    {/if}
                                 </div>
-                            {:else if key === "album"}
-                                <a
-                                    href="/library/albums/{track.album.id}"
-                                    class="truncate rounded hover:text-white hover:underline {focusRing}"
+                            {/each}
+
+                            <div
+                                role="gridcell"
+                                class="relative flex items-center justify-center"
+                            >
+                                <button
+                                    type="button"
+                                    class="flex h-8 w-8 items-center justify-center rounded-full opacity-0 transition-all hover:bg-white/10 hover:text-white group-hover:opacity-100 {focusRing}"
+                                    onclick={(e) => {
+                                        rowMenuOpen = [
+                                            {
+                                                type: "anchor",
+                                                anchor: e.currentTarget as HTMLElement,
+                                            },
+                                            track,
+                                        ];
+                                    }}
+                                    aria-label="More options for {track.title}"
+                                    aria-haspopup="menu"
+                                    aria-expanded={rowMenuOpen != null}
                                 >
-                                    {track.album.name}
-                                </a>
-                            {:else if key === "dateAdded"}
-                                <span class="truncate"
-                                    >{formatDateAdded(track.added_at)}</span
-                                >
-                            {:else if key === "duration"}
-                                <div class="flex items-center gap-3">
-                                    <button
-                                        type="button"
-                                        class="hidden group-hover:flex {track.is_favorite
-                                            ? 'flex!'
-                                            : ''} {track.is_favorite
-                                            ? 'text-rose-600 fill-rose-600'
-                                            : 'text-gray-300'}  hover:text-secondary transition-colors {focusRing}"
-                                        onclick={() => toggleFavorite(track)}
-                                        aria-label={track.is_favorite
-                                            ? "Remove from Liked Songs"
-                                            : "Save to Liked Songs"}
-                                    >
-                                        <Heart
-                                            size={16}
-                                            class={track.is_favorite
-                                                ? "text-rose-600 fill-rose-600"
-                                                : "text-gray-300"}
-                                        />
-                                    </button>
-                                    <span class="text-sm"
-                                        >{formatDuration(
-                                            track.duration_seconds,
-                                        )}</span
-                                    >
-                                </div>
-                            {/if}
+                                    <Ellipsis size={18} />
+                                </button>
+                            </div>
                         </div>
-                    {/each}
-
-                    <div
-                        role="gridcell"
-                        class="relative flex items-center justify-center"
-                    >
-                        <button
-                            bind:this={rowMenuButtons[track.id]}
-                            type="button"
-                            class="dropdown-trigger flex h-8 w-8 items-center justify-center rounded-full opacity-0 transition-all hover:bg-white/10 hover:text-white group-hover:opacity-100 {openRowMenuId ===
-                            track.id
-                                ? 'opacity-100'
-                                : ''} {focusRing}"
-                            onclick={() =>
-                                (openRowMenuId =
-                                    openRowMenuId === track.id
-                                        ? null
-                                        : track.id)}
-                            aria-label="More options for {track.title}"
-                            aria-haspopup="menu"
-                            aria-expanded={openRowMenuId === track.id}
-                        >
-                            <Ellipsis size={18} />
-                        </button>
-                        {#if openRowMenuId === track.id}
-                            <TrackMenu
-                                {track}
-                                {context}
-                                onClose={() => (openRowMenuId = null)}
-                            />
-                        {/if}
-                    </div>
-                </div>
-            {/each}
-
-            {#if orderedTracks.length === 0}
+                    {/snippet}
+                </VList>
+            {:else}
                 <div
-                    class="flex flex-col items-center gap-2 py-16 text-center text-zinc-500"
+                    class="flex flex-col items-center gap-4 py-16 text-center text-zinc-400"
                 >
-                    <Disc size={28} />
-                    <p class="text-sm">No tracks here yet.</p>
+                    <Disc size={50} />
+                    <p class="">No tracks here yet.</p>
                 </div>
             {/if}
         </div>
     </div>
 </div>
+
+{#if rowMenuOpen}
+    <TrackMenu
+        position={rowMenuOpen[0]}
+        track={rowMenuOpen[1]}
+        {context}
+        onClose={() => {
+            rowMenuOpen = null;
+        }}
+    />
+{/if}
 
 {#if showEditDialog && context.type === "Playlist"}
     <EditPlaylistDialog
@@ -791,28 +831,3 @@
         onClose={() => (showEditDialog = false)}
     />
 {/if}
-
-<style>
-    .eq-bar {
-        width: 3px;
-        height: 5px;
-        background: currentColor;
-        border-radius: 1px;
-        animation: eq-bounce 0.9s ease-in-out infinite;
-    }
-    @keyframes eq-bounce {
-        0%,
-        100% {
-            height: 4px;
-        }
-        50% {
-            height: 13px;
-        }
-    }
-    @media (prefers-reduced-motion: reduce) {
-        .eq-bar {
-            animation: none;
-            height: 9px;
-        }
-    }
-</style>

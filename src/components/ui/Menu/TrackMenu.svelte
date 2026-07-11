@@ -1,12 +1,12 @@
 <script lang="ts">
     import DropdownMenu from "./DropdownMenu.svelte";
     import { player } from "$lib/player.svelte";
-    import { invoke } from "@tauri-apps/api/core";
     import { toast } from "svelte-sonner";
-    import type { Track } from "$lib/types";
+    import type { Track, MenuPosition } from "$lib/types";
     import PlaylistMenu from "./PlaylistMenu.svelte";
     import ArtistsMenu from "./ArtistsMenu.svelte";
     import type { Context } from "$lib/types";
+    import { store } from "$lib/stores.svelte";
 
     const ALL_OPTIONS = [
         "addToQueue",
@@ -21,20 +21,14 @@
     type MenuOption = (typeof ALL_OPTIONS)[number];
 
     interface Props {
+        position: MenuPosition;
         track: Track;
         context: Context;
         exclude?: MenuOption[];
         onClose: () => void;
-        playlistId?: number | null;
     }
 
-    let {
-        track,
-        context,
-        exclude = [],
-        onClose,
-        playlistId = null,
-    }: Props = $props();
+    let { position, track, context, exclude = [], onClose }: Props = $props();
 
     function isExcluded(option: MenuOption): boolean {
         return exclude.includes(option);
@@ -42,6 +36,18 @@
 
     function buildItems() {
         const items: any[] = [];
+
+        if (!isExcluded("removeFromPlaylist") && context.type === "Playlist") {
+            items.push({
+                label: "Remove from this playlist",
+                icon: "circle-minus",
+                danger: true,
+                onClick: async () => {
+                    await store.removeTrackFromPlaylist(track.id, context.id);
+                    toast.success("Removed from playlist");
+                },
+            });
+        }
 
         if (!isExcluded("addToQueue")) {
             items.push({
@@ -64,7 +70,6 @@
                 },
             });
         }
-
         // Add to playlist submenu
         if (!isExcluded("addToPlaylist")) {
             items.push({
@@ -72,8 +77,11 @@
                 icon: "plus",
                 submenu: PlaylistMenu,
                 track: track,
+                context,
             });
         }
+
+        items.push({ type: "separator" });
 
         if (!isExcluded("viewDetails")) {
             items.push({
@@ -114,33 +122,8 @@
             });
         }
 
-        // Remove from playlist (only in playlist context)
-        if (
-            !isExcluded("removeFromPlaylist") &&
-            context.type === "Playlist" &&
-            playlistId
-        ) {
-            items.push({ type: "separator" });
-            items.push({
-                label: "Remove from this playlist",
-                icon: "x",
-                danger: true,
-                onClick: async () => {
-                    try {
-                        await invoke("remove_track_from_playlist", {
-                            trackId: track.id,
-                            playlistId,
-                        });
-                        toast.success("Removed from playlist");
-                    } catch (e) {
-                        toast.error("Failed to remove from playlist");
-                    }
-                },
-            });
-        }
-
         return items;
     }
 </script>
 
-<DropdownMenu items={buildItems()} placement="bottom-left" {onClose} />
+<DropdownMenu {position} items={buildItems()} {onClose} />

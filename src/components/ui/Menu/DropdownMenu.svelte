@@ -4,7 +4,7 @@
     import { cubicOut } from "svelte/easing";
     import type { Component } from "svelte";
     import { ArrowLeft } from "@lucide/svelte";
-    import type { Track } from "$lib/types";
+    import type { Track, MenuPosition, Context } from "$lib/types";
 
     interface MenuItem {
         label?: string;
@@ -17,21 +17,45 @@
         items?: MenuItem[];
         submenu?: Component;
         track?: Track;
+        context?: Context;
     }
 
     interface DropdownMenuProps {
         items: MenuItem[];
-        placement?: "bottom-left" | "bottom-right";
+        position: MenuPosition;
         onClose?: () => void;
     }
 
     let {
         items = [],
-        placement = "bottom-right",
+        position,
         onClose = () => {},
     }: DropdownMenuProps = $props();
 
     let subMenu = $state<MenuItem | null>(null);
+    let Menu: HTMLDivElement | undefined = $state();
+
+    let { x, y } = $derived.by(() => {
+        let x, y;
+        if (position.type === "coordinates") {
+            x = position.x;
+            y = position.y;
+        } else {
+            const rect = position.anchor.getBoundingClientRect();
+            x = rect.left;
+            y = rect.bottom;
+        }
+
+        const menuWidth = 300;
+        const menuHeight = Menu?.offsetHeight ?? 400;
+
+        return {
+            x: Math.min(x, window.innerWidth - menuWidth),
+            y: Math.min(y, window.innerHeight - menuHeight),
+        };
+        // return { x, y };
+    });
+
 
     const handleClick = (item: MenuItem) => {
         if (item.submenu) {
@@ -40,24 +64,16 @@
             item.onClick();
         }
     };
-
-    const style = $derived(
-        placement === "bottom-left"
-            ? "right-0 origin-top-right"
-            : "left-0 origin-top-left",
-    );
 </script>
 
 <svelte:document
     onmousedown={(e) => {
         const target = e.target as HTMLElement;
-        if (
-            !target.closest(".dropdown-menu") &&
-            !target.closest(".dropdown-trigger")
-        ) {
+        if (!target.closest(".dropdown-menu")) {
             onClose();
         }
     }}
+    onscroll={() => onClose()}
 />
 
 {#snippet MenuItem(item: MenuItem)}
@@ -112,8 +128,10 @@
 {/snippet}
 
 <div
-    class="dropdown-menu absolute z-50 min-w-55 max-w-75 rounded-2xl border border-white/10 bg-card/40 shadow-lg backdrop-blur-xl {style}"
+    class="dropdown-menu fixed z-50 min-w-55 max-w-75 rounded-2xl border border-white/10 bg-card/40 shadow-lg backdrop-blur-xl isolate"
     role="menu"
+    bind:this={Menu}
+    style="top: {y}px; left: {x}px;"
     transition:slide={{ duration: 200, easing: cubicOut }}
 >
     {#if subMenu}
@@ -124,7 +142,7 @@
                 </button>
             </div>
             <div class="p-2">
-                <subMenu.submenu track={subMenu.track} />
+                <subMenu.submenu track={subMenu.track} context={subMenu.context} />
             </div>
         </div>
     {:else}

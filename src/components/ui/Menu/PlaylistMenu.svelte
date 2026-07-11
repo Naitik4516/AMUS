@@ -1,59 +1,40 @@
 <script lang="ts">
-    import { getPlaylists } from "$lib/data.svelte";
     import { onMount } from "svelte";
-    import type { Playlist } from "$lib/types";
+    import type { Playlist, Track, Context } from "$lib/types";
     import { Input } from "../input";
     import Button from "../button/button.svelte";
-    import { getImageUrl } from "$lib/utils";
     import { Disc, Plus, CircleCheck, X } from "@lucide/svelte";
+    import { store } from "$lib/stores.svelte";
     import { toast } from "svelte-sonner";
-    import type { Track } from "$lib/types";
-    import { invoke } from "@tauri-apps/api/core";
 
-    let { track }: { track: Track } = $props();
+    let { track, context = null }: { track: Track; context?: Context | null } = $props();
 
     let playlists = $state<Playlist[]>([]);
-    let trackPlaylistIds = $state<Set<number>>(new Set());
     let searchQuery = $state("");
     let creating = $state(false);
     let newName = $state("");
 
     let filtered = $derived(
-        playlists.filter((p) =>
-            p.name.toLowerCase().includes(searchQuery.toLowerCase()),
-        ),
+        playlists.filter((p) => {
+            if (context?.type === "Playlist" && p.id === context.id) return false;
+            return p.name.toLowerCase().includes(searchQuery.toLowerCase());
+        }),
     );
 
-    onMount(() => loadPlaylists());
-
-    async function loadPlaylists() {
-        const result = await getPlaylists();
-        playlists = result.playlists;
-        const ids = await invoke<number[]>("get_track_playlist_ids", {
-            trackId: track.id,
-        });
-        trackPlaylistIds = new Set(ids);
-    }
+    onMount(() => {
+        playlists = store.playlists;
+    });
 
     async function togglePlaylist(plId: number) {
-        const wasIn = trackPlaylistIds.has(plId);
+        const wasIn = track.playlist_ids.includes(plId);
         try {
             if (wasIn) {
-                await invoke("remove_track_from_playlist", {
-                    trackId: track.id,
-                    playlistId: plId,
-                });
-                trackPlaylistIds.delete(plId);
+                await store.removeTrackFromPlaylist(track.id, plId);
                 toast.success("Removed from playlist");
             } else {
-                await invoke("add_track_to_playlist", {
-                    trackId: track.id,
-                    playlistId: plId,
-                });
-                trackPlaylistIds.add(plId);
+                await store.addTrackToPlaylist(track.id, plId);
                 toast.success("Added to playlist");
             }
-            trackPlaylistIds = new Set(trackPlaylistIds);
         } catch (e) {
             console.error("Failed to update playlist", e);
             toast.error(
@@ -68,8 +49,8 @@
         const name = newName.trim();
         if (!name) return;
         try {
-            const id = await invoke<number>("create_playlist", { name });
-            playlists = [...playlists, { id, name, coverArts: [] }];
+            await store.createPlaylist(name);
+            playlists = store.playlists;
             newName = "";
             creating = false;
             toast.success("Playlist created");
@@ -136,33 +117,29 @@
                                     <Disc size={28} class="text-neutral-700" />
                                 </div>
                             {:else if playlist.coverArts.length < 4}
-                                {#await getImageUrl(playlist.coverArts[0])}
-                                    <div
-                                        class="absolute inset-0 bg-neutral-800 animate-pulse"
-                                    ></div>
-                                {:then url}
+                                {#if store.getImageSrc(playlist.coverArts[0])}
                                     <img
-                                        src={url}
+                                        src={store.getImageSrc(playlist.coverArts[0])}
                                         alt={playlist.name}
                                         class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                     />
-                                {/await}
+                                {/if}
                             {:else}
                                 <div
                                     class="grid grid-cols-2 grid-rows-2 w-full h-full group-hover:scale-105 transition-transform duration-500"
                                 >
                                     {#each playlist.coverArts.slice(0, 4) as art}
-                                        {#await getImageUrl(art)}
-                                            <div
-                                                class="w-full h-full bg-neutral-800 animate-pulse"
-                                            ></div>
-                                        {:then url}
+                                        {#if store.getImageSrc(art)}
                                             <img
-                                                src={url}
+                                                src={store.getImageSrc(art)}
                                                 alt=""
                                                 class="w-full h-full object-cover"
                                             />
-                                        {/await}
+                                        {:else}
+                                            <div
+                                                class="w-full h-full bg-neutral-800 animate-pulse"
+                                            ></div>
+                                        {/if}
                                     {/each}
                                 </div>
                             {/if}
@@ -170,7 +147,7 @@
                         <div class="flex-1 truncate text-left">
                             {playlist.name}
                         </div>
-                        {#if trackPlaylistIds.has(playlist.id)}
+                        {#if track.playlist_ids.includes(playlist.id)}
                             <CircleCheck
                                 size={24}
                                 fill="var(--color-accent)"
