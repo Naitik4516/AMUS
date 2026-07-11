@@ -22,7 +22,7 @@
         "minWidth": 700,
         "shadow": false,
         "theme": "Dark",
-        "center": true        
+        "center": true
       }
     ],
     "security": {
@@ -49,64 +49,12 @@
     "category": "Music",
     "license": "MPL-2.0",
     "licenseFile": "LICENSE",
-    "fileAssociations": [
-      {
-            "ext": ["mp3"],
-            "name": "MP3 Audio",
-            "description": "MP3 Audio File",
-            "mimeType": "audio/mpeg",
-            "role": "Viewer"
-          },
-          {
-            "ext": ["flac"],
-            "name": "FLAC Audio",
-            "description": "FLAC Audio File",
-            "mimeType": "audio/flac",
-            "role": "Viewer"
-          },
-          {
-            "ext": ["wav"],
-            "name": "WAV Audio",
-            "description": "Wave Audio File",
-            "mimeType": "audio/wav",
-            "role": "Viewer"
-          },
-          {
-            "ext": ["ogg"],
-            "name": "OGG Audio",
-            "description": "OGG Audio File",
-            "mimeType": "audio/ogg",
-            "role": "Viewer"
-          },
-          {
-            "ext": ["m4a"],
-            "name": "M4A Audio",
-            "description": "M4A Audio File",
-            "mimeType": "audio/mp4",
-            "role": "Viewer"
-          },
-          {
-            "ext": ["aac"],
-            "name": "AAC Audio",
-            "description": "AAC Audio File",
-            "mimeType": "audio/aac",
-            "role": "Viewer"
-          },
-          {
-            "ext": ["opus"],
-            "name": "Opus Audio",
-            "description": "Opus Audio File",
-            "mimeType": "audio/opus",
-            "role": "Viewer"
-          }
-    ]
+    "fileAssociations": []
   },
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZERDk4QUY2QThCOEQzRkQKUldUOTA3aW85b3JaL2VOZnBEUnJnT05NM2ZCbG1pQzBrUEQ5K0ppaDlkaUFJNzFEdWtVU0NWSzgK",
-      "endpoints": [
-        "https://github.com/Naitik4516/AMUS/releases/latest/download/latest.json"
-      ],
+      "endpoints": ["https://github.com/Naitik4516/AMUS/releases/latest/download/latest.json"],
       "windows": {
         "installMode": "passive"
       }
