@@ -168,7 +168,7 @@ amus/
 
 - [ ] Automatic metadata tagging
 - [ ] Lyrics support
-- [ ] Advanced search
+- [x] Advanced search
 
 ### User Experience
 
