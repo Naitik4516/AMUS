@@ -38,7 +38,7 @@ AMUS is built for people who own their music library. It runs completely offline
 
 ### Search & navigation
 
-- **Fuzzy global search** — client-side Fuse.js search with extended patterns
+- **Fuzzy global search** — client-side [Fuse.js](https://www.fusejs.io/) with [extended search](https://www.fusejs.io/examples.html#extended-search) patterns
 - **Type filters** — `/tracks`, `/artists`, `/albums`, `/playlists` slash commands
 - **Context menus** — right-click tracks for play, queue, playlist, favorite, and more
 - **Keyboard shortcuts** — app-wide and optional global media shortcuts (customizable)
@@ -49,6 +49,28 @@ AMUS is built for people who own their music library. It runs completely offline
 - **System tray** — play/pause, previous/next, show/hide, quit
 - **Auto-updater** — updates from GitHub Releases (passive install on Windows)
 - **Modern UI** — custom title bar, themes, and a responsive library layout
+
+## Advanced search
+
+Open global search and type normally for fuzzy matching, or use these **extended patterns** to refine results (powered by Fuse.js extended search). You can combine them with type filters like `/tracks belver` or `/artists ^Tu`.
+
+| Token     | Match type                   | Description                                      |
+| --------- | ---------------------------- | ------------------------------------------------ |
+| `belver`  | fuzzy-match                  | Items that fuzzy match *belver* (e.g. “Believer”) |
+| `="Rebel"` | exact-match                 | Items that are exactly *Rebel*                   |
+| `'lofi`   | include-match                | Items that include *lofi*                        |
+| `!lofi`   | inverse-exact-match          | Items that do not include *lofi*                 |
+| `^Tu`     | prefix-exact-match           | Items that start with *Tu*                       |
+| `!^Tu`    | inverse-prefix-exact-match   | Items that do not start with *Tu*                |
+| `na$`     | suffix-exact-match           | Items that end with *na*                         |
+| `!na$`    | inverse-suffix-exact-match   | Items that do not end with *na*                  |
+
+**Tips**
+
+- Whitespace-separated terms are AND’d together (all must match).
+- Use `|` for OR (e.g. `'jazz | 'blues`).
+- Prefix a query with a slash command to limit type: `/albums ^The`, `/tracks !live$`.
+- Tab accepts the ghost suggestion when one is shown.
 
 ## Installation
 
