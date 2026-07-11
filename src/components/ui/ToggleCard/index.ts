@@ -1,7 +1,7 @@
 import Root from "../ToggleCard.svelte";
 
 export {
-    Root,
-    //
-    Root as ToggleCard,
+  Root,
+  //
+  Root as ToggleCard,
 };

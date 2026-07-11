@@ -1,13 +1,13 @@
 <script lang="ts">
     import { Music, Play } from "@lucide/svelte";
-    import { getImageUrl } from "$lib/utils";
+    import { store } from "$lib/stores.svelte";
 
     let { data } = $props();
 </script>
 
 <a
     href="/library/playlists/{data.id}?data.name={data.name}"
-    class="group flex flex-col gap-3 p-5 rounded-3xl bg-dark-alt bg-white/5 backdrop-blur-md transition-all duration-300 border-2 border-transparent hover:border-border/80 w-60 h-70 shadow-xl"
+    class="group flex flex-col gap-3 p-5 rounded-3xl bg-card/60 transition-all duration-300 border-2 border-transparent hover:border-border/80 w-60 h-70 shadow-xl"
 >
     <!-- Cover Art Grid -->
     <div
@@ -18,31 +18,29 @@
                 <Music size={48} class="text-gray-400" />
             </div>
         {:else if data.coverArts.length < 4}
-            {#await getImageUrl(data.coverArts[0])}
-                <div class="absolute inset-0 bg-gray-800 animate-pulse"></div>
-            {:then url}
+            {#if store.getImageSrc(data.coverArts[0])}
                 <img
-                    src={url}
+                    src={store.getImageSrc(data.coverArts[0])}
                     alt={data.name}
                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 />
-            {/await}
+            {/if}
         {:else}
             <div
                 class="grid grid-cols-2 grid-rows-2 w-full h-full group-hover:scale-105 transition-transform duration-500"
             >
                 {#each data.coverArts.slice(0, 4) as art}
-                    {#await getImageUrl(art)}
-                        <div
-                            class="w-full h-full bg-neutral-800 animate-pulse"
-                        ></div>
-                    {:then url}
+                    {#if store.getImageSrc(art)}
                         <img
-                            src={url}
+                            src={store.getImageSrc(art)}
                             alt=""
                             class="w-full h-full object-cover"
                         />
-                    {/await}
+                    {:else}
+                        <div
+                            class="w-full h-full bg-neutral-800 animate-pulse"
+                        ></div>
+                    {/if}
                 {/each}
             </div>
         {/if}

@@ -1,12 +1,31 @@
 <script lang="ts">
     import { goto } from "$app/navigation";
     import { player } from "$lib/player.svelte";
-    import type { SearchableItem } from "$lib/types";
     import { store } from "$lib/stores.svelte";
-    import { slide } from "svelte/transition";
-    import { cubicOut } from "svelte/easing";
-    import { Search, X, Music } from "@lucide/svelte";
+    import type { Album, Artist, Playlist, Track } from "$lib/types";
+    import { Music, Search, X } from "@lucide/svelte";
     import Fuse from "fuse.js";
+    import { cubicOut } from "svelte/easing";
+    import { slide } from "svelte/transition";
+    import { flip } from "svelte/animate";
+
+    type SearchableItem =
+        | (Track & { type: "track" })
+        | (Artist & { type: "artist" })
+        | (Album & { type: "album" })
+        | (Playlist & { type: "playlist" });
+
+    type FilterType = "track" | "artist" | "album" | "playlist" | null;
+
+    const SLASH_COMMANDS: {
+        cmd: string;
+        filter: FilterType;
+    }[] = [
+        { cmd: "/tracks", filter: "track" },
+        { cmd: "/artists", filter: "artist" },
+        { cmd: "/albums", filter: "album" },
+        { cmd: "/playlists", filter: "playlist" },
+    ];
 
     let searchQuery = $state("");
     let results = $state<SearchableItem[]>([]);
@@ -14,6 +33,8 @@
     let searchTimeout: any;
     let selectedIndex = $state(0);
     let resultsContainer: HTMLDivElement | undefined = $state();
+
+    let ghostSuggestion = $state("");
 
     let fuse: Fuse<SearchableItem>;
 
@@ -39,17 +60,15 @@
     $effect(() => {
         fuse = new Fuse(searchIndex, {
             keys: [
-                { name: "title", weight: 2 }, // Matches Track.title
-                { name: "name", weight: 2 }, // Matches Artist.name, Album.name, Playlist.name
-
-                { name: "artists.name", weight: 1 }, // Matches Track.artists[].name
-                { name: "album.name", weight: 1 }, // Matches Track.album.name
-                { name: "album_artist.name", weight: 1 }, // Matches Album.album_artist[].name
+                { name: "title", weight: 2 },
+                { name: "name", weight: 2 },
+                { name: "artists.name", weight: 0.8 },
+                { name: "album.name", weight: 0.8 },
+                { name: "album_artist.name", weight: 0.5 },
             ],
-            threshold: 0.2,
+            threshold: 0.3,
             useExtendedSearch: true,
         });
-        console.log("Fuse.js initialized with items:", fuse.getIndex().size());
     });
 
     $effect(() => {
@@ -60,16 +79,69 @@
         }
     });
 
+    function parseSlashCommand(raw: string): {
+        filter: FilterType;
+        query: string;
+    } {
+        if (!raw.startsWith("/")) return { filter: null, query: raw };
+
+        const parts = raw.split(/\s+/);
+        const token = parts[0].toLowerCase();
+        const match = SLASH_COMMANDS.find((c) => c.cmd === token);
+
+        if (match) {
+            const rest = parts.slice(1).join(" ");
+            return { filter: match.filter, query: rest };
+        }
+
+        return { filter: null, query: "" };
+    }
+
+    function resolveGhostSuggestion(raw: string): string {
+        if (!raw.startsWith("/")) return "";
+        if (raw.includes(" ")) return "";
+        const lower = raw.toLowerCase();
+        const match = SLASH_COMMANDS.find(
+            (c) => c.cmd.startsWith(lower) && c.cmd !== lower,
+        );
+        return match ? match.cmd.slice(raw.length) : "";
+    }
+
+    let displayParts = $derived.by(() => {
+        if (!searchQuery.startsWith("/")) return null;
+        const parts = searchQuery.split(/\s+/);
+        const token = parts[0].toLowerCase();
+        const match = SLASH_COMMANDS.find((c) => c.cmd === token);
+        if (!match) return null;
+        return {
+            command: parts[0],
+            rest: parts.slice(1).join(" "),
+        };
+    });
+
     function closeDropdown() {
         results = [];
         showResults = false;
         searchQuery = "";
+        ghostSuggestion = "";
     }
 
     function handleSearch() {
         if (searchTimeout) clearTimeout(searchTimeout);
 
-        const trimmed = searchQuery.trim();
+        ghostSuggestion = resolveGhostSuggestion(searchQuery);
+
+        const { filter, query } = parseSlashCommand(searchQuery);
+
+        const trimmed = query.trim();
+
+        if (searchQuery.startsWith("/") && !searchQuery.includes(" ")) {
+            results = [];
+            showResults = false;
+            selectedIndex = 0;
+            return;
+        }
+
         if (trimmed.length < 1) {
             results = [];
             showResults = false;
@@ -79,12 +151,24 @@
         selectedIndex = 0;
 
         searchTimeout = setTimeout(() => {
-            results = fuse.search(trimmed).map((r) => r.item);
+            let raw = fuse.search(trimmed).map((r) => r.item);
+            if (filter) {
+                raw = raw.filter((item) => item.type === filter);
+            }
+            results = raw;
             showResults = true;
         }, 300);
     }
 
     function handleKeyDown(e: KeyboardEvent) {
+        if (e.key === "Tab" && ghostSuggestion) {
+            e.preventDefault();
+            searchQuery = searchQuery + ghostSuggestion + " ";
+            ghostSuggestion = "";
+
+            return;
+        }
+
         if (!showResults || results.length === 0) {
             if (e.key === "Escape") closeDropdown();
             return;
@@ -134,25 +218,61 @@
     }
 </script>
 
-<div class="relative">
-    <div
-        class="flex items-center gap-2 bg-card/40 backdrop-blur-xl shadow-lg px-4 py-1 mt-5 h-full border-2 transition-colors duration-300 hover:bg-card/20 focus-within:bg-card/40 focus:within:shadow-card/60 {showResults
-            ? 'rounded-t-4xl border-b-0 '
-            : 'rounded-full'} "
-    >
-        <Search size={16} class="text-gray-400" />
-        <input
-            id="global-search-input"
-            type="text"
-            placeholder="What do you want to listen to?"
-            bind:value={searchQuery}
-            oninput={handleSearch}
-            onkeydown={handleKeyDown}
-            onfocus={() =>
-                searchQuery.trim().length >= 1 && (showResults = true)}
-            onblur={closeDropdown}
-            class="w-60 py-4 outline-none bg-transparent text-white placeholder-gray-400 text-sm focus:w-120 transition-all duration-300"
-        />
+<div
+    class="flex flex-col bg-linear-to-br from-white/10 to-white/3 backdrop-blur-2xl backdrop-brightness-80 backdrop-saturate-150 border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.25)] mt-auto w-80 focus-within:w-120 {showResults
+        ? 'rounded-4xl'
+        : 'rounded-full transition-all'} "
+>
+    <div class=" flex items-center gap-2 px-4 py-1">
+        <Search size={18} class="text-gray-300 shrink-0" />
+
+        <div class="relative flex-1 min-w-0 flex items-center">
+            <input
+                id="global-search-input"
+                type="text"
+                placeholder="What do you want to listen to?"
+                bind:value={searchQuery}
+                oninput={handleSearch}
+                onkeydown={handleKeyDown}
+                onfocus={() =>
+                    searchQuery.trim().length >= 1 && (showResults = true)}
+                onblur={closeDropdown}
+                class="w-full py-4 outline-none bg-transparent text-transparent caret-white placeholder-muted-foreground placeholder:drop-shadow-lg text-sm"
+                autocomplete="off"
+                spellcheck="false"
+            />
+
+            {#if searchQuery}
+                <span
+                    class="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-sm select-none whitespace-pre"
+                    aria-hidden="true"
+                >
+                    {#if displayParts}
+                        <span class="text-violet-400"
+                            >{displayParts.command}</span
+                        ><span class="text-white/80"
+                            >{displayParts.rest
+                                ? " " + displayParts.rest
+                                : ""}</span
+                        >
+                    {:else}
+                        <span class="text-white/80">{searchQuery}</span>
+                    {/if}
+                    {#if ghostSuggestion}
+                        <span class="text-gray-500">{ghostSuggestion}</span>
+                    {/if}
+                </span>
+            {/if}
+        </div>
+
+        {#if ghostSuggestion}
+            <span
+                class="shrink-0 text-[10px] text-gray-500 border border-gray-700 rounded px-1 py-0.5 font-mono select-none"
+            >
+                Tab
+            </span>
+        {/if}
+
         {#if searchQuery}
             <button onclick={() => (searchQuery = "")}>
                 <X size={14} class="text-gray-400 hover:text-white" />
@@ -162,26 +282,27 @@
 
     {#if showResults}
         <div
-            class="absolute top-full left-0 right-0 p-2 backdrop-blur-2xl border-2 border-t-0 rounded-b-4xl shadow-2xl overflow-hidden z-50 max-h-[60vh] h-auto overflow-y-auto bg-card/40 scrollbar-none"
+            class="overflow-hidden max-h-[60vh] h-auto overflow-y-auto p-2"
             bind:this={resultsContainer}
             onblur={() => (showResults = false)}
             role="listbox"
-            transition:slide={{ duration: 200, easing: cubicOut }}
+            in:slide
         >
             {#if results.length === 0}
                 <div class="px-4 py-3 text-sm text-gray-400 text-center">
                     No results found
                 </div>
             {:else}
-                {#each results as result, i}
+                {#each results.slice(0, 15) as result, i (result.type + "-" + result.id)}
                     <button
                         class="w-full flex items-center gap-4 px-2 py-2 mb-1 transition-colors group text-left rounded-xl {i ===
                         selectedIndex
                             ? 'bg-white/5 shadow-md'
                             : 'hover:bg-white/5'}"
-                        onclick={() => handleResultClick(result)}
+                        onmousedown={() => handleResultClick(result)}
                         role="option"
                         aria-selected={i === selectedIndex}
+                        animate:flip={{ duration: 200, easing: cubicOut }}
                     >
                         <div
                             class="w-10 h-10 relative {result.type === 'artist'

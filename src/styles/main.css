@@ -1,52 +1,52 @@
 *,
 *::before,
 *::after {
-    box-sizing: border-box;
-}
-
-html {
-    scroll-behavior: auto;
+  box-sizing: border-box;
 }
 
 body {
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    color: var(--color-foreground);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
-    scroll-behavior: smooth;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
 }
 
 button {
-    cursor: pointer;
+  cursor: pointer;
+}
+
+a:hover {
+  text-decoration-line: underline;
 }
 
 ::-webkit-scrollbar {
-    width: 3px;
+  width: 3px;
 }
 
 ::-webkit-scrollbar:hover {
-    width: 6px;
+  width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-    background: transparent;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--color-gray-700);
-    border-radius: 10px;
-    cursor: pointer;
+  background: var(--color-gray-700);
+  border-radius: 10px;
+  cursor: pointer;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--color-gray-500);
-    width: 6px;
-    cursor: pointer;
+  background: var(--color-gray-500);
+  width: 6px;
+  cursor: pointer;
 }
 
 ::-webkit-scrollbar-thumb:active {
-    background: var(--color-gray-400);
+  background: var(--color-gray-400);
 }

@@ -10,7 +10,7 @@
     import type { Artist } from "$lib/types";
 
     let artistId = $derived(Number(page.params.id));
-    let artist = $derived(store.artistsById.get(artistId) ?? {
+    let artist = $derived(store.artists.find(a => a.id === artistId) ?? {
         id: artistId,
         name: "Unknown Artist",
         profile_image: undefined,
@@ -23,8 +23,8 @@
         tracks.reduce((acc, track) => acc + track.duration_seconds, 0),
     );
 
-    let profileUrl = $derived(store.getArtistProfileUrl(artist));
-    let bgUrl = $derived(store.getArtistBannerUrl(artist) ?? store.getArtistProfileUrl(artist));
+    let profileUrl = $derived(store.getImageSrc(artist.profile_image, "artist"));
+    let bgUrl = $derived(store.getImageSrc(artist.banner_image, "banner"));
     let isBanner = $derived(!!artist.banner_image);
 
     onMount(async () => {

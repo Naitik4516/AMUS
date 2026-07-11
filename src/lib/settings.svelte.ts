@@ -3,7 +3,6 @@ import { load } from "@tauri-apps/plugin-store";
 type SettingsKey =
   | "realtimeSync"
   | "syncOnStartup"
-  | "useLocomotiveScroll"
   | "autoFetchArtistPic"
   | "autoFetchArtistBanner"
   | "keepRunningInBg"
@@ -12,7 +11,6 @@ type SettingsKey =
 const DEFAULTS: Record<SettingsKey, boolean> = {
   realtimeSync: true,
   syncOnStartup: true,
-  useLocomotiveScroll: true,
   autoFetchArtistPic: true,
   autoFetchArtistBanner: true,
   keepRunningInBg: true,
@@ -35,27 +33,19 @@ export async function initSettings(): Promise<void> {
       settings[key] = val as boolean;
     }
   }
-    flags.ready = true;
+  flags.ready = true;
 }
 
-export async function setSetting(
-  key: SettingsKey,
-  value: boolean,
-): Promise<void> {
+export async function setSetting(key: SettingsKey, value: boolean): Promise<void> {
   settings[key] = value;
-  const s =
-    store ?? (await load("settings.json", { autoSave: true, defaults: {} }));
+  const s = store ?? (await load("settings.json", { autoSave: true, defaults: {} }));
   if (!store) store = s;
   await s.set(key, value);
   await s.save();
 }
 
-export async function getSetting(
-  key: SettingsKey,
-  defaultVal: boolean,
-): Promise<boolean> {
-  const s =
-    store ?? (await load("settings.json", { autoSave: true, defaults: {} }));
+export async function getSetting(key: SettingsKey, defaultVal: boolean): Promise<boolean> {
+  const s = store ?? (await load("settings.json", { autoSave: true, defaults: {} }));
   if (!store) store = s;
   const val = await s.get(key);
   return val === undefined ? defaultVal : (val as boolean);

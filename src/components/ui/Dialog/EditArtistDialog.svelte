@@ -5,8 +5,8 @@
   import { Button } from "$components/ui/button/index.js";
   import { Input } from "$components/ui/input/index.js";
   import { Label } from "$components/ui/label/index.js";
-  import { getImageUrl } from "$lib/utils";
   import { selectAndUploadImage } from "$lib/edit-helpers";
+  import { store } from "$lib/stores.svelte";
   import { ImagePlus, X, LoaderCircle, User } from "@lucide/svelte";
 
   let {
@@ -45,19 +45,11 @@
   });
 
   $effect(() => {
-    if (editProfileImage) {
-      getImageUrl(editProfileImage, "artist").then((url) => (profilePreviewUrl = url));
-    } else {
-      profilePreviewUrl = null;
-    }
+    profilePreviewUrl = editProfileImage ? store.getImageSrc(editProfileImage, "artist") : null;
   });
 
   $effect(() => {
-    if (editBannerImage) {
-      getImageUrl(editBannerImage, "banner").then((url) => (bannerPreviewUrl = url));
-    } else {
-      bannerPreviewUrl = null;
-    }
+    bannerPreviewUrl = editBannerImage ? store.getImageSrc(editBannerImage, "banner") : null;
   });
 
   function onNameInput() {

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { TopAlbum } from "$lib/commands.svelte";
-  import { getImageUrl, formatDurationShort } from "$lib/utils";
+  import { formatDurationShort } from "$lib/utils";
+  import { store } from "$lib/stores.svelte";
 
   let { albums }: { albums: TopAlbum[] } = $props();
 </script>
@@ -17,11 +18,9 @@
         <div class="flex items-center gap-3 px-5 py-3 hover:bg-neutral-800/30 transition-colors">
           <span class="text-sm font-mono text-gray-500 w-6 shrink-0 text-right">{i + 1}</span>
           <div class="size-9 rounded bg-neutral-800 shrink-0 overflow-hidden">
-            {#await getImageUrl(a.album.cover_art) then url}
-              {#if url}
-                <img src={url} alt="" class="size-full object-cover" />
-              {/if}
-            {/await}
+            {#if store.getImageSrc(a.album.cover_art)}
+              <img src={store.getImageSrc(a.album.cover_art)} alt="" class="size-full object-cover" />
+            {/if}
           </div>
           <div class="min-w-0 flex-1">
             <p class="text-sm font-medium text-white truncate">{a.album.name}</p>

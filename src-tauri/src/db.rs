@@ -717,6 +717,7 @@ pub fn get_track_details(conn: &Connection, track_id: i64) -> Result<TrackDetail
                     added_at: row.get(17)?,
                     track_number: row.get::<_, Option<i32>>(6)?.map(|n| n as u32),
                     year: row.get::<_, Option<i32>>(8)?.map(|y| y as u32),
+                    playlist_ids: vec![],
                 },
                 row.get::<_, Option<String>>(7)?,
             ))
@@ -731,6 +732,11 @@ pub fn get_track_details(conn: &Connection, track_id: i64) -> Result<TrackDetail
     let artists_map = get_artists_for_tracks(conn, &[track_id])?;
     if let Some(artists) = artists_map.get(&track_id) {
         details.artists = artists.clone();
+    }
+
+    let playlist_ids_map = get_playlist_ids_for_tracks(conn, &[track_id])?;
+    if let Some(ids) = playlist_ids_map.get(&track_id) {
+        details.playlist_ids = ids.clone();
     }
 
     Ok(details)
@@ -1082,6 +1088,7 @@ pub fn prepare_tracks_list<P: Params>(
                     cover_art: row.get(10)?,
                     added_at: row.get(11)?,
                     track_number: row.get::<_, Option<i32>>(5)?.map(|n| n as u32),
+                    playlist_ids: vec![],
                 },
                 album_artist_name,
             })
@@ -1143,6 +1150,13 @@ pub fn prepare_tracks_list<P: Params>(
                 rt.track.artists = artists.clone();
             }
         }
+
+        let playlist_ids_map = get_playlist_ids_for_tracks(conn, &track_ids)?;
+        for rt in &mut raw_tracks {
+            if let Some(ids) = playlist_ids_map.get(&rt.track.id) {
+                rt.track.playlist_ids = ids.clone();
+            }
+        }
     }
 
     Ok(raw_tracks.into_iter().map(|r| r.track).collect())
@@ -1184,6 +1198,37 @@ fn get_artists_for_tracks(
         for row in rows {
             let (track_id, artist) = row.map_err(Error::Db)?;
             map.entry(track_id).or_insert_with(Vec::new).push(artist);
+        }
+    }
+
+    Ok(map)
+}
+
+fn get_playlist_ids_for_tracks(
+    conn: &Connection,
+    track_ids: &[i64],
+) -> Result<HashMap<i64, Vec<i64>>> {
+    let mut map = HashMap::new();
+    if track_ids.is_empty() {
+        return Ok(map);
+    }
+
+    for chunk in track_ids.chunks(900) {
+        let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT track_id, playlist_id FROM playlist_track WHERE track_id IN ({})",
+            placeholders
+        );
+        let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(chunk), |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(Error::Db)?;
+
+        for row in rows {
+            let (track_id, playlist_id) = row.map_err(Error::Db)?;
+            map.entry(track_id).or_insert_with(Vec::new).push(playlist_id);
         }
     }
 
@@ -1560,6 +1605,7 @@ pub fn get_top_tracks_with_stats(
                 cover_art: row.get(10)?,
                 added_at: row.get(11)?,
                 track_number: row.get::<_, Option<i32>>(5)?.map(|n| n as u32),
+                playlist_ids: vec![],
             };
 
             let play_count: i64 = row.get(12)?;
@@ -2279,6 +2325,7 @@ pub fn get_playback_history_timeline(
                 cover_art: row.get(11)?,
                 added_at: row.get(12)?,
                 track_number: row.get::<_, Option<i32>>(6)?.map(|n| n as u32),
+                playlist_ids: vec![],
             };
 
             Ok(RawEvent {

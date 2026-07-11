@@ -5,8 +5,8 @@
   import { Button } from "$components/ui/button/index.js";
   import { Input } from "$components/ui/input/index.js";
   import { Label } from "$components/ui/label/index.js";
-  import { getImageUrl } from "$lib/utils";
   import { selectAndUploadImage } from "$lib/edit-helpers";
+  import { store } from "$lib/stores.svelte";
   import { ImagePlus, X, LoaderCircle } from "@lucide/svelte";
 
   let {
@@ -38,11 +38,7 @@
   });
 
   $effect(() => {
-    if (editCoverArt) {
-      getImageUrl(editCoverArt, "cover").then((url) => (coverPreviewUrl = url));
-    } else {
-      coverPreviewUrl = null;
-    }
+    coverPreviewUrl = editCoverArt ? store.getImageSrc(editCoverArt, "cover") : null;
   });
 
   function onNameInput() {

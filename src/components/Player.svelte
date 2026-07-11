@@ -14,16 +14,15 @@
         ListMusic,
         Heart,
         Music2,
-        X,
     } from "@lucide/svelte";
     import Slider from "./ui/Slider.svelte";
     import { player } from "$lib/player.svelte";
-    import { getImageUrl } from "$lib/utils";
     import { formatDurationColon } from "$lib/utils";
 
     import { ui } from "$lib/shortcut-handler.svelte";
     import Marquee from "./ui/Marquee.svelte";
     import QueueView from "./QueueView.svelte";
+    import { store } from "$lib/stores.svelte";
 
     let showQueue = $state(false);
 
@@ -42,6 +41,8 @@
     <div class="fixed bottom-0 left-0 w-full px-4 pb-3 z-15">
         <div
             class="bg-zinc-950/50 border-2 border-neutral-800/40 backdrop-blur-xl grid grid-cols-3 items-center justify-between px-6 py-3 shadow-lg rounded-3xl relative"
+            ondblclick={() => player.stop()}
+            role="contentinfo"
         >
             <!-- Track Info -->
             <div class="flex items-center gap-4 pr-10">
@@ -50,9 +51,7 @@
                 >
                     {#if player.currentTrack?.cover_art}
                         <img
-                            src={await getImageUrl(
-                                player.currentTrack?.cover_art,
-                            )}
+                            src={store.getImageSrc(player.currentTrack.cover_art)}
                             alt=""
                             class="w-full h-full object-cover"
                         />

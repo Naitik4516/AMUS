@@ -16,7 +16,7 @@
     <LibraryCard
         label="All Tracks"
         Icon={Music2}
-        href="/library/playlists/0?name=All%20Tracks"
+        href="/library/playlists/-1"
     />
     <LibraryCard label="Artists" Icon={ArtistIcon} href="/library/artists" />
     <LibraryCard label="Albums" Icon={Disc} href="/library/albums" />

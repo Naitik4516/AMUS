@@ -10,9 +10,9 @@
 
     let albumId = $derived(Number(page.params.id));
     let tracks = $derived(store.tracksByAlbum(albumId));
-    let album = $derived(store.albumsById.get(albumId));
+    let album = $derived(store.albums.find(a => a.id === albumId));
     let name = $derived(album?.name ?? "Album");
-    let coverArt = $derived(album ? store.getAlbumCoverUrl(album) : null);
+    let coverArt = $derived(album ? store.getImageSrc(album.cover_art) : null);
     let coverArtFilename = $derived(album?.cover_art ?? null);
     let albumArtist = $derived(album?.album_artist || []);
 
@@ -24,20 +24,13 @@
         tracks.reduce((sum, track) => sum + track.duration_seconds, 0),
     );
 
-    function getDarkenedHslGradient(
-        hsl: HSL,
-        targetLightness: number = 15,
-    ): string {
-        const darkenedL = Math.min(hsl.l, targetLightness);
-        const darkColor = `hsl(${hsl.h}, ${hsl.s}%, ${darkenedL}%)`;
-        const baseColor = `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)`;
-        return `linear-gradient(to bottom, ${baseColor}, ${darkColor} 80%, transparent)`;
-    }
 
     const CoverImage: Attachment = (e) => {
         e.addEventListener("load", () => {
             try {
-                const swatches = getSwatchesSync(e as unknown as HTMLVideoElement);
+                const swatches = getSwatchesSync(
+                    e as unknown as HTMLVideoElement,
+                );
                 dominantColor = swatches.Vibrant
                     ? swatches.Vibrant.color
                     : swatches.Muted?.color;
@@ -64,7 +57,7 @@
         <img
             src={coverArt ? coverArt : "/PhonographRecord.png"}
             alt={name}
-            class="w-64 rounded-xl shadow-xl"
+            class="w-64 {coverArt ? 'rounded-xl shadow-xl' : 'drop-shadow-xl drop-shadow-black/50'}"
             crossorigin="anonymous"
             {@attach CoverImage}
         />
@@ -80,7 +73,7 @@
                     <div class="flex gap-1 items-center font-medium">
                         {#if artist.profile_image}
                             <img
-                                src={store.getArtistProfileUrl(artist) ?? ""}
+                                src={store.getImageSrc(artist.profile_image) ?? ""}
                                 alt={artist.name}
                                 class="w-6 h-6 rounded-full object-cover"
                             />

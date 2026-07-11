@@ -72,12 +72,11 @@ function toBackendSource(source: PlaybackSource): {
 }
 
 class PlayerStore {
-  // ---------- reactive state consumed by the UI ----------
   currentTrack = $state<Track | null>(null);
   source = $state<PlaybackSource | null>(null);
   isPlaying = $state(false);
   duration = $state(0);
-  /** Smoothed, UI-facing playback position in seconds. Updates every animation frame while playing. */
+
   position = $state(0);
   volume = $state(1);
   repeatMode = $state<RepeatMode>("OFF");
@@ -86,7 +85,7 @@ class PlayerStore {
   contextLength = $state(0);
   contextPosition = $state<number | null>(null);
   errorMessage = $state<string | null>(null);
-  /** False until the initial get_current_state() hydration completes. */
+
   isReady = $state(false);
   contextSourceType = $state<string>("OTHER");
   contextLabel = $state<string | null>(null);
@@ -98,27 +97,20 @@ class PlayerStore {
 
   get nextSectionTitle(): string {
     const namedContextTypes = ["ALBUM", "PLAYLIST", "ARTIST", "FAVORITES"];
-    if (
-      namedContextTypes.includes(this.contextSourceType) &&
-      this.contextLabel
-    ) {
+    if (namedContextTypes.includes(this.contextSourceType) && this.contextLabel) {
       return `Next from: ${this.contextLabel}`;
     }
     return "Next up";
   }
 
-  // ---------- internal, non-reactive ----------
   #lastKnownPos = 0;
   #lastUpdateAtMs = Date.now();
   #rafHandle: number | null = null;
   #unlisten: UnlistenFn | null = null;
 
-  /** Call once, e.g. from the root layout's onMount. */
   async init() {
     if (this.#unlisten) return; // already initialized
-    this.#unlisten = await listen<PlayerEvent>(EVENT_NAME, (e) =>
-      this.#handleEvent(e.payload),
-    );
+    this.#unlisten = await listen<PlayerEvent>(EVENT_NAME, (e) => this.#handleEvent(e.payload));
     await this.#hydrate();
     this.#startTicking();
   }
@@ -153,8 +145,6 @@ class PlayerStore {
     this.contextLabel = view.context_label;
     this.playNext = view.upcoming_context;
   }
-
-  // ---------- events: backend -> frontend ----------
 
   #handleEvent(evt: PlayerEvent) {
     switch (evt.event) {
@@ -199,11 +189,6 @@ class PlayerStore {
     this.position = posSec;
   }
 
-  // ---------- smooth position interpolation ----------
-  // The backend only emits a Position event ~once/sec to avoid IPC spam.
-  // This rAF loop fills the gaps so sliders (e.g. the wavy seek bar)
-  // animate smoothly instead of stepping once a second.
-
   #startTicking() {
     const tick = () => {
       if (this.isPlaying) {
@@ -221,9 +206,6 @@ class PlayerStore {
     this.#rafHandle = null;
   }
 
-  // ---------- commands: frontend -> backend ----------
-
-  /** Play an album/playlist/artist/favorites/search result list starting at `startIndex`. */
   async play(
     tracks: Track[],
     source: PlaybackSource = { type: "Direct" },
@@ -246,6 +228,13 @@ class PlayerStore {
 
   async stop() {
     await invoke("stop");
+    // reset state to initial values
+    this.currentTrack = null;
+    this.isPlaying = false;
+    this.position = 0;
+    this.duration = 0;
+    this.source = null;
+    this.errorMessage = null;
   }
 
   async next() {
@@ -270,11 +259,7 @@ class PlayerStore {
 
   async cycleRepeat() {
     const nextMode: RepeatMode =
-      this.repeatMode === "OFF"
-        ? "ALL"
-        : this.repeatMode === "ALL"
-          ? "ONE"
-          : "OFF";
+      this.repeatMode === "OFF" ? "ALL" : this.repeatMode === "ALL" ? "ONE" : "OFF";
     await invoke("set_repeat", { mode: nextMode });
   }
 

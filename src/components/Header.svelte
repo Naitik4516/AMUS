@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { X, Minus, Maximize2, Minimize2 } from "@lucide/svelte";
+    import { Maximize2, Minimize2, Minus, X } from "@lucide/svelte";
     import { getCurrentWindow } from "@tauri-apps/api/window";
     import GlobalSearch from "./GlobalSearch.svelte";
 

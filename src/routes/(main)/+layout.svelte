@@ -147,59 +147,56 @@
     }
 </script>
 
+<Sidebar />
+<Header bind:isMaximized />
+<ScanProgress />
+<Toaster
+    position="top-center"
+    theme="dark"
+    toastOptions={{
+        unstyled: true,
+        classes: {
+            toast: "flex items-center bg-secondary/10 backdrop-blur-xl p-4 rounded-2xl w-full shadow-2xl border gap-2 transition-all pointer-events-auto mt-10",
+            title: "font-bold",
+            error: "bg-red-500/50 text-white",
+            success: "bg-green-500/50 text-white",
+        },
+    }}
+/>
+
 <div
-    class="flex flex-col h-screen w-screen overflow-hidden bg-radial from-background to-neutral-950 {isMaximized
+    class="w-full h-screen overflow-y-auto bg-radial from-background to-neutral-950 {isMaximized
         ? 'rounded-none'
         : 'rounded-3xl'}"
 >
-    <Header bind:isMaximized />
-    <ScanProgress />
-    <Sidebar />
-    <Toaster
-        position="top-center"
-        theme="dark"
-        toastOptions={{
-            unstyled: true,
-            classes: {
-                toast: "flex items-center bg-secondary/10 backdrop-blur-xl p-4 rounded-2xl w-full shadow-2xl border gap-2 transition-all pointer-events-auto mt-10",
-                title: "font-bold",
-                error: "bg-red-500/50 text-white",
-                success: "bg-green-500/50 text-white",
-            },
-        }}
-    />
-
-    <div class="w-screen flex-1 min-h-0">
-        <div class="pt-8 pl-30 {player.currentTrack ? 'pb-32' : ''}">
-            <div>
-                {@render children()}
-            </div>
-        </div>
+    <div class="pt-24 pl-30 {player.currentTrack ? 'pb-32' : ''}">
+        {@render children()}
     </div>
-
-    {#if !isMaximized}
-        <div
-            role="presentation"
-            class="fixed bottom-0 left-0 right-0 h-1.5 cursor-s-resize z-999"
-            onmousedown={(e) => startResize("bottom", e)}
-        ></div>
-        <div
-            role="presentation"
-            class="fixed top-0 right-0 bottom-0 w-1.5 cursor-e-resize z-999"
-            onmousedown={(e) => startResize("right", e)}
-        ></div>
-        <div
-            role="presentation"
-            class="fixed top-0 left-0 bottom-0 w-1.5 cursor-e-resize z-999"
-            onmousedown={(e) => startResize("left", e)}
-        ></div>
-        <div
-            role="presentation"
-            class="fixed bottom-0 right-0 w-4 h-4 cursor-se-resize z-999"
-            onmousedown={(e) => startResize("bottom-right", e)}
-        ></div>
-    {/if}
 </div>
+
+{#if !isMaximized}
+    <div
+        role="presentation"
+        class="fixed bottom-0 left-0 right-0 h-1.5 cursor-s-resize z-999"
+        onmousedown={(e) => startResize("bottom", e)}
+    ></div>
+    <div
+        role="presentation"
+        class="fixed top-0 right-0 bottom-0 w-1.5 cursor-e-resize z-999"
+        onmousedown={(e) => startResize("right", e)}
+    ></div>
+    <div
+        role="presentation"
+        class="fixed top-0 left-0 bottom-0 w-1.5 cursor-e-resize z-999"
+        onmousedown={(e) => startResize("left", e)}
+    ></div>
+    <div
+        role="presentation"
+        class="fixed bottom-0 right-0 w-4 h-4 cursor-se-resize z-999"
+        onmousedown={(e) => startResize("bottom-right", e)}
+    ></div>
+{/if}
+
 {#if player.currentTrack}
     <Player />
 {/if}

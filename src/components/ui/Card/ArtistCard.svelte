@@ -1,6 +1,6 @@
 <script lang="ts">
     import { User } from "@lucide/svelte";
-    import { getImageUrl } from "$lib/utils";
+    import { store } from "$lib/stores.svelte";
     import type { Artist } from "$lib/types";
 
     let { data }: { data: Artist } = $props();
@@ -8,21 +8,17 @@
 
 <a
     href="/library/artists/{data.id}"
-    class="group flex flex-col items-center text-center gap-4 px-5 py-3 rounded-4xl hover:bg-zinc-800/20 transition-all duration-300 border border-transparent hover:border-zinc-700/40 hover:shadow-xl"
+    class="group flex flex-col items-center text-center gap-4 px-5 py-3 "
 >
     <div
         class="w-50 h-50 rounded-full overflow-hidden bg-zinc-800 shadow-xl relative"
     >
         {#if data.profile_image}
-            {#await getImageUrl(data.profile_image, "artist")}
-                <div class="w-full h-full bg-zinc-800 animate-pulse"></div>
-            {:then url}
                 <img
-                    src={url}
+                    src={store.getImageSrc(data.profile_image, "artist")}
                     alt={data.name}
                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 />
-            {/await}
         {:else}
             <div class="w-50 h-50 flex items-center justify-center">
                 <User size={48} class="text-zinc-700" />

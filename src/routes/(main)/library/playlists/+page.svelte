@@ -6,7 +6,6 @@
     import { Input } from "$components/ui/input/index.js";
     import { store } from "$lib/stores.svelte";
 
-    let playlists = $derived(store.playlists);
 
     let showCreateModal = $state(false);
     let newPlaylistName = $state("");
@@ -39,16 +38,16 @@
     <div
         class="flex flex-wrap w-full"
     >
-        {#each playlists as playlist}
+        {#each store.playlists as playlist}
             <div class="mx-5 my-4">
             <PlaylistCard data={playlist} />
             </div>
         {/each}
     </div>
 
-    {#if playlists.length === 0}
+    {#if store.playlists.length === 0}
         <p class="text-gray-500 text-sm mt-6 text-center">
-            No custom playlists yet. Click "New Playlist" to create one.
+            No custom store.playlists yet. Click "New Playlist" to create one.
         </p>
     {/if}
 

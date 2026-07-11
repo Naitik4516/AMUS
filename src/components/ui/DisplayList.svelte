@@ -18,11 +18,11 @@
 </script>
 
 <div class="p-8 w-full flex flex-col h-full">
-    <div class="flex items-center justify-between mb-8 ">
+    <div class="flex items-center justify-between mb-8">
         <h1 class="text-6xl font-black text-white">{title}</h1>
 
         <div
-            class="flex items-center gap-2 bg-secondary/70 rounded-full px-6 py-4 w-50 border-2 border-transparent focus-within:border-border hover-within:w-70 focus-within:w-70 hover:bg-secondary/80 transition-all duration-300 "
+            class="flex items-center gap-2 bg-secondary/70 rounded-full px-6 py-4 w-50 border-2 border-transparent focus-within:border-border hover-within:w-70 focus-within:w-70 hover:bg-secondary/80 transition-all duration-300"
         >
             <Search size={18} class="text-gray-400" />
             <input
@@ -52,7 +52,7 @@
         </div>
     {:else}
         <div
-            class="grid auto-cols-auto container grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-6 overflow-y-auto h-full"
+            class="grid auto-cols-auto container grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-6 overflow-y-auto overflow-x-hidden h-full"
         >
             {#each filteredItems as item}
                 <Card data={item} />

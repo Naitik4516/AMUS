@@ -143,21 +143,21 @@ export async function getStatsOverview(timeframe: Timeframe): Promise<StatsOverv
 
 export async function getTopTracksWithStats(
   timeframe: Timeframe,
-  limit: number
+  limit: number,
 ): Promise<TopTrack[]> {
   return invoke("get_top_tracks_with_stats", { timeframe, limit });
 }
 
 export async function getTopArtistsWithStats(
   timeframe: Timeframe,
-  limit: number
+  limit: number,
 ): Promise<TopArtist[]> {
   return invoke("get_top_artists_with_stats", { timeframe, limit });
 }
 
 export async function getTopAlbumsWithStats(
   timeframe: Timeframe,
-  limit: number
+  limit: number,
 ): Promise<TopAlbum[]> {
   return invoke("get_top_albums_with_stats", { timeframe, limit });
 }
@@ -196,7 +196,7 @@ export async function getFavoriteTrends(timeframe: Timeframe): Promise<FavoriteT
 
 export async function getPlaybackHistoryTimeline(
   timeframe: Timeframe,
-  limit: number
+  limit: number,
 ): Promise<PlaybackEvent[]> {
   return invoke("get_playback_history_timeline", { timeframe, limit });
 }

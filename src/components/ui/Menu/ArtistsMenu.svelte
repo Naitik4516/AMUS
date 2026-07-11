@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { Track } from "$lib/types";
-    import { getImageUrl } from "$lib/utils";
     import { MicVocal } from "@lucide/svelte";
+    import { store } from "$lib/stores.svelte";
 
     let { track }: { track: Track } = $props();
 </script>
@@ -19,28 +19,22 @@
                             class="aspect-square w-9 rounded-2xl overflow-hidden bg-neutral-800 shadow-lg relative"
                         >
                             {#if artist.profile_image}
-                                {#await getImageUrl(artist.profile_image, "artist")}
+                                {#if store.getImageSrc(artist.profile_image, "artist")}
+                                    <img
+                                        src={store.getImageSrc(artist.profile_image, "artist")}
+                                        alt={artist.name}
+                                        class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                    />
+                                {:else}
                                     <div
-                                        class="absolute inset-0 bg-neutral-800 animate-pulse"
-                                    ></div>
-                                {:then url}
-                                    {#if url}
-                                        <img
-                                            src={url}
-                                            alt={artist.name}
-                                            class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                        class="absolute inset-0 flex items-center justify-center"
+                                    >
+                                        <MicVocal
+                                            size={20}
+                                            class="text-neutral-600"
                                         />
-                                    {:else}
-                                        <div
-                                            class="absolute inset-0 flex items-center justify-center"
-                                        >
-                                            <MicVocal
-                                                size={20}
-                                                class="text-neutral-600"
-                                            />
-                                        </div>
-                                    {/if}
-                                {/await}
+                                    </div>
+                                {/if}
                             {:else}
                                 <div
                                     class="absolute inset-0 flex items-center justify-center"

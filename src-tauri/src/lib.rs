@@ -292,6 +292,7 @@ pub fn run() {
             commands::reorder_queue,
             commands::set_autoplay,
             commands::get_current_state,
+            commands::stop,
             commands::get_top_artists,
             commands::get_top_albums,
             commands::get_forgotten_tracks,

@@ -4,7 +4,6 @@ import { goto } from "$app/navigation";
 import { player } from "./player.svelte";
 import { handlerMap } from "./shortcuts.svelte";
 import { scanLibrary } from "./commands.svelte";
-import Clock_1 from "@lucide/svelte/icons/clock-1";
 
 export const ui = $state({ queueVisible: false });
 export function toggleQueue() {
@@ -25,9 +24,7 @@ export function installHandlers() {
   handlerMap.set("play_pause", () => player.playPause());
   handlerMap.set("next_track", () => player.next());
   handlerMap.set("prev_track", () => player.previous());
-  handlerMap.set("stop", () => {
-    if (player.isPlaying) player.playPause();
-  });
+  handlerMap.set("stop", () => player.stop());
   handlerMap.set("restart_track", () => {
     if (player.currentTrack) player.seek(0);
   });
@@ -86,9 +83,7 @@ export function installHandlers() {
   handlerMap.set("global_play_pause", () => player.playPause());
   handlerMap.set("global_next_track", () => player.next());
   handlerMap.set("global_prev_track", () => player.previous());
-  handlerMap.set("global_stop", () => {
-    if (player.isPlaying) player.playPause();
-  });
+  handlerMap.set("global_stop", () => player.stop());
   handlerMap.set("global_volume_up", () => {
     player.setVolume(Math.min(1, player.volume + 0.05));
   });

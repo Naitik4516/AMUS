@@ -13,8 +13,9 @@
     } from "@lucide/svelte";
     import Artist from "$components/icons/Artist.svelte";
     import type { PageProps } from "./$types";
-    import { formatDuration, getImageUrl } from "$lib/utils";
+    import { formatDuration } from "$lib/utils";
     import { invoke } from "@tauri-apps/api/core";
+    import { store } from "$lib/stores.svelte";
     import { invalidate } from "$app/navigation";
 
     let { data }: PageProps = $props();
@@ -44,7 +45,7 @@
             {#if track.cover_art}
                 <img
                     src={track.cover_art
-                        ? await getImageUrl(track.cover_art)
+                        ? store.getImageSrc(track.cover_art)
                         : "/PhonographRecord.png"}
                     alt={track.title}
                     class="w-full h-full object-cover"
@@ -80,7 +81,7 @@
                     <div class="flex gap-1 items-center font-medium">
                         {#if artist.profile_image}
                             <img
-                                src={await getImageUrl(
+                                src={store.getImageSrc(
                                     artist.profile_image,
                                     "artist",
                                 )}

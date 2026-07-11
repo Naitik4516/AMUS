@@ -1,6 +1,5 @@
 <script lang="ts">
     import type { Track } from "$lib/types";
-    import { getImageUrl } from "$lib/utils";
     import { Play } from "@lucide/svelte";
     import { player } from "$lib/player.svelte";
     import { fade, fly } from "svelte/transition";
@@ -21,7 +20,7 @@
 >
     {#if data.cover_art}
         <img
-            src={store.getTrackCoverUrl(data) ?? await getImageUrl(data.cover_art)}
+            src={store.getImageSrc(data.cover_art)}
             alt={data.title}
             class="w-full h-full object-cover {hovering ? 'scale-105' : ''} transition-transform"
         />

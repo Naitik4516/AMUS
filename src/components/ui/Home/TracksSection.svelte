@@ -1,7 +1,6 @@
 <script lang="ts">
     import TrackCard from "$components/ui/Card/TrackCard.svelte";
     import { invoke, type InvokeArgs } from "@tauri-apps/api/core";
-    import { onMount } from "svelte";
     import type { Track } from "$lib/types";
     import HorizontalScroll from "$components/ui/HorizontalScroll.svelte";
 
@@ -27,7 +26,7 @@
 
     let tracks = $state([] as Track[]);
 
-    onMount(() => {
+    $effect(() => {
         if (tracksProp) {
             tracks = tracksProp;
         } else if (loadFunction) {

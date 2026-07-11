@@ -1,34 +1,33 @@
 <script lang="ts">
-    import { onMount } from "svelte";
-    import {
-        getSourceDirs,
-        removeSource,
-        importAudioLibrary,
-        scanLibrary,
-        refreshWatcher,
-    } from "$lib/commands.svelte";
-    import {
-        FolderOpen,
-        Trash2,
-        RefreshCw,
-        Plus,
-        Zap,
-        Power,
-        Settings2,
-        ScrollText,
-        User,
-        Image,
-        Minimize2,
-        Download,
-        RotateCcw,
-    } from "@lucide/svelte";
+    import ShortcutSettingsModal from "$components/ShortcutSettingsModal.svelte";
     import Button from "$components/ui/button/button.svelte";
     import Label from "$components/ui/label/label.svelte";
     import ToggleCard from "$components/ui/ToggleCard.svelte";
-    import { settings, setSetting, initSettings } from "$lib/settings.svelte";
+    import {
+        getSourceDirs,
+        importAudioLibrary,
+        refreshWatcher,
+        removeSource,
+        scanLibrary,
+    } from "$lib/commands.svelte";
+    import { initSettings, setSetting, settings } from "$lib/settings.svelte";
     import { updater } from "$lib/update.svelte";
-    import { Keyboard } from "@lucide/svelte";
-    import ShortcutSettingsModal from "$components/ShortcutSettingsModal.svelte";
+    import {
+        Download,
+        FolderOpen,
+        Image,
+        Keyboard,
+        Minimize2,
+        Plus,
+        Power,
+        RefreshCw,
+        RotateCcw,
+        Settings2,
+        Trash2,
+        User,
+        Zap,
+    } from "@lucide/svelte";
+    import { onMount } from "svelte";
 
     let sources = $state<string[]>([]);
     let loading = $state(true);
@@ -189,18 +188,6 @@
                     />
                     {syncing ? "Syncing..." : "Sync Now"}
                 </Button>
-            </div>
-
-            <h3 class="text-lg font-bold text-gray-300 mt-6">Appearance</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <ToggleCard
-                    title="Smooth Scrolling"
-                    description="Use locomotive-scroll for smooth, inertia-based scrolling throughout the app."
-                    bind:checked={settings.useLocomotiveScroll}
-                    onchange={(v) => setSetting("useLocomotiveScroll", v)}
-                    icon={ScrollText}
-                    iconActiveClass="text-blue-400"
-                />
             </div>
 
             <h3 class="text-lg font-bold text-gray-300 mt-6">Artist Images</h3>

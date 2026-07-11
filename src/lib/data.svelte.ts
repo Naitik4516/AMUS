@@ -2,9 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 
 export async function getPlaylists() {
   try {
-    const playlists = await invoke<
-      { id: number; name: string; cover_arts: string[]; coverArt?: string }[]
-    >("get_playlists");
+    const playlists =
+      await invoke<{ id: number; name: string; cover_arts: string[]; coverArt?: string }[]>(
+        "get_playlists",
+      );
     return {
       playlists: playlists.map((p) => ({
         ...p,

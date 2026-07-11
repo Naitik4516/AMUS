@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { TopArtist } from "$lib/commands.svelte";
-  import { getImageUrl, formatDurationShort } from "$lib/utils";
+  import { formatDurationShort } from "$lib/utils";
+  import { store } from "$lib/stores.svelte";
 
   let { artists }: { artists: TopArtist[] } = $props();
 </script>
@@ -17,15 +18,13 @@
         <div class="flex items-center gap-3 px-5 py-3 hover:bg-neutral-800/30 transition-colors">
           <span class="text-sm font-mono text-gray-500 w-6 shrink-0 text-right">{i + 1}</span>
           <div class="size-9 rounded-full bg-neutral-800 shrink-0 overflow-hidden">
-            {#await getImageUrl(a.artist.profile_image, "artist") then url}
-              {#if url}
-                <img src={url} alt="" class="size-full object-cover" />
-              {:else}
-                <div class="size-full flex items-center justify-center text-xs text-gray-500">
-                  {a.artist.name.charAt(0)}
-                </div>
-              {/if}
-            {/await}
+            {#if store.getImageSrc(a.artist.profile_image, "artist")}
+              <img src={store.getImageSrc(a.artist.profile_image, "artist")} alt="" class="size-full object-cover" />
+            {:else}
+              <div class="size-full flex items-center justify-center text-xs text-gray-500">
+                {a.artist.name.charAt(0)}
+              </div>
+            {/if}
           </div>
           <div class="min-w-0 flex-1">
             <p class="text-sm font-medium text-white truncate">{a.artist.name}</p>

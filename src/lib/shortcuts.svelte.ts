@@ -365,12 +365,10 @@ export async function initShortcuts(): Promise<void> {
   initialized = true;
   store = await load("settings.json", { autoSave: true, defaults: {} });
 
-  const saved =
-    await store.get<Record<string, ShortcutBinding[]>>("shortcuts_custom");
+  const saved = await store.get<Record<string, ShortcutBinding[]>>("shortcuts_custom");
   if (saved) Object.assign(customBindings, saved);
 
-  const savedDisabled =
-    await store.get<Record<string, boolean>>("shortcuts_disabled");
+  const savedDisabled = await store.get<Record<string, boolean>>("shortcuts_disabled");
   if (savedDisabled) Object.assign(disabledShortcuts, savedDisabled);
 
   for (const g of GLOBAL_SHORTCUT_ACTIONS) {
@@ -381,8 +379,7 @@ export async function initShortcuts(): Promise<void> {
   const savedGlobalBindings = await store.get<Record<string, ShortcutBinding>>(
     "shortcuts_global_bindings",
   );
-  if (savedGlobalBindings)
-    Object.assign(globalCustomBindings, savedGlobalBindings);
+  if (savedGlobalBindings) Object.assign(globalCustomBindings, savedGlobalBindings);
 
   flags.ready = true;
   await updateTauriGlobalShortcuts();
@@ -393,9 +390,7 @@ function getStoreOrLoad(): Promise<Awaited<ReturnType<typeof load>>> {
   return load("settings.json", { autoSave: true, defaults: {} });
 }
 
-export function getEffectiveBindings(
-  action: ShortcutAction,
-): ShortcutBinding[] {
+export function getEffectiveBindings(action: ShortcutAction): ShortcutBinding[] {
   const custom = customBindings[action.id];
   if (custom === undefined) return action.defaultKeys;
   return custom;
@@ -422,14 +417,9 @@ export async function setCustomBindings(
   await saveCustom();
 }
 
-export async function addBinding(
-  actionId: string,
-  binding: ShortcutBinding,
-): Promise<void> {
+export async function addBinding(actionId: string, binding: ShortcutBinding): Promise<void> {
   const existing =
-    customBindings[actionId] ??
-    ALL_SHORTCUTS.find((a) => a.id === actionId)?.defaultKeys ??
-    [];
+    customBindings[actionId] ?? ALL_SHORTCUTS.find((a) => a.id === actionId)?.defaultKeys ?? [];
   customBindings[actionId] = [...existing, binding];
   await saveCustom();
 }
@@ -439,9 +429,7 @@ export async function removeSingleBinding(
   binding: ShortcutBinding,
 ): Promise<void> {
   const existing =
-    customBindings[actionId] ??
-    ALL_SHORTCUTS.find((a) => a.id === actionId)?.defaultKeys ??
-    [];
+    customBindings[actionId] ?? ALL_SHORTCUTS.find((a) => a.id === actionId)?.defaultKeys ?? [];
   const updated = existing.filter((b) => !bindingsEqual(b, binding));
   customBindings[actionId] = updated;
   await saveCustom();
@@ -491,17 +479,12 @@ async function saveDisabled(): Promise<void> {
   await s.save();
 }
 
-export function getEffectiveGlobalBinding(
-  g: GlobalShortcutAction,
-): ShortcutBinding | null {
+export function getEffectiveGlobalBinding(g: GlobalShortcutAction): ShortcutBinding | null {
   const custom = globalCustomBindings[g.id];
   return custom ?? g.defaultBinding;
 }
 
-export async function setGlobalShortcutEnabled(
-  id: string,
-  enabled: boolean,
-): Promise<void> {
+export async function setGlobalShortcutEnabled(id: string, enabled: boolean): Promise<void> {
   globalShortcutFlags[id] = enabled;
   const s = await getStoreOrLoad();
   if (!store) store = s;
@@ -510,10 +493,7 @@ export async function setGlobalShortcutEnabled(
   await updateTauriGlobalShortcuts();
 }
 
-export async function setGlobalCustomBinding(
-  id: string,
-  binding: ShortcutBinding,
-): Promise<void> {
+export async function setGlobalCustomBinding(id: string, binding: ShortcutBinding): Promise<void> {
   globalCustomBindings[id] = binding;
   globalShortcutFlags[id] = true;
   const s = await getStoreOrLoad();
@@ -537,17 +517,12 @@ export async function resetGlobalCustomBinding(id: string): Promise<void> {
   await updateTauriGlobalShortcuts();
 }
 
-export function matchBinding(
-  e: KeyboardEvent,
-  binding: ShortcutBinding,
-): boolean {
+export function matchBinding(e: KeyboardEvent, binding: ShortcutBinding): boolean {
   const key = e.key === " " ? "Space" : e.key;
-  const keyMatch =
-    key.toLowerCase() === binding.key.toLowerCase() || key === binding.key;
+  const keyMatch = key.toLowerCase() === binding.key.toLowerCase() || key === binding.key;
   if (!keyMatch) return false;
 
-  const isMac =
-    typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
+  const isMac = typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
 
   const targetCtrl = !!binding.ctrl;
   const targetMeta = !!binding.meta;
@@ -610,8 +585,7 @@ export function formatBinding(
     if (binding.alt) parts.push("Alt");
     if (binding.meta) parts.push("Command");
   } else {
-    const isMac =
-      typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
+    const isMac = typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");
     if (isMac) {
       if (binding.ctrl || binding.meta) parts.push("Cmd");
       if (binding.shift) parts.push("Shift");
@@ -655,10 +629,7 @@ export function bindingFromEvent(e: KeyboardEvent): ShortcutBinding | null {
   };
 }
 
-export function findConflicts(
-  actionId: string,
-  newBindings: ShortcutBinding[],
-): string[] {
+export function findConflicts(actionId: string, newBindings: ShortcutBinding[]): string[] {
   const conflicts: string[] = [];
   for (const action of ALL_SHORTCUTS) {
     if (action.id === actionId) continue;
@@ -740,8 +711,7 @@ let registeredTauriShortcuts: string[] = [];
 
 export async function updateTauriGlobalShortcuts(): Promise<void> {
   try {
-    const { unregister, register } =
-      await import("@tauri-apps/plugin-global-shortcut");
+    const { unregister, register } = await import("@tauri-apps/plugin-global-shortcut");
 
     for (const shortcutStr of registeredTauriShortcuts) {
       try {
@@ -777,8 +747,6 @@ export async function updateTauriGlobalShortcuts(): Promise<void> {
 
 export const handlerMap = new Map<string, () => void | Promise<void>>();
 
-export function getHandler(
-  actionId: string,
-): (() => void | Promise<void>) | undefined {
+export function getHandler(actionId: string): (() => void | Promise<void>) | undefined {
   return handlerMap.get(actionId);
 }

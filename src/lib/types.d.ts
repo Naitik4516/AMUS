@@ -30,15 +30,7 @@ export interface Track {
   cover_art?: string;
   added_at: string;
   track_number?: number;
-}
-
-export interface GlobalSearchResult {
-  result_type: "track" | "artist" | "album" | "playlist";
-  score: number;
-  track?: Track;
-  artist?: Artist;
-  album?: Album;
-  playlist?: Playlist;
+  playlist_ids: number[];
 }
 
 export interface TrackDetails extends Track {
@@ -51,8 +43,7 @@ export interface TrackDetails extends Track {
   year: number;
 }
 
-export type SortBy =
-  "title" | "artist" | "album" | "duration" | "recently_added";
+export type SortBy = "title" | "artist" | "album" | "duration" | "recently_added";
 
 export type RepeatMode = "OFF" | "ALL" | "ONE";
 
@@ -77,3 +68,7 @@ export type Context =
       bannerImage: string | null;
     }
   | { type: "Favorites"; name: "Favorites" };
+
+type MenuPosition =
+  | { type: "anchor"; anchor: HTMLElement }
+  | { type: "coordinates"; x: number; y: number };

@@ -8,21 +8,21 @@
 
 <a
     href="/library/albums/{data.id}?album.name={data.name}"
-    class="group flex flex-col gap-3 p-4 rounded-2xl hover:bg-secondary transition-all duration-300 border border-transparent hover:border-neutral-700 h-auto min-w-64 w-64 shadow-xl"
+    class="group flex flex-col gap-3 p-4 rounded-3xl hover:bg-secondary transition-all duration-300 border border-transparent hover:border-neutral-700 h-auto min-w-64 w-64 group-hover:shadow-xl"
 >
-    <div
-        class="aspect-square w-full rounded-3xl overflow-hidden bg-card border-border shadow-lg relative"
-    >
+    <div class="aspect-square w-full overflow-hidden rounded-4xl relative">
         {#if data.cover_art}
             <img
-                src={store.getAlbumCoverUrl(data)}
+                src={store.getImageSrc(data.cover_art)}
                 alt={data.name}
-                class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                class="w-full h-full group-hover:scale-105 transition-transform duration-500"
             />
         {:else}
-            <div class="absolute inset-0 flex items-center justify-center p-5">
-                <img src="/PhonographRecord.png" alt="Album Icon" />
-            </div>
+            <img
+                src="/PhonographRecord.png"
+                alt="Album Icon"
+                class="w-full h-full"
+            />
         {/if}
 
         <div

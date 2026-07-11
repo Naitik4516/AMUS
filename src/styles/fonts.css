@@ -1,23 +1,23 @@
 @font-face {
-    font-family: "Clash Display";
-    src: url("$lib/assets/fonts/ClashDisplay-Variable.woff2") format("woff2");
-    font-weight: 100 900;
-    font-style: normal;
-    font-display: swap;
+  font-family: "Clash Display";
+  src: url("$lib/assets/fonts/ClashDisplay-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
 }
 
 @font-face {
-    font-family: "Satoshi";
-    src: url("$lib/assets/fonts/Satoshi-Variable.woff2") format("woff2");
-    font-weight: 100 900;
-    font-style: normal;
-    font-display: swap;
+  font-family: "Satoshi";
+  src: url("$lib/assets/fonts/Satoshi-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
 }
 
 @font-face {
-    font-family: "Switzer";
-    src: url("$lib/assets/fonts/Switzer-Variable.woff2") format("woff2");
-    font-weight: 100 900;
-    font-style: normal;
-    font-display: swap;
+  font-family: "Switzer";
+  src: url("$lib/assets/fonts/Switzer-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
 }

@@ -9,8 +9,6 @@
 
     let { data }: PageProps = $props();
 
-    let recentlyAdded = $derived(store.recentlyAddedTracks.slice(0, 10));
-    let favoriteTracks = $derived(store.favoriteTracks.slice(0, 10));
 
     type LoadFunction =
         | "get_recently_played"
@@ -24,17 +22,21 @@
         args?: InvokeArgs;
     }[] = [
         { title: "Continue Listening", loadFunction: "get_recently_played" },
-        { title: "On repeat", loadFunction: "get_most_played_tracks", args: { timeframe: "this_month" } },
+        {
+            title: "On repeat",
+            loadFunction: "get_most_played_tracks",
+            args: { timeframe: "this_month" },
+        },
     ];
 </script>
 
-<div class="pb-12 mr-6">
+<div class="pb-12 pr-6">
     <div>
         <HeroSection hasMusic={data.hasMusic} />
     </div>
 
     <div class="flex flex-col gap-10 py-10">
-        {#each trackSections as section, i}
+        {#each trackSections as section}
             <div>
                 <TracksSection
                     title={section.title}
@@ -45,20 +47,14 @@
         {/each}
 
         <div>
-            <TracksSection
-                title="Recently Added"
-                loadFunction="get_recently_added"
-            />
+            <TracksSection title="Recently Added" tracks={store.recentlyAddedTracks.slice(0,10)} />
         </div>
 
         <div>
-            <TracksSection
-                title="Favorites"
-                tracks={favoriteTracks}
-            />
+            <TracksSection title="Favorites" tracks={store.favoriteTracks.slice(0,10)} />
         </div>
 
-        <div data-scroll>
+        <div>
             <ArtistsSection
                 title="Your Top Artists"
                 loadFunction="get_top_artists"

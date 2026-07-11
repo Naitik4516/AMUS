@@ -13,8 +13,8 @@
     } from "@lucide/svelte";
     import Slider from "$components/ui/Slider.svelte";
     import { player } from "$lib/player.svelte";
-    import { getImageUrl } from "$lib/utils";
     import { formatDurationColon } from "$lib/utils";
+    import { store } from "$lib/stores.svelte";
     import { invoke } from "@tauri-apps/api/core";
     import Marquee from "$components/ui/Marquee.svelte";
 
@@ -41,7 +41,7 @@
         class="relative bg-gray-900 h-screen w-screen rounded-4xl overflow-hidden"
     >
         <img
-            src={await getImageUrl(player.currentTrack?.cover_art)}
+            src={store.getImageSrc(player.currentTrack?.cover_art)}
             alt="Cover Art"
             class="w-screen h-screen object-cover blur-3xl -z-10 rounded-4xl"
         />
@@ -65,7 +65,7 @@
         >
             <div class="col-span-2">
                 <img
-                    src={await getImageUrl(player.currentTrack?.cover_art)}
+                    src={store.getImageSrc(player.currentTrack?.cover_art)}
                     alt="Cover Art"
                     class="oject-cover rounded-3xl shadow-lg shadow-zinc-800/60 w-full h-full"
                 />

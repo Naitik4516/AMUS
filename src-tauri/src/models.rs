@@ -20,6 +20,7 @@ pub struct TrackDetails {
     pub added_at: DateTime<Utc>,
     pub track_number: Option<u32>,
     pub year: Option<u32>,
+    pub playlist_ids: Vec<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -33,6 +34,7 @@ pub struct Track {
     pub cover_art: Option<String>,
     pub added_at: DateTime<Utc>,
     pub track_number: Option<u32>,
+    pub playlist_ids: Vec<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

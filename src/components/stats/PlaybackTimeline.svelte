@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PlaybackEvent } from "$lib/commands.svelte";
-  import { getImageUrl } from "$lib/utils";
+  import { store } from "$lib/stores.svelte";
 
   let { events }: { events: PlaybackEvent[] } = $props();
 
@@ -19,11 +19,9 @@
       {#each events as e}
         <div class="flex items-center gap-3 px-2 py-2 hover:bg-neutral-800/30 rounded-lg transition-colors">
           <div class="size-8 rounded bg-neutral-800 shrink-0 overflow-hidden">
-            {#await getImageUrl(e.track.cover_art) then url}
-              {#if url}
-                <img src={url} alt="" class="size-full object-cover" />
-              {/if}
-            {/await}
+            {#if store.getImageSrc(e.track.cover_art)}
+              <img src={store.getImageSrc(e.track.cover_art)} alt="" class="size-full object-cover" />
+            {/if}
           </div>
           <div class="min-w-0 flex-1">
             <p class="text-sm font-medium text-white truncate">{e.track.title}</p>

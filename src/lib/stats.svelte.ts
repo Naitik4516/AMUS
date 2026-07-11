@@ -50,7 +50,16 @@ class StatsState {
 
   availableTimeframes = $derived.by<Timeframe[]>(() => {
     const days = this.dataAge?.data_age_days ?? 0;
-    const all: Timeframe[] = ["today", "this_week", "this_month", "last_3_months", "last_6_months", "last_year", "last_5_years", "all_time"];
+    const all: Timeframe[] = [
+      "today",
+      "this_week",
+      "this_month",
+      "last_3_months",
+      "last_6_months",
+      "last_year",
+      "last_5_years",
+      "all_time",
+    ];
     if (days < 7) return all.slice(0, 2);
     if (days < 30) return all.slice(0, 3);
     if (days < 90) return all.slice(0, 4);
