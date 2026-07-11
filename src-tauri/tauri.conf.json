@@ -48,8 +48,7 @@
     "createUpdaterArtifacts": true,
     "category": "Music",
     "license": "MPL-2.0",
-    "licenseFile": "LICENSE",
-    "fileAssociations": []
+    "licenseFile": "LICENSE"
   },
   "plugins": {
     "updater": {

@@ -2,6 +2,7 @@ import { initSettings } from "$lib/settings.svelte";
 import type { Album, Artist, Playlist, Track } from "$lib/types";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { appDataDir } from "@tauri-apps/api/path";
 
 class LibraryStore {
   tracks = $state<Track[]>([]);
@@ -12,7 +13,9 @@ class LibraryStore {
   loading = $state(false);
   error = $state<string | null>(null);
 
-  appDataDirPath: string | null = null;
+  /** Reactive so cover/artist images re-render when the path becomes available. */
+  appDataDirPath = $state<string | null>(null);
+  #appDataDirPromise: Promise<string> | null = null;
 
   tracksById = new Map<number, Track>();
   albumsById = new Map<number, Album>();
@@ -47,15 +50,36 @@ class LibraryStore {
     return this.albums.filter((a) => albumIds.has(a.id));
   }
 
+  /**
+   * Resolve app data dir once. Safe to call from layout and init concurrently.
+   */
+  ensureAppDataDir(): Promise<string> {
+    if (this.appDataDirPath) {
+      return Promise.resolve(this.appDataDirPath);
+    }
+    if (!this.#appDataDirPromise) {
+      this.#appDataDirPromise = appDataDir()
+        .then((dir) => {
+          this.appDataDirPath = dir;
+          return dir;
+        })
+        .catch((e) => {
+          this.#appDataDirPromise = null;
+          throw e;
+        });
+    }
+    return this.#appDataDirPromise;
+  }
+
   getImageSrc(
     filename: string | undefined | null,
     type: "cover" | "artist" | "banner" = "cover",
   ): string | null {
-    if (!filename || !this.appDataDirPath) {
-      console.warn("getImageSrc called with invalid filename or appDataDirPath", {
-        filename,
-        appDataDirPath: this.appDataDirPath,
-      });
+    if (!filename) {
+      return null;
+    }
+    // Path not ready yet — callers re-render when appDataDirPath becomes available.
+    if (!this.appDataDirPath) {
       return null;
     }
     const subdir = type === "artist" ? "artists" : type === "banner" ? "artist_banner" : "covers";
@@ -71,6 +95,7 @@ class LibraryStore {
       await initSettings();
 
       await Promise.all([
+        this.ensureAppDataDir(),
         this.#loadTracks(),
         this.#loadAlbums(),
         this.#loadArtists(),

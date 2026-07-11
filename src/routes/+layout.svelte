@@ -2,12 +2,13 @@
     import { onMount, onDestroy } from "svelte";
     import { player } from "$lib/player.svelte";
     import { store } from "$lib/stores.svelte";
-    import { appDataDir } from "@tauri-apps/api/path";
 
     onMount(() => {
         player.init();
-        appDataDir().then((dir) => {
-            store.appDataDirPath = dir;
+        // Start resolving app data dir as early as possible so cover art
+        // URLs can be built; store.init() also awaits this idempotently.
+        store.ensureAppDataDir().catch((e) => {
+            console.error("Failed to resolve app data dir:", e);
         });
     });
     onDestroy(() => {

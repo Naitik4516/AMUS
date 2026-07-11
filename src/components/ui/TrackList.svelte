@@ -156,7 +156,10 @@
 
     let actionMenuOpen = $state<MenuPosition | null>(null);
     let rowMenuOpen = $state<[MenuPosition, Track] | null>(null);
-    // let rowMenuButtons = $state<Record<number, HTMLButtonElement>>({});
+
+    let VListHeight = $derived(
+        Math.min(orderedTracks.length * 74, window.innerHeight),
+    );
 
     function compareTracks(a: Track, b: Track, key: ColumnKey) {
         if (key === "title") return a.title.localeCompare(b.title);
@@ -378,7 +381,7 @@
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950";
 </script>
 
-<div class="w-full px-2 pb-4">
+<div class="w-full px-2">
     <!-- ============================== ACTION BAR ============================== -->
     <div class="relative flex items-center gap-5 px-3 py-4 sm:px-4">
         <button
@@ -583,7 +586,7 @@
             {#if orderedTracks.length > 0}
                 <VList
                     data={orderedTracks}
-                    style="height: {orderedTracks.length * 80}px;"
+                    style="height: {VListHeight}px;"
                     getKey={(_, i) => i}
                 >
                     {#snippet children(track, i)}

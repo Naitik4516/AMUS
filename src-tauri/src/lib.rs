@@ -139,10 +139,11 @@ fn create_miniplayer(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWind
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let _ = app
+            let w = app
                 .get_webview_window("main")
-                .expect("no main window")
-                .set_focus();
+                .expect("no main window");
+            let _ = w.show();
+            let _ = w.set_focus();           
         }))
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_process::init())
