@@ -6,7 +6,8 @@
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "bun run build",
-    "frontendDist": "../build"
+    "frontendDist": "../build",
+      "removeUnusedCommands": true
   },
   "app": {
     "windows": [
@@ -47,8 +48,7 @@
     ],
     "createUpdaterArtifacts": true,
     "category": "Music",
-    "license": "MPL-2.0",
-    "licenseFile": "LICENSE"
+    "license": "MPL-2.0"
   },
   "plugins": {
     "updater": {
