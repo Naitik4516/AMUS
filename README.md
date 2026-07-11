@@ -2,76 +2,101 @@
 
 <div align="center">
 
-<img src="static/icon.svg" alt="Amus" width="256" height="256" />
+<img src="static/icon.svg" alt="AMUS" width="200" height="200" />
 
-**A fast local modern music player**
+**A fast, modern, privacy-focused local music player**
 
-AMUS is a fast, privacy-focused local music player built for users who own their music library. It works completely offline and is designed to feel modern while remaining lightweight.
+AMUS is built for people who own their music library. It runs completely offline, stays lightweight, and feels like a modern desktop app — not a web wrapper.
 
-![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)
-![Tauri](https://img.shields.io/badge/Tauri-FFC131?style=for-the-badge&logo=Tauri&logoColor=white)
-![SvekteKit](https://img.shields.io/badge/SvelteKit-FF3E00?style=for-the-badge&logo=Svelte&logoColor=white)
-![License](https://img.shields.io/badge/MPL--2.0-blue?style=for-the-badge)
+[![License: MPL-2.0](https://img.shields.io/badge/License-MPL--2.0-blue?style=for-the-badge)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-FFC131?style=for-the-badge&logo=tauri&logoColor=white)](https://tauri.app/)
+[![SvelteKit](https://img.shields.io/badge/SvelteKit-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://kit.svelte.dev/)
+[![GitHub release](https://img.shields.io/github/v/release/Naitik4516/AMUS?style=for-the-badge)](https://github.com/Naitik4516/AMUS/releases/latest)
 
 </div>
 
 ## Features
 
-- **Audio playback** — MP3, FLAC, WAV, OGG, M4A, AAC, OPUS via rodio
-- **Fast library scanning** — Incremental scanning with automatic metadata extraction.
-- **Real-time file watcher** — automatically detects added, modified, and deleted files
-- **Advanced Queue** — play next, drag & drop reorder, shuffle and repeat.
-- **Auto-regeneration** — when queues run dry, similar tracks are suggested based on artist/album match, play count, and randomness
-- **Playback history & stats** — play counts, listening time trends, streaks, library growth, format distribution, hourly/weekday heatmaps, favorite trends
-- **Playlists** — create, rename, delete; add/remove tracks; auto-generated cover art
+### Playback
+
+- **Wide format support** — MP3, FLAC, WAV, OGG, M4A, AAC, OPUS (via rodio)
+- **Advanced queue** — play next, drag-and-drop reorder, shuffle, and repeat
+- **Auto-regeneration** — when the queue runs dry, similar tracks are suggested from artist/album match, play count, and randomness
+- **Background playback** — keeps playing from the system tray when the window is closed
+- **Mini player** — compact always-available window with art, track info, and controls
+- **Stop / pause / seek** — full transport controls plus stop
+
+### Library
+
+- **Fast incremental scanning** — metadata extraction and cover art on scan
+- **Real-time file watcher** — picks up added, modified, and deleted files automatically
+- **Playlists** — create, rename, delete; add/remove tracks; custom or auto-generated cover art; quick “Add more” search on the playlist page
 - **Favorites** — one-click toggle per track
-- **Artist metadata** — automatic profile + banner fetching from Bing / DuckDuckGo
-- **Mini player** — compact window with album art, track info, and controls
-- **System tray**
-- **Auto-updater**
-- **Background playback**
+- **Artist metadata** — automatic profile and banner images (Bing / DuckDuckGo)
+- **In-memory library cache** — library loads once at startup for snappy browsing and fewer IPC round-trips
+
+### Search & navigation
+
+- **Fuzzy global search** — client-side Fuse.js search with extended patterns
+- **Type filters** — `/tracks`, `/artists`, `/albums`, `/playlists` slash commands
+- **Context menus** — right-click tracks for play, queue, playlist, favorite, and more
+- **Keyboard shortcuts** — app-wide and optional global media shortcuts (customizable)
+
+### Insights & polish
+
+- **Playback history & stats** — play counts, listening time, streaks, library growth, format distribution, hourly/weekday heatmaps, favorite trends
+- **System tray** — play/pause, previous/next, show/hide, quit
+- **Auto-updater** — updates from GitHub Releases (passive install on Windows)
+- **Modern UI** — custom title bar, themes, and a responsive library layout
 
 ## Installation
 
 <p align="center">
   <a href="https://github.com/Naitik4516/AMUS/releases/latest">
-  <img alt="GitHub Downloads (all assets, latest release)" src="https://img.shields.io/github/downloads/Naitik4516/AMUS/latest/total?style=social">
+    <img alt="Download latest release" src="https://img.shields.io/github/v/release/Naitik4516/AMUS?style=for-the-badge&label=Download" />
+  </a>
+  &nbsp;
+  <a href="https://github.com/Naitik4516/AMUS/releases/latest">
+    <img alt="GitHub Downloads (all assets, latest release)" src="https://img.shields.io/github/downloads/Naitik4516/AMUS/latest/total?style=for-the-badge" />
   </a>
 </p>
 
-**Supported Platforms**
+Grab the latest build from **[Releases](https://github.com/Naitik4516/AMUS/releases/latest)**.
 
-- ✅ Windows (x64)
-- ✅ Linux (x64)
-- ✅ macOS (Intel & Apple Silicon)
+| Platform | Arch |
+| -------- | ---- |
+| Windows  | x64  |
+| Linux    | x64  |
+| macOS    | Intel & Apple Silicon |
 
 ## Screenshots
 
 <p align="center">
-  <img src=".github/images/home.webp" width="45%">
-  <img src=".github/images/player+queue+search.webp" width="45%">
+  <img src=".github/images/home.webp" width="45%" alt="Home">
+  <img src=".github/images/player+queue+search.webp" width="45%" alt="Player, queue, and search">
 </p>
 
 <p align="center">
-  <img src=".github/images/aritsts.webp" width="45%">
-  <img src=".github/images/artist_page.webp" width="45%">
+  <img src=".github/images/aritsts.webp" width="45%" alt="Artists">
+  <img src=".github/images/artist_page.webp" width="45%" alt="Artist page">
 </p>
 
 <p align="center">
-  <img src=".github/images/albums.webp" width="45%">
-  <img src=".github/images/album_page.webp" width="45%">
+  <img src=".github/images/albums.webp" width="45%" alt="Albums">
+  <img src=".github/images/album_page.webp" width="45%" alt="Album page">
 </p>
 
 <p align="center">
-  <img src=".github/images/stats.webp" width="45%">
-  <img src=".github/images/settings.webp" width="45%">
+  <img src=".github/images/stats.webp" width="45%" alt="Stats">
+  <img src=".github/images/settings.webp" width="45%" alt="Settings">
 </p>
 
-## Build & Run
+## Build & run
 
 ### Prerequisites
 
-1. [Tauri prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites)
+1. [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/) (Rust, platform deps)
 2. [Bun](https://bun.sh/)
 
 ```bash
@@ -82,78 +107,84 @@ bun install
 bun tauri dev
 ```
 
+Other useful commands:
+
+| Command         | Purpose                                      |
+| --------------- | -------------------------------------------- |
+| `bun tauri dev` | Full app (Vite + Tauri backend, hot reload)  |
+| `bun run dev`   | Frontend only (no native backend)            |
+| `bun run build` | Build frontend (`build/`)                    |
+| `bun run check` | Typecheck frontend                           |
+
 ## Architecture
 
 <details>
-<summary>Click to expand</summary>
+<summary>Project layout (click to expand)</summary>
 
 ```
 amus/
-├── src/                          # SvelteKit frontend (SSR off, adapter-static with fallback)
+├── src/                              # SvelteKit frontend (SPA, SSR off)
 │   ├── lib/
-│   │   ├── player.svelte.ts      # PlayerState singleton (Svelte 5 $state runes), Tauri event listener
-│   │   ├── commands.svelte.ts    # invoke() wrappers for all ~50 Tauri commands
-│   │   ├── data.svelte.ts        # Data-fetching helpers (playlists, cover art)
-│   │   ├── settings.svelte.ts    # tauri-plugin-store backed settings (booleans, defaults in code)
-│   │   ├── stats.svelte.ts       # Stats state management
-│   │   ├── update.svelte.ts       # Auto-updater wrapper
-│   │   ├── utils.ts              # getImageUrl(), formatDuration(), cn()
-│   │   └── types.d.ts            # All shared TS types (Track, Artist, Album, Playlist, etc.)
-│   ├── components/               # shadcn-svelte ui/, Menu/, Card/, Home/, stats/
-│   ├── routes/                   # (main)/ library|artists|albums|playlists|favourites|stats|settings|track/[id]
-│   │                             # miniplayer/ (separate Tauri window)
-│   └── styles/
-│       ├── theme.css             # Tailwind v4 @theme + 6 themes
-│       └── fonts.css             # Custom font faces
-├── src-tauri/                    # Rust backend
+│   │   ├── player.svelte.ts          # PlayerState ($state runes) + event listener
+│   │   ├── stores.svelte.ts          # Library store (tracks/albums/artists/playlists)
+│   │   ├── commands.svelte.ts        # invoke() wrappers for Tauri commands
+│   │   ├── settings.svelte.ts        # tauri-plugin-store settings
+│   │   ├── shortcuts.svelte.ts       # App + global shortcut definitions
+│   │   ├── stats.svelte.ts           # Stats state
+│   │   ├── update.svelte.ts          # Auto-updater
+│   │   ├── utils.ts                  # Image URLs, duration formatting, cn()
+│   │   └── types.d.ts                # Shared TS types
+│   ├── components/                   # UI (shadcn-svelte, menus, cards, stats)
+│   ├── routes/
+│   │   ├── (main)/                   # Library, artists, albums, playlists, …
+│   │   └── miniplayer/               # Separate mini-player window
+│   └── styles/                       # Tailwind v4 theme + fonts
+├── src-tauri/                        # Rust / Tauri backend
+│   ├── migrations/                   # SQLite migrations (rusqlite_migration)
 │   └── src/
-│       ├── main.rs               # Entry point (calls amus_lib::run)
-│       ├── lib.rs                # App setup: plugins, DB pool, tray, sync, player actor, ~50 commands
-│       ├── commands.rs           # Tauri command handlers (async, use State<DbPool> / State<PlayerHandle>)
-│       ├── db.rs                 # SQLite schema (3 migrations), queries, stats (rusqlite + r2d2 pool)
-│       ├── engine/               # Audio engine (rodio), queue management, shuffle/repeat
-│       │   ├── mod.rs
-│       │   ├── engine.rs         # rodio-based audio playback
-│       ├── player/
-│       │   ├── actor.rs          # PlayerActor: runs on a dedicated thread, receives PlayerCommand via mpsc
-│       │   ├── engine.rs         # rodio-based audio playback
-│       │   ├── events.rs         # Tauri event emission (player://event channel)
-│       │   ├── playback.rs       # Playback state machine
-│       │   ├── queue.rs          # Queue data structures (user_queue + context_queue)
-│       │   └── source.rs         # PlaybackSource / RepeatMode types
-│       ├── scanner.rs            # Library scanning (rayon parallel, lofty metadata, cover art extraction)
-│       ├── sync.rs               # SyncManager: startup scan + notify file watcher (Create/Modify/Remove)
-│       ├── models.rs             # Shared Rust types (serde Serialize/Deserialize)
-│       ├── error.rs              # thiserror Error enum -> serialized as strings
-│       └── artist_pic_fetcher.rs # Bing/DuckDuckGo image scraping (primp + scraper)
-├── migrations/                   # rusqlite_migration SQL files (001, 002, 003)
-├── static/                        # Static assets (favicon, icons)
-├── components.json              # shadcn-svelte config (alias: $components -> src/components)
-├── package.json
-├── svelte.config.js
-└── tsconfig.json
+│       ├── lib.rs                    # App setup: plugins, DB, tray, player, commands
+│       ├── commands.rs               # Tauri command handlers
+│       ├── db.rs                     # Schema, queries, stats
+│       ├── player/                   # Actor-based playback (rodio)
+│       ├── scanner.rs                # Parallel library scan (rayon + lofty)
+│       ├── sync.rs                   # Startup scan + notify file watcher
+│       └── artist_pic_fetcher.rs     # Artist image scraping
+├── static/                           # Icons and static assets
+└── package.json
 ```
+
+**How it fits together**
+
+- **Player actor** — `PlayerActor` runs on its own thread; the UI talks to it via commands and listens on `player://event`.
+- **SQLite library** — pooled DB at app data (`music.db`); WAL mode for concurrent reads.
+- **Frontend store** — library data is loaded once at startup into Svelte 5 state for fast UI and client-side search.
 
 </details>
 
-## Tech Stack
+## Tech stack
 
-| Layer         | Technology                                   |
-| ------------- | -------------------------------------------- |
-| Desktop shell | Tauri v2                                     |
-| Frontend      | SvelteKit 5 (SPA, SSR off)                   |
-| UI            | shadcn-svelte, Tailwind CSS v4, Lucide Icons |
-| Rust backend  | rodio, rusqlite, r2d2, lofty, rayon, notify  |
-| Artist images | primp (HTTP), scraper, Bing/DuckDuckGo       |
-| Audio formats | MP3, FLAC, WAV, OGG, M4A, AAC, OPUS          |
+| Layer         | Technology                                              |
+| ------------- | ------------------------------------------------------- |
+| Desktop shell | Tauri v2                                                |
+| Frontend      | SvelteKit 5 (SPA, SSR off), Svelte 5 runes              |
+| UI            | shadcn-svelte, Tailwind CSS v4, Lucide                   |
+| Search        | Fuse.js (client-side fuzzy + extended search)           |
+| Backend       | Rust — rodio, rusqlite, r2d2, lofty, rayon, notify      |
+| Artist images | primp + scraper (Bing / DuckDuckGo)                     |
+| Audio formats | MP3, FLAC, WAV, OGG, M4A, AAC, OPUS                     |
+
+## Roadmap
 
 ### Recently completed
 
 - [x] Mini player with always-on-top option
-- [x] Enhanced search
+- [x] Fuzzy global search (Fuse.js + type filters)
 - [x] Global and local keyboard shortcuts
+- [x] Track context menus (right-click)
+- [x] Playlist cover art + quick “Add more” flow
+- [x] Startup library cache for snappier UI
 
-### Library & Playback
+### Library & playback
 
 - [ ] Smart playlists
 - [ ] Music recommendations
@@ -164,13 +195,13 @@ amus/
 - [ ] DSP effects
 - [ ] Sleep timer
 
-### Library Management
+### Library management
 
 - [ ] Automatic metadata tagging
 - [ ] Lyrics support
-- [x] Advanced search
+- [ ] File associations (open audio files with AMUS)
 
-### User Experience
+### User experience
 
 - [ ] Dynamic theming
 - [ ] Improved UI animations
@@ -183,7 +214,15 @@ amus/
 
 ## FAQ
 
-1. **Is this a vibe-coded project? Is it completely AI-generated?**  
-    No. AMUS is a personal project that I designed and built myself.
-   I do use AI tools, including the Opencode coding agent and AI code completion, to help with implementation and bug fixing — especially while I was learning Rust or working on boilerplate and low-level code. Some files, such as parts of the library scanner and synchronization logic, were largely generated with AI assistance.
-   All AI-generated code has been reviewed, tested, and integrated by me. I make the architectural decisions, develop new features, fix bugs, and maintain the codebase.
+**Is this a vibe-coded / fully AI-generated project?**  
+No. AMUS is a personal project I designed and built. I use AI tools (including coding agents and autocomplete) for implementation help and boilerplate — especially while learning Rust or working through low-level pieces. Some areas (for example parts of the scanner and sync logic) had substantial AI assistance. Everything is reviewed, tested, and integrated by me; architecture, features, and maintenance are intentional human decisions.
+
+**Does it need the cloud or an account?**  
+No. Your library stays on your machine. Artist image fetch is the only optional network use for metadata art.
+
+**Where is my data stored?**  
+In the app data directory (SQLite library DB, cover art, settings). Nothing is uploaded for playback.
+
+## License
+
+[MPL-2.0](LICENSE)
