@@ -97,7 +97,7 @@
     });
 </script>
 
-<div class="relative w-full px-5">
+<div class="relative w-full px-1">
     <h2 class="text-5xl font-extrabold text-white font-switzer mb-4">
         {title}
     </h2>

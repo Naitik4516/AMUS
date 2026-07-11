@@ -219,7 +219,7 @@
 </script>
 
 <div
-    class="flex flex-col bg-linear-to-br from-white/10 to-white/3 backdrop-blur-2xl backdrop-brightness-80 backdrop-saturate-150 border border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.25)] mt-auto w-80 focus-within:w-120 {showResults
+    class="flex flex-col bg-linear-to-br from-white/10 to-white/3 backdrop-blur-2xl backdrop-brightness-80 backdrop-saturate-150 ring-1 ring-white/10 hover:ring-2 shadow-[0_8px_32px_0_rgba(0,0,0,0.25)] mt-auto w-80 focus-within:w-120 {showResults
         ? 'rounded-4xl'
         : 'rounded-full transition-all'} "
 >

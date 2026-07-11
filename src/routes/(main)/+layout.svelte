@@ -8,7 +8,10 @@
     import { Toaster } from "$components/ui/sonner/index.js";
     import type { LayoutProps } from "./$types";
     import { player } from "$lib/player.svelte";
-    import { getCurrentWindow, PhysicalSize } from "@tauri-apps/api/window";
+    import {
+        getCurrentWindow,
+        type ResizeDirection,
+    } from "@tauri-apps/api/window";
     import { onMount } from "svelte";
     import { settings, flags, initSettings } from "$lib/settings.svelte";
     import { store } from "$lib/stores.svelte";
@@ -115,35 +118,10 @@
         }
     });
 
-    const MIN_W = 700;
-    const MIN_H = 700;
-
-    function startResize(edge: string, e: MouseEvent) {
+    function startResize(direction: ResizeDirection, e: MouseEvent) {
         e.preventDefault();
         e.stopPropagation();
-        const appWindow = getCurrentWindow();
-        const startX = e.screenX;
-        const startY = e.screenY;
-
-        appWindow.outerSize().then((startSize) => {
-            function onMouseMove(e: MouseEvent) {
-                const dx = e.screenX - startX;
-                const dy = e.screenY - startY;
-                let newW = startSize.width;
-                let newH = startSize.height;
-                if (edge.includes("right"))
-                    newW = Math.max(MIN_W, startSize.width + dx);
-                if (edge.includes("bottom"))
-                    newH = Math.max(MIN_H, startSize.height + dy);
-                appWindow.setSize(new PhysicalSize(newW, newH));
-            }
-            function onMouseUp() {
-                document.removeEventListener("mousemove", onMouseMove);
-                document.removeEventListener("mouseup", onMouseUp);
-            }
-            document.addEventListener("mousemove", onMouseMove);
-            document.addEventListener("mouseup", onMouseUp);
-        });
+        getCurrentWindow().startResizeDragging(direction);
     }
 </script>
 
@@ -165,35 +143,44 @@
 />
 
 <div
-    class="w-full h-screen overflow-y-auto bg-radial from-background to-neutral-950 {isMaximized
+    class="w-full h-screen overflow-hidden pt-5 bg-radial from-background to-neutral-950 {isMaximized
         ? 'rounded-none'
         : 'rounded-3xl'}"
 >
-    <div class="pt-24 pl-30 {player.currentTrack ? 'pb-32' : ''}">
-        {@render children()}
+    <div
+        class="h-full overflow-y-auto {isMaximized ? 'mr-1' : 'mb-1.5 mr-1.5'}"
+    >
+        <div class="pt-18 pl-30 {player.currentTrack ? 'pb-32' : ''}">
+            {@render children()}
+        </div>
     </div>
 </div>
 
 {#if !isMaximized}
     <div
         role="presentation"
+        class="fixed top-0 left-0 right-0 h-1.5 cursor-s-resize z-999"
+        onmousedown={(e) => startResize("North", e)}
+    ></div>
+    <div
+        role="presentation"
         class="fixed bottom-0 left-0 right-0 h-1.5 cursor-s-resize z-999"
-        onmousedown={(e) => startResize("bottom", e)}
+        onmousedown={(e) => startResize("South", e)}
     ></div>
     <div
         role="presentation"
         class="fixed top-0 right-0 bottom-0 w-1.5 cursor-e-resize z-999"
-        onmousedown={(e) => startResize("right", e)}
+        onmousedown={(e) => startResize("East", e)}
     ></div>
     <div
         role="presentation"
-        class="fixed top-0 left-0 bottom-0 w-1.5 cursor-e-resize z-999"
-        onmousedown={(e) => startResize("left", e)}
+        class="fixed top-0 left-0 bottom-0 w-1.5 cursor-w-resize z-999"
+        onmousedown={(e) => startResize("West", e)}
     ></div>
     <div
         role="presentation"
         class="fixed bottom-0 right-0 w-4 h-4 cursor-se-resize z-999"
-        onmousedown={(e) => startResize("bottom-right", e)}
+        onmousedown={(e) => startResize("SouthEast", e)}
     ></div>
 {/if}
 

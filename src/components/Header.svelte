@@ -42,13 +42,15 @@
     });
 </script>
 
-<header class="fixed top-0 inset-x-0 z-20">
+<header class="fixed top-2 inset-x-0 z-20">
     <div class="h-2 shrink-0"></div>
     <div
         data-tauri-drag-region
         class="flex items-center px-4 h-12 justify-between select-none text-white cursor-grab"
     >
-        <div class="w-16 flex justify-center shrink-0 mt-1 pointer-events-none">
+        <div
+            class="w-16 flex justify-center shrink-0 mt-1 ml-2 pointer-events-none"
+        >
             <img
                 src="/icon.svg"
                 alt="Avatar"
@@ -59,7 +61,7 @@
         <GlobalSearch />
 
         <div
-            class="controls flex align-top bg-card/30 backdrop-blur-lg shadow-md rounded-full border p-1"
+            class="controls flex align-top bg-white/5 backdrop-blur-md shadow-lg rounded-full border p-1"
         >
             <button id="titlebar-minimize" title="Minimize" onclick={minimize}>
                 <Minus size={14} />
@@ -103,7 +105,7 @@
         color: white;
         background-color: transparent;
         cursor: pointer;
-        border-radius: 12px;
+        border-radius: 99px;
         transition: background-color 0.15s ease;
     }
 
@@ -112,6 +114,6 @@
     }
 
     .controls button.close-btn:hover {
-        background-color: rgba(225, 0, 0, 0.9);
+        background-color: rgba(225, 0, 0, 0.7);
     }
 </style>
