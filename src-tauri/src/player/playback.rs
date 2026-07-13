@@ -3,7 +3,6 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{OptionalExtension, params};
 
 use crate::models::Track;
-use crate::player::source::RepeatMode;
 
 type Conn = PooledConnection<SqliteConnectionManager>;
 
@@ -21,12 +20,6 @@ pub fn record_playback(
     Ok(())
 }
 
-
-pub fn queue_load_all(conn: &Conn) -> rusqlite::Result<Vec<(i64, i64)>> {
-    let mut stmt = conn.prepare("SELECT id, track_id FROM user_queue ORDER BY position ASC")?;
-    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
-    rows.collect()
-}
 
 pub fn queue_insert_front(conn: &Conn, track_id: i64) -> rusqlite::Result<i64> {
     let min_pos: Option<f64> = conn
@@ -62,7 +55,9 @@ pub fn queue_insert_back_many(
         .query_row("SELECT MAX(position) FROM user_queue", [], |r| r.get(0))
         .optional()?
         .flatten();
-    let mut start = max_pos.unwrap_or(1.0);
+    
+    // Start at max_pos + 1.0 so the first new row does not collide with the  existing last row and produce a non-deterministic ORDER BY result.
+    let mut start = max_pos.map(|p| p + 1.0).unwrap_or(1.0);
 
     let tx = conn.transaction()?;
     let mut ids = Vec::with_capacity(tracks.len());
@@ -146,77 +141,13 @@ fn renumber_queue(
 ) -> rusqlite::Result<()> {
     let mut ids: Vec<i64> = others.iter().map(|(id, _)| *id).collect();
     ids.insert(insert_at, moved_id);
+    // Wrap all per-row UPDATEs in a single transaction so they are atomic and WAL mode can batch them into one fsync instead of N.
+    let tx = conn.unchecked_transaction()?;
     for (i, id) in ids.iter().enumerate() {
-        conn.execute(
+        tx.execute(
             "UPDATE user_queue SET position = ? WHERE id = ?",
             params![(i as f64) + 1.0, id],
         )?;
     }
-    Ok(())
-}
-
-// ---------- session persistence ----------
-
-pub struct SessionState {
-    pub context_type: Option<String>,
-    pub context_id: Option<i64>,
-    pub current_track_id: Option<i64>,
-    pub context_position: Option<i64>,
-    pub position_sec: f64,
-    pub repeat_mode: RepeatMode,
-    pub shuffle: bool,
-    pub shuffle_order: Option<Vec<usize>>,
-}
-
-pub fn session_load(conn: &Conn) -> rusqlite::Result<Option<SessionState>> {
-    conn.query_row(
-        "SELECT context_type, context_id, current_track_id, context_position,
-                position_sec, repeat_mode, shuffle, shuffle_order
-         FROM playback_session WHERE id = 1",
-        [],
-        |r| {
-            let shuffle_order_json: Option<String> = r.get(7)?;
-            Ok(SessionState {
-                context_type: r.get(0)?,
-                context_id: r.get(1)?,
-                current_track_id: r.get(2)?,
-                context_position: r.get(3)?,
-                position_sec: r.get(4)?,
-                repeat_mode: RepeatMode::from_str(&r.get::<_, String>(5)?),
-                shuffle: r.get(6)?,
-                shuffle_order: shuffle_order_json.and_then(|s| serde_json::from_str(&s).ok()),
-            })
-        },
-    )
-    .optional()
-}
-
-pub fn session_save(conn: &Conn, s: &SessionState) -> rusqlite::Result<()> {
-    let shuffle_order_json = s
-        .shuffle_order
-        .as_ref()
-        .map(|v| serde_json::to_string(v).unwrap());
-    conn.execute(
-        "INSERT INTO playback_session
-            (id, context_type, context_id, current_track_id, context_position,
-             position_sec, repeat_mode, shuffle, shuffle_order, updated_at)
-         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-         ON CONFLICT(id) DO UPDATE SET
-            context_type=excluded.context_type, context_id=excluded.context_id,
-            current_track_id=excluded.current_track_id, context_position=excluded.context_position,
-            position_sec=excluded.position_sec, repeat_mode=excluded.repeat_mode,
-            shuffle=excluded.shuffle, shuffle_order=excluded.shuffle_order,
-            updated_at=CURRENT_TIMESTAMP",
-        params![
-            s.context_type,
-            s.context_id,
-            s.current_track_id,
-            s.context_position,
-            s.position_sec,
-            s.repeat_mode.as_str(),
-            s.shuffle,
-            shuffle_order_json,
-        ],
-    )?;
-    Ok(())
+    tx.commit()
 }
