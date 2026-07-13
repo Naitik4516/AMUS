@@ -4,6 +4,8 @@ use std::collections::VecDeque;
 use super::source::{PlaybackSource, RepeatMode};
 use crate::models::Track;
 
+const MAX_HISTORY: usize = 50;
+
 #[derive(Debug, Clone)]
 pub struct QueueItem {
     pub db_id: i64,
@@ -39,7 +41,7 @@ pub struct PlaybackQueue {
 
     user_queue: VecDeque<QueueItem>,
 
-    history: Vec<HistoryEntry>,
+    history: VecDeque<HistoryEntry>,
     repeat_mode: RepeatMode,
 
     current: Option<(Track, PlaybackSource)>,
@@ -56,7 +58,7 @@ impl PlaybackQueue {
             shuffle_order: None,
             shuffle_cursor: 0,
             user_queue: VecDeque::new(),
-            history: Vec::new(),
+            history: VecDeque::new(),
             repeat_mode: RepeatMode::Off,
             current: None,
         }
@@ -85,7 +87,7 @@ impl PlaybackQueue {
     }
 
     pub fn last_played_id(&self) -> Option<i64> {
-        self.history.last().map(|e| e.track.id)
+        self.history.back().map(|e| e.track.id)
     }
 
     pub fn context_position(&self) -> Option<usize> {
@@ -145,7 +147,7 @@ impl PlaybackQueue {
         self.context_source = source;
         self.context_label = label;
         self.shuffle_order = None;
-        // self.shuffle_cursor = 0;
+        self.shuffle_cursor = 0;
         self.history.clear();
         let start_index = start_index.min(self.context.len().saturating_sub(1));
 
@@ -259,11 +261,15 @@ impl PlaybackQueue {
 
     pub fn advance_next(&mut self) -> NextOutcome {
         if let Some((track, source)) = self.current.take() {
-            self.history.push(HistoryEntry { track, source });
+            self.history.push_back(HistoryEntry { track, source });
+            // Keep history bounded to avoid unbounded memory growth over long sessions.
+            if self.history.len() > MAX_HISTORY {
+                self.history.pop_front();
+            }
         }
 
         if self.repeat_mode == RepeatMode::One {
-            if let Some(entry) = self.history.last() {
+            if let Some(entry) = self.history.back() {
                 self.current = Some((entry.track.clone(), entry.source.clone()));
                 return NextOutcome::Track(entry.track.clone(), entry.source.clone());
             }
@@ -328,6 +334,21 @@ impl PlaybackQueue {
         }
     }
 
+    pub fn jump_to_track(&mut self, track_id: i64) -> bool {
+        if let Some(idx) = self.context.iter().position(|t| t.id == track_id) {
+            self.context_position = Some(idx);
+            if let Some(order) = &self.shuffle_order {
+                if let Some(cursor) = order.iter().position(|&i| i == idx) {
+                    self.shuffle_cursor = cursor;
+                }
+            }
+            self.set_current_from_context();
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn previous(&mut self, elapsed_sec: f64) -> PreviousOutcome {
         const RESTART_THRESHOLD_SEC: f64 = 3.0;
         if elapsed_sec > RESTART_THRESHOLD_SEC {
@@ -335,7 +356,7 @@ impl PlaybackQueue {
         }
     
         if self.shuffle_enabled {
-            return match self.history.pop() {
+            return match self.history.pop_back() {
                 Some(entry) => {
                     if entry.source == self.context_source {
                         if let Some(idx) = self.context.iter().position(|t| t.id == entry.track.id) {
