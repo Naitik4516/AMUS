@@ -54,16 +54,16 @@ AMUS is built for people who own their music library. It runs completely offline
 
 Open global search and type normally for fuzzy matching, or use these **extended patterns** to refine results (powered by Fuse.js extended search). You can combine them with type filters like `/tracks belver` or `/artists ^Tu`.
 
-| Token     | Match type                   | Description                                      |
-| --------- | ---------------------------- | ------------------------------------------------ |
-| `belver`  | fuzzy-match                  | Items that fuzzy match *belver* (e.g. “Believer”) |
-| `="Rebel"` | exact-match                 | Items that are exactly *Rebel*                   |
-| `'lofi`   | include-match                | Items that include *lofi*                        |
-| `!lofi`   | inverse-exact-match          | Items that do not include *lofi*                 |
-| `^Tu`     | prefix-exact-match           | Items that start with *Tu*                       |
-| `!^Tu`    | inverse-prefix-exact-match   | Items that do not start with *Tu*                |
-| `na$`     | suffix-exact-match           | Items that end with *na*                         |
-| `!na$`    | inverse-suffix-exact-match   | Items that do not end with *na*                  |
+| Token      | Match type                 | Description                                       |
+| ---------- | -------------------------- | ------------------------------------------------- |
+| `belver`   | fuzzy-match                | Items that fuzzy match _belver_ (e.g. “Believer”) |
+| `="Rebel"` | exact-match                | Items that are exactly _Rebel_                    |
+| `'lofi`    | include-match              | Items that include _lofi_                         |
+| `!lofi`    | inverse-exact-match        | Items that do not include _lofi_                  |
+| `^Tu`      | prefix-exact-match         | Items that start with _Tu_                        |
+| `!^Tu`     | inverse-prefix-exact-match | Items that do not start with _Tu_                 |
+| `na$`      | suffix-exact-match         | Items that end with _na_                          |
+| `!na$`     | inverse-suffix-exact-match | Items that do not end with _na_                   |
 
 **Tips**
 
@@ -86,10 +86,10 @@ Open global search and type normally for fuzzy matching, or use these **extended
 
 Grab the latest build from **[Releases](https://github.com/Naitik4516/AMUS/releases/latest)**.
 
-| Platform | Arch |
-| -------- | ---- |
-| Windows  | x64  |
-| Linux    | x64  |
+| Platform | Arch                  |
+| -------- | --------------------- |
+| Windows  | x64                   |
+| Linux    | x64                   |
 | macOS    | Intel & Apple Silicon |
 
 ## Screenshots
@@ -131,12 +131,12 @@ bun tauri dev
 
 Other useful commands:
 
-| Command         | Purpose                                      |
-| --------------- | -------------------------------------------- |
-| `bun tauri dev` | Full app (Vite + Tauri backend, hot reload)  |
-| `bun run dev`   | Frontend only (no native backend)            |
-| `bun run build` | Build frontend (`build/`)                    |
-| `bun run check` | Typecheck frontend                           |
+| Command         | Purpose                                     |
+| --------------- | ------------------------------------------- |
+| `bun tauri dev` | Full app (Vite + Tauri backend, hot reload) |
+| `bun run dev`   | Frontend only (no native backend)           |
+| `bun run build` | Build frontend (`build/`)                   |
+| `bun run check` | Typecheck frontend                          |
 
 ## Architecture
 
@@ -185,15 +185,15 @@ amus/
 
 ## Tech stack
 
-| Layer         | Technology                                              |
-| ------------- | ------------------------------------------------------- |
-| Desktop shell | Tauri v2                                                |
-| Frontend      | SvelteKit 5 (SPA, SSR off), Svelte 5 runes              |
-| UI            | shadcn-svelte, Tailwind CSS v4, Lucide                   |
-| Search        | Fuse.js (client-side fuzzy + extended search)           |
-| Backend       | Rust — rodio, rusqlite, r2d2, lofty, rayon, notify      |
-| Artist images | primp + scraper (Bing / DuckDuckGo)                     |
-| Audio formats | MP3, FLAC, WAV, OGG, M4A, AAC, OPUS                     |
+| Layer         | Technology                                         |
+| ------------- | -------------------------------------------------- |
+| Desktop shell | Tauri v2                                           |
+| Frontend      | SvelteKit 5 (SPA, SSR off), Svelte 5 runes         |
+| UI            | shadcn-svelte, Tailwind CSS v4, Lucide             |
+| Search        | Fuse.js (client-side fuzzy + extended search)      |
+| Backend       | Rust — rodio, rusqlite, r2d2, lofty, rayon, notify |
+| Artist images | primp + scraper (Bing / DuckDuckGo)                |
+| Audio formats | MP3, FLAC, WAV, OGG, M4A, AAC, OPUS                |
 
 ## Roadmap
 

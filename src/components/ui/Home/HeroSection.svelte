@@ -1,29 +1,30 @@
-<script>
+<script lang="ts">
     import { onMount } from "svelte";
     import { Play, Shuffle, FolderInput } from "@lucide/svelte";
     import Button from "$components/ui/button/button.svelte";
     import { importAudioLibrary, getStatsOverview } from "$lib/commands.svelte";
     import { player } from "$lib/player.svelte";
     import { invoke } from "@tauri-apps/api/core";
+    import { loadSession, clearSession, hasSession } from "$lib/session.svelte";
 
     let { hasMusic } = $props();
 
     let totalTracks = $state(0);
     let totalArtists = $state(0);
     let totalAlbums = $state(0);
-    let hasRecentTracks = $state(false);
+    let hasSessionState = $state(false);
 
     onMount(async () => {
         if (hasMusic) {
             try {
-                const [overview, recent] = await Promise.all([
+                const [overview, sessionExists] = await Promise.all([
                     getStatsOverview("all_time"),
-                    invoke("get_recently_played", { limit: 1 }),
+                    hasSession(),
                 ]);
                 totalTracks = overview.total_tracks;
                 totalArtists = overview.total_artists;
                 totalAlbums = overview.total_albums;
-                hasRecentTracks = recent.length > 0;
+                hasSessionState = sessionExists && !player.currentTrack;
             } catch (e) {
                 console.error("Failed to load stats", e);
             }
@@ -41,24 +42,94 @@
         }
     }
 
-    async function resumeListening() {
-        if (player.currentTrack) {
-            if (player.isPlaying) return;
-            await player.playPause();
-        } else {
+    import type { Track, TrackDetails } from "$lib/types";
+
+    async function resumeSession() {
+        const session = await loadSession();
+        if (!session) {
+            await resumeFallback();
+            return;
+        }
+
+        let contextTracks: Track[] = [];
+        try {
+            switch (session.context_type) {
+                case "ALBUM":
+                    contextTracks = await invoke<Track[]>("get_tracks_by_album", { albumId: session.context_id });
+                    break;
+                case "PLAYLIST":
+                    contextTracks = await invoke<Track[]>("get_tracks_by_playlist", { playlistId: session.context_id });
+                    break;
+                case "ARTIST":
+                    contextTracks = await invoke<Track[]>("get_tracks_by_artist", { artistId: session.context_id });
+                    break;
+                case "FAVORITES":
+                    contextTracks = await invoke<Track[]>("get_favorite_tracks");
+                    break;
+                default:
+                    if (session.current_track_id) {
+                        const details = await invoke<TrackDetails>("get_track_details", { id: session.current_track_id });
+                        contextTracks = [details];
+                    }
+            }
+        } catch (e) {
+            console.error("Failed to fetch context tracks", e);
+        }
+
+        if (contextTracks.length === 0) {
+            await resumeFallback();
+            return;
+        }
+
+        let userQueueTracks: Track[] = [];
+        if (session.user_queue_ids.length > 0) {
             try {
-                const tracks = await invoke("get_recently_played", {
-                    limit: 1,
-                });
-                if (tracks.length > 0) {
-                    await player.play(tracks, { type: "Other" }, 0);
-                } else {
-                    await playAllTracks();
-                }
+                const all = await invoke<Track[]>("get_all_tracks", { sortBy: null });
+                const idSet = new Set(session.user_queue_ids);
+                userQueueTracks = all.filter((t) => idSet.has(t.id));
+                const idOrder = session.user_queue_ids;
+                userQueueTracks.sort((a, b) => idOrder.indexOf(a.id) - idOrder.indexOf(b.id));
             } catch (e) {
-                console.error("Failed to resume", e);
+                console.error("Failed to fetch user queue tracks", e);
+            }
+        }
+
+        const startIndex = Math.min(session.context_position, contextTracks.length - 1);
+        const sourceType = session.context_type;
+        const sourceId = session.context_id;
+
+        try {
+            await invoke("restore_session", {
+                contextTracks,
+                sourceType,
+                sourceId,
+                startIndex: Math.max(0, startIndex),
+                contextLabel: session.context_label,
+                userQueueTracks,
+                positionSec: session.position_sec,
+                volume: session.volume,
+                repeat: session.repeat,
+                shuffle: session.shuffle,
+            });
+            await clearSession();
+            hasSessionState = false;
+        } catch (e) {
+            console.error("Failed to restore session", e);
+            await resumeFallback();
+        }
+    }
+
+    async function resumeFallback() {
+        try {
+            const recent = await invoke<Track[]>("get_recently_played", { limit: 1 });
+            if (recent.length > 0) {
+                await player.play(recent, { type: "Other" }, 0);
+            } else {
                 await playAllTracks();
             }
+        } catch (e) {
+            console.error("Failed to resume fallback", e);
+            await playAllTracks();
         }
     }
 
@@ -119,23 +190,23 @@
 
         <div class="flex items-center gap-4">
             {#if hasMusic}
-                {#if hasRecentTracks}
+                {#if hasSessionState}
                     <Button
                         size="xl"
-                        class="font-semibold roounded-full"
-                        onclick={resumeListening}
+                        class="font-semibold roounded-full bg-accent text-black hover:bg-accent/80"
+                        onclick={resumeSession}
                     >
                         <Play class="w-5 h-5 fill-current" />
-                        Resume Listening
+                        Resume Session
                     </Button>
                 {:else}
                     <Button
                         size="xl"
                         class="font-semibold roounded-full"
-                        onclick={playAllTracks}
+                        onclick={resumeFallback}
                     >
                         <Play class="w-5 h-5 fill-current" />
-                        Play All
+                        Resume Listening
                     </Button>
                 {/if}
                 <Button

@@ -96,6 +96,22 @@ impl AudioEngine {
             .unwrap_or(true)
     }
 
+    pub fn tick_status(&self) -> (f64, bool) {
+        let guard = self.player.lock().unwrap();
+        match guard.as_ref() {
+            Some(p) => (p.get_pos().as_secs_f64(), p.empty()),
+            None => (0.0, true),
+        }
+    }
+
+    pub fn state(&self) -> (f64, bool) {
+        let guard = self.player.lock().unwrap();
+        match guard.as_ref() {
+            Some(p) => (p.get_pos().as_secs_f64(), p.is_paused()),
+            None => (0.0, true),
+        }
+    }
+
     pub fn stop(&self) {
         *self.player.lock().unwrap() = None;
     }

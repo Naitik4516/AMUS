@@ -6,7 +6,8 @@ type SettingsKey =
   | "autoFetchArtistPic"
   | "autoFetchArtistBanner"
   | "keepRunningInBg"
-  | "autoCheckUpdates";
+  | "autoCheckUpdates"
+  | "autoplayEnabled";
 
 const DEFAULTS: Record<SettingsKey, boolean> = {
   realtimeSync: true,
@@ -15,6 +16,7 @@ const DEFAULTS: Record<SettingsKey, boolean> = {
   autoFetchArtistBanner: true,
   keepRunningInBg: true,
   autoCheckUpdates: true,
+  autoplayEnabled: true,
 };
 
 let store: Awaited<ReturnType<typeof load>> | null = null;

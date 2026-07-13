@@ -156,7 +156,7 @@
                         onValueChange={(val) => {
                             if (player.currentTrack) {
                                 let seekVal =
-                                    val * player.currentTrack.duration_seconds;
+                                    val * player.duration;
 
                                 player.seek(seekVal);
                             }

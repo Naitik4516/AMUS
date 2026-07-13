@@ -11,6 +11,7 @@
         scanLibrary,
     } from "$lib/commands.svelte";
     import { initSettings, setSetting, settings } from "$lib/settings.svelte";
+    import { player } from "$lib/player.svelte";
     import { updater } from "$lib/update.svelte";
     import {
         Download,
@@ -219,6 +220,21 @@
                     onchange={(v) => setSetting("keepRunningInBg", v)}
                     icon={Minimize2}
                     iconActiveClass="text-orange-400"
+                />
+            </div>
+
+            <h3 class="text-lg font-bold text-gray-300 mt-6">Playback</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ToggleCard
+                    title="Autoplay"
+                    description="Automatically play similar tracks when the queue is empty."
+                    bind:checked={settings.autoplayEnabled}
+                    onchange={(v) => {
+                        setSetting("autoplayEnabled", v);
+                        player.setAutoplay(v);
+                    }}
+                    icon={Zap}
+                    iconActiveClass="text-yellow-400"
                 />
             </div>
 

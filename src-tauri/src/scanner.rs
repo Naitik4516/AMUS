@@ -13,8 +13,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use walkdir::WalkDir;
@@ -327,79 +326,45 @@ pub fn scan_files(
         return Ok(());
     }
 
-    // Phase 1: Parallel metadata extraction with progress
+    // Phase 1: Parallel metadata extraction
     emit_scan_progress(app_handle, PHASE_META_START, 100, "Reading metadata...");
-    let progress_step = (total / 15).max(15);
 
-    let metadata_results: Vec<TrackMetadata> = {
-        let counter = Arc::new(AtomicUsize::new(0));
-        let ah = app_handle.clone();
+    let metadata_results: Vec<TrackMetadata> = to_scan
+        .into_par_iter()
+        .filter_map(|path| {
+            match extract_metadata(&path) {
+                Ok(m) => Some(m),
+                Err(e) => {
+                    eprintln!("Failed to scan {:?}: {}", path, e);
+                    None
+                }
+            }
+        })
+        .collect();
 
-        to_scan
-            .into_par_iter()
-            .filter_map(|path| {
-                let result = extract_metadata(&path);
-                let done = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                if done % progress_step == 0 || done == total {
-                    let pct = PHASE_META_START
-                        + (done * (PHASE_META_END - PHASE_META_START) / total);
-                    let _ = ah.emit(
-                        "scan-progress",
-                        ScanProgress {
-                            current: pct,
-                            total: 100,
-                            message: format!("Reading metadata ({}/{})", done, total),
-                        },
-                    );
-                }
-                match result {
-                    Ok(m) => Some(m),
-                    Err(e) => {
-                        eprintln!("Failed to scan {:?}: {}", path, e);
-                        None
-                    }
-                }
-            })
-            .collect()
-    };
+    emit_scan_progress(app_handle, PHASE_META_END, 100, "Metadata read");
 
     let track_count = metadata_results.len();
     if track_count == 0 {
         return Ok(());
     }
 
-    // Phase 2: Parallel cover art saving with progress
+    // Phase 2: Parallel cover art saving
     emit_scan_progress(app_handle, PHASE_COVER_START, 100, "Saving cover art...");
 
-    let metadata_with_covers: Vec<(TrackMetadata, Option<String>)> = {
-        let counter = Arc::new(AtomicUsize::new(0));
-        let ah = app_handle.clone();
+    let metadata_with_covers: Vec<(TrackMetadata, Option<String>)> = metadata_results
+        .into_par_iter()
+        .map(|meta| {
+            let cover_url = meta.picture.as_ref().and_then(|pic| {
+                save_picture(&app_dir, pic)
+                    .inspect_err(|e| eprintln!("Failed to save picture: {e}"))
+                    .ok()
+            });
+            (meta, cover_url)
+        })
+        .collect();
 
-        metadata_results
-            .into_par_iter()
-            .map(|meta| {
-                let cover_url = meta.picture.as_ref().and_then(|pic| {
-                    save_picture(&app_dir, pic)
-                        .inspect_err(|e| eprintln!("Failed to save picture: {e}"))
-                        .ok()
-                });
-                let done = counter.fetch_add(1, Ordering::Relaxed) + 1;
-                if done % progress_step == 0 || done == track_count {
-                    let pct = PHASE_COVER_START
-                        + (done * (PHASE_COVER_END - PHASE_COVER_START) / track_count);
-                    let _ = ah.emit(
-                        "scan-progress",
-                        ScanProgress {
-                            current: pct,
-                            total: 100,
-                            message: format!("Saving cover art ({}/{})", done, track_count),
-                        },
-                    );
-                }
-                (meta, cover_url)
-            })
-            .collect()
-    };
+    emit_scan_progress(app_handle, PHASE_COVER_END, 100, "Cover art saved");
 
     // Phase 3: DB writes — batch artist, album, track; collect relationships for bulk insert
     let mut artist_cache = HashMap::new();
@@ -412,6 +377,7 @@ pub fn scan_files(
 
     let save_start = Instant::now();
     let tx = conn.transaction().map_err(Error::Db)?;
+    let progress_step = (track_count / 15).max(15);
 
     for (i, (meta, cover_url)) in metadata_with_covers.iter().enumerate() {
         let artist_names: Vec<String> = meta.artists.clone();

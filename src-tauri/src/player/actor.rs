@@ -40,6 +40,18 @@ pub enum PlayerCommand {
     },
     Stop,
     SetAutoplay(bool),
+    PlayTrackFromContext(i64),
+    RestoreSession {
+        context_tracks: Vec<Track>,
+        source: PlaybackSource,
+        start_index: usize,
+        context_label: Option<String>,
+        user_queue_tracks: Vec<Track>,
+        position_sec: f64,
+        volume: f32,
+        repeat: RepeatMode,
+        shuffle: bool,
+    },
     GetState(oneshot::Sender<PlayerStateSnapshot>),
     Shutdown,
     Tick, 
@@ -68,7 +80,6 @@ struct NowPlaying {
 
 pub struct PlayerActor {
     rx: Receiver<PlayerCommand>,
-    tx_self: Sender<PlayerCommand>, // handed to the ticker thread
     app: AppHandle,
     pool: DbPool,
 
@@ -83,52 +94,66 @@ pub struct PlayerActor {
 
 const TICK_INTERVAL: Duration = Duration::from_millis(250);
 const POSITION_EMIT_INTERVAL: Duration = Duration::from_millis(1000);
-const SESSION_CHECKPOINT_INTERVAL: Duration = Duration::from_secs(30);
 
 impl PlayerActor {
     pub fn spawn(app: AppHandle, pool: DbPool) -> Sender<PlayerCommand> {
         let (tx, rx) = std::sync::mpsc::channel::<PlayerCommand>();
-        let tx_ticker = tx.clone();
-        let tx_self = tx.clone();
 
-        std::thread::spawn(move || {
-            std::thread::spawn(move || {
-                loop {
-                    std::thread::sleep(TICK_INTERVAL);
-                    if tx_ticker.send(PlayerCommand::Tick).is_err() {
-                        break; // actor thread gone
+        std::thread::Builder::new()
+            .name("player-actor".into())
+            .spawn(move || {
+                let engine = match AudioEngine::new() {
+                    Ok(e) => e,
+                    Err(e) => {
+                        eprintln!("fatal: failed to init audio engine: {e}");
+                        return;
                     }
-                }
-            });
-
-            let engine = AudioEngine::new().expect("failed to init audio engine");
-            let mut actor = PlayerActor {
-                rx,
-                tx_self,
-                app,
-                pool,
-                engine,
-                queue: PlaybackQueue::new(),
-                volume: 1.0,
-                autoplay_enabled: true,
-                now_playing: None,
-                has_track_loaded: false,
-                last_emitted_pos_at: Instant::now(),
-            };
-            actor.restore_session();
-            actor.run();
-        });
+                };
+                let mut actor = PlayerActor {
+                    rx,
+                    app,
+                    pool,
+                    engine,
+                    queue: PlaybackQueue::new(),
+                    volume: 1.0,
+                    autoplay_enabled: true,
+                    now_playing: None,
+                    has_track_loaded: false,
+                    last_emitted_pos_at: Instant::now(),
+                };
+                actor.run();
+            })
+            .expect("failed to spawn player-actor thread");
 
         tx
     }
 
-    fn conn(&self) -> r2d2::PooledConnection<SqliteConnectionManager> {
-        self.pool.get().expect("db pool exhausted")
+    fn conn(&self) -> Option<r2d2::PooledConnection<SqliteConnectionManager>> {
+        match self.pool.get() {
+            Ok(c) => Some(c),
+            Err(e) => {
+                eprintln!("failed to get db connection: {e}");
+                None
+            }
+        }
     }
 
     fn run(&mut self) {
-        let mut last_checkpoint = Instant::now();
-        while let Ok(cmd) = self.rx.recv() {
+        loop {
+            let is_active = self.has_track_loaded && !self.engine.is_paused();
+            let cmd = if is_active {
+                match self.rx.recv_timeout(TICK_INTERVAL) {
+                    Ok(c) => c,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => PlayerCommand::Tick,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            } else {
+                match self.rx.recv() {
+                    Ok(c) => c,
+                    Err(_) => break,
+                }
+            };
+
             match cmd {
                 PlayerCommand::LoadContext {
                     tracks,
@@ -165,38 +190,43 @@ impl PlayerActor {
                     self.emit_repeat_shuffle();
                 }
                 PlayerCommand::EnqueueNext(track) => {
-                    let conn = self.conn();
-                    if let Ok(db_id) = playback::queue_insert_front(&conn, track.id) {
-                        self.queue.enqueue_next(db_id, track);
-                        self.emit_queue_changed();
+                    if let Some(conn) = self.conn() {
+                        if let Ok(db_id) = playback::queue_insert_front(&conn, track.id) {
+                            self.queue.enqueue_next(db_id, track);
+                            self.emit_queue_changed();
+                        }
                     }
                 }
                 PlayerCommand::EnqueueEnd(track) => {
-                    let conn = self.conn();
-                    if let Ok(db_id) = playback::queue_insert_back(&conn, track.id) {
-                        self.queue.enqueue_end(db_id, track);
-                        self.emit_queue_changed();
+                    if let Some(conn) = self.conn() {
+                        if let Ok(db_id) = playback::queue_insert_back(&conn, track.id) {
+                            self.queue.enqueue_end(db_id, track);
+                            self.emit_queue_changed();
+                        }
                     }
                 }
                 PlayerCommand::EnqueueEndMany(tracks) => {
-                    let mut conn = self.conn();
-                    if let Ok(db_ids) = playback::queue_insert_back_many(&mut conn, &tracks) {
-                        for (db_id, track) in db_ids.into_iter().zip(tracks) {
-                            self.queue.enqueue_end(db_id, track);
+                    if let Some(mut conn) = self.conn() {
+                        if let Ok(db_ids) = playback::queue_insert_back_many(&mut conn, &tracks) {
+                            for (db_id, track) in db_ids.into_iter().zip(tracks) {
+                                self.queue.enqueue_end(db_id, track);
+                            }
+                            self.emit_queue_changed();
                         }
-                        self.emit_queue_changed();
                     }
                 }
                 PlayerCommand::RemoveFromQueue(db_id) => {
                     self.queue.remove_from_queue(db_id);
-                    let conn = self.conn();
-                    let _ = playback::queue_remove(&conn, db_id);
+                    if let Some(conn) = self.conn() {
+                        let _ = playback::queue_remove(&conn, db_id);
+                    }
                     self.emit_queue_changed();
                 }
                 PlayerCommand::ClearQueue => {
                     self.queue.clear_queue();
-                    let conn = self.conn();
-                    let _ = playback::queue_clear_all(&conn);
+                    if let Some(conn) = self.conn() {
+                        let _ = playback::queue_clear_all(&conn);
+                    }
                     self.emit_queue_changed();
                 }
                 PlayerCommand::ReorderQueue {
@@ -204,36 +234,79 @@ impl PlayerActor {
                     new_index,
                 } => {
                     self.queue.reorder_queue(queue_id, new_index);
-                    let conn = self.conn();
-                    let _ = playback::queue_reorder(&conn, queue_id, new_index);
+                    if let Some(conn) = self.conn() {
+                        let _ = playback::queue_reorder(&conn, queue_id, new_index);
+                    }
                     self.emit_queue_changed();
                 }
                 PlayerCommand::SetAutoplay(v) => self.autoplay_enabled = v,
+                PlayerCommand::PlayTrackFromContext(track_id) => {
+                    if self.queue.jump_to_track(track_id) {
+                        self.load_current_into_engine(true);
+                    }
+                }
+                PlayerCommand::RestoreSession {
+                    context_tracks,
+                    source,
+                    start_index,
+                    context_label,
+                    user_queue_tracks,
+                    position_sec,
+                    volume,
+                    repeat,
+                    shuffle,
+                } => {
+                    self.finalize_now_playing();
+                    self.queue.clear_queue();
+                    if let Some(conn) = self.conn() {
+                        let _ = playback::queue_clear_all(&conn);
+                    }
+                    self.queue
+                        .load_context(context_tracks, source, start_index, context_label);
+                    // load current track with autoplay=false to prevent transient playback before seek
+                    self.load_current_into_engine(false);
+                    if !user_queue_tracks.is_empty() {
+                        if let Some(mut conn) = self.conn() {
+                            if let Ok(db_ids) = playback::queue_insert_back_many(&mut conn, &user_queue_tracks) {
+                                for (db_id, track) in db_ids.into_iter().zip(user_queue_tracks) {
+                                    self.queue.enqueue_end(db_id, track);
+                                }
+                            }
+                        }
+                    }
+                    self.queue.set_repeat(repeat);
+                    self.queue.set_shuffle(shuffle);
+                    self.emit_repeat_shuffle();
+                    self.volume = volume.clamp(0.0, 1.0);
+                    self.engine.set_volume(self.volume);
+                    emit(&self.app, PlayerEvent::VolumeChanged { volume: self.volume });
+                    self.emit_queue_changed();
+                    let _ = self.engine.seek(Duration::from_secs_f64(position_sec.max(0.0)));
+                    if let Some(np) = &mut self.now_playing {
+                        np.max_position_reached = np.max_position_reached.max(position_sec);
+                    }
+                    // Since session is restored, we trigger play if it was loaded
+                    if self.has_track_loaded {
+                        self.engine.play();
+                        emit(&self.app, PlayerEvent::StateChanged { is_playing: true });
+                    }
+                    emit(&self.app, PlayerEvent::Position { pos_sec: position_sec, at_epoch_ms: now_epoch_ms() });
+                }
                 PlayerCommand::GetState(reply) => {
                     let _ = reply.send(self.snapshot());
                 }
                 PlayerCommand::Shutdown => {
                     self.finalize_now_playing();
-                    self.save_session();
                     break;
                 }
                 PlayerCommand::Tick => {
                     self.on_tick();
                 }
             }
-
-            if last_checkpoint.elapsed() >= SESSION_CHECKPOINT_INTERVAL {
-                self.save_session();
-                last_checkpoint = Instant::now();
-            }
         }
     }
 
 
-    
-    // ---------- core transitions ----------
-
-    
     fn load_current_into_engine(&mut self, autoplay: bool) {
         let Some((track, source)) = self.queue.current().cloned() else {
             self.has_track_loaded = false;
@@ -241,7 +314,19 @@ impl PlayerActor {
             return;
         };
 
-        let conn = self.conn();
+        let conn = match self.conn() {
+            Some(c) => c,
+            None => {
+                emit(
+                    &self.app,
+                    PlayerEvent::Error {
+                        message: "failed to connect to database".into(),
+                        track_id: Some(track.id),
+                    },
+                );
+                return;
+            }
+        };
         let path = match db::get_track_path_by_id(&conn, track.id) {
             Ok(p) => p,
             _ => {
@@ -252,6 +337,7 @@ impl PlayerActor {
                         track_id: Some(track.id),
                     },
                 );
+                drop(conn);
                 self.handle_next(); // skip broken track
                 return;
             }
@@ -337,7 +423,13 @@ impl PlayerActor {
             self.stop_playback();
             return;
         };
-        let conn = self.conn();
+        let conn = match self.conn() {
+            Some(c) => c,
+            None => {
+                self.stop_playback();
+                return;
+            }
+        };
         match db::get_similar_tracks(&conn, last_id, 20) {
             Ok(recs) if !recs.is_empty() => {
                 self.queue.extend_with_autoplay(recs);
@@ -359,10 +451,6 @@ impl PlayerActor {
         self.engine.stop();
         emit(&self.app, PlayerEvent::StateChanged { is_playing: false });
         emit(&self.app, PlayerEvent::PlaybackEnded);
-    }
-
-    fn now_playing_or_last_track_id(&self) -> Option<i64> {
-        self.queue.current().map(|(t, _)| t.id)
     }
 
     fn handle_previous(&mut self) {
@@ -406,16 +494,13 @@ impl PlayerActor {
             return;
         }
 
-        let pos = self.engine.position().as_secs_f64();
+        let (pos, is_finished) = self.engine.tick_status();
         if let Some(np) = &mut self.now_playing {
             np.max_position_reached = np.max_position_reached.max(pos);
         }
 
-        if self.engine.is_finished() && !self.engine.is_paused() {
-        }
-
         let track_ended = self.now_playing.as_ref().map_or(false, |np| {
-            self.engine.is_finished() && np.max_position_reached >= np.duration_sec - 0.5
+            is_finished && np.max_position_reached >= np.duration_sec - 0.5
         });
 
         if track_ended {
@@ -440,68 +525,24 @@ impl PlayerActor {
         if let Some(np) = self.now_playing.take() {
             if np.duration_sec > 0.0 {
                 let pct = (np.max_position_reached / np.duration_sec * 100.0).clamp(0.0, 100.0);
-                let conn = self.conn();
-                let _ = playback::record_playback(&conn, np.track_id, np.source.type_str(), pct);
-            }
-        }
-    }
-
-
-    
-    // ---------- session persistence ----------
-
-    fn save_session(&self) {
-        let conn = self.conn();
-        let session = playback::SessionState {
-            context_type: Some(self.queue.context_source().type_str().to_string()),
-            context_id: self.queue.context_source().source_id(),
-            current_track_id: self.queue.current().map(|(t, _)| t.id),
-            context_position: self.queue.context_position().map(|p| p as i64),
-            position_sec: self.engine.position().as_secs_f64(),
-            repeat_mode: self.queue.repeat_mode(),
-            shuffle: self.queue.shuffle_enabled(),
-            shuffle_order: None,
-        };
-        let _ = playback::session_save(&conn, &session);
-    }
-
-    fn restore_session(&mut self) {
-        let conn = self.conn();
-        let Ok(Some(session)) = playback::session_load(&conn) else {
-            return;
-        };
-        drop(conn);
-
-        self.queue.set_repeat(session.repeat_mode);
-        self.queue.set_shuffle(session.shuffle);
-
-        if session.current_track_id.is_some() {
-            self.load_current_into_engine(false);
-            let _ = self
-                .engine
-                .seek(Duration::from_secs_f64(session.position_sec));
-        }
-
-        // restore user queue
-        let conn = self.conn();
-        if let Ok(rows) = playback::queue_load_all(&conn) {
-            for (db_id, track_id) in rows {
-                if let Ok(track) = db::get_track_by_id(&conn, track_id) {
-                    self.queue.enqueue_end(db_id, track);
+                if let Some(conn) = self.conn() {
+                    let _ = playback::record_playback(&conn, np.track_id, np.source.type_str(), pct);
                 }
             }
         }
     }
+
 
     fn snapshot(&self) -> PlayerStateSnapshot {
         let (track, duration) = match self.queue.current() {
             Some((t, _)) => (Some(t.clone()), t.duration_seconds),
             None => (None, 0),
         };
+        let (pos, is_paused) = self.engine.state();
         PlayerStateSnapshot {
             current_track: track,
-            is_playing: self.has_track_loaded && !self.engine.is_paused(),
-            position_sec: self.engine.position().as_secs_f64(),
+            is_playing: self.has_track_loaded && !is_paused,
+            position_sec: pos,
             duration_sec: duration,
             repeat: self.queue.repeat_mode().as_str().to_string(),
             shuffle: self.queue.shuffle_enabled(),
@@ -520,7 +561,7 @@ impl PlayerActor {
         QueueViewPayload {
             context_source_type: self.queue.context_source().type_str().to_string(),
             context_label: self.queue.context_label().map(str::to_string),
-            upcoming_context: self.queue.upcoming_context(100),
+            upcoming_context: self.queue.upcoming_context(20),
         }
     }
 
@@ -534,6 +575,8 @@ impl PlayerActor {
                     .iter()
                     .map(|q| q.track.clone())
                     .collect(),
+                context_len: self.queue.context_len(),
+                context_position: self.queue.context_position(),
                 queue_view: self.build_queue_view(),
             },
         );

@@ -51,6 +51,8 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
     M::up(include_str!("../migrations/002_add_album_artist.sql")),
     M::up(include_str!("../migrations/003_add_fetch_tracking.sql")),
     M::up(include_str!("../migrations/004_add_playlist_cover_art.sql")),
+    M::up(include_str!("../migrations/005_add_user_queue_index.sql")),
+    M::up(include_str!("../migrations/006_alter_playback_history_source_type.sql")),
 ];
 
 const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);
@@ -133,7 +135,7 @@ pub fn delete_tracks_by_paths(conn: &Connection, paths: &[String]) -> Result<usi
 
     let mut total_deleted = 0;
     for chunk in paths.chunks(900) {
-        let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let placeholders = sql_placeholders(chunk.len());
 
         let sql = format!("DELETE FROM track WHERE path IN ({})", placeholders);
         let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
@@ -677,6 +679,43 @@ pub fn get_tracks_in_playlist(
     prepare_sorted_tracks_list(conn, sql, params![playlist_id], sort_by)
 }
 
+pub fn get_tracks_by_album(conn: &Connection, album_id: i64) -> Result<Vec<Track>> {
+    let sql =
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        FROM track t
+        JOIN album_track alt ON t.id = alt.track_id
+        JOIN album al ON alt.album_id = al.id
+        WHERE alt.album_id = ?
+        ORDER BY alt.track_number ASC";
+
+    prepare_tracks_list(conn, sql, params![album_id])
+}
+
+pub fn get_tracks_by_artist(conn: &Connection, artist_id: i64) -> Result<Vec<Track>> {
+    let sql =
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        FROM track t
+        JOIN track_artist ta ON t.id = ta.track_id
+        LEFT JOIN album_track alt ON t.id = alt.track_id
+        LEFT JOIN album al ON alt.album_id = al.id
+        WHERE ta.artist_id = ?
+        ORDER BY al.name COLLATE NOCASE ASC, alt.track_number ASC";
+
+    prepare_tracks_list(conn, sql, params![artist_id])
+}
+
+pub fn get_favorite_tracks(conn: &Connection) -> Result<Vec<Track>> {
+    let sql =
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        FROM track t
+        LEFT JOIN album_track alt ON t.id = alt.track_id
+        LEFT JOIN album al ON alt.album_id = al.id
+        WHERE t.is_favorite = 1
+        ORDER BY t.added_at DESC";
+
+    prepare_tracks_list(conn, sql, [])
+}
+
 pub fn get_track_details(conn: &Connection, track_id: i64) -> Result<TrackDetails> {
     let sql = "SELECT t.id, t.path, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.mtime,
         IFNULL(s.play_count, 0), s.last_played_at, IFNULL(s.skip_count, 0), s.last_skipped_at, t.cover_art, t.added_at
@@ -782,7 +821,7 @@ pub fn get_similar_tracks(
             (CASE
                 WHEN s.last_played_at IS NOT NULL
                      AND (strftime('%s', 'now') - strftime('%s', s.last_played_at)) < 7200
-                THEN 100
+                THEN -100
                 ELSE 0
             END) +
 
@@ -1019,6 +1058,16 @@ pub fn get_playlist_cover_arts(conn: &Connection, playlist_id: i64) -> Result<Ve
 
 // Utils
 
+/// Build comma-separated `?` placeholders for SQL IN clauses, e.g. `?,?,?`
+fn sql_placeholders(count: usize) -> String {
+    let mut s = String::with_capacity(count.saturating_sub(1) * 2 + 1);
+    for i in 0..count {
+        if i > 0 { s.push(','); }
+        s.push('?');
+    }
+    s
+}
+
 fn resolve_album_artist(
     conn: &Connection,
     album_artist_name: Option<String>,
@@ -1048,6 +1097,51 @@ fn resolve_album_artist(
             }
         }
     }
+}
+
+fn batch_resolve_album_artists(
+    conn: &Connection,
+    names: &[&str],
+) -> Result<HashMap<String, Vec<Artist>>> {
+    let mut map = HashMap::new();
+    if names.is_empty() {
+        return Ok(map);
+    }
+
+    let mut unique_names: Vec<&str> = names.to_vec();
+    unique_names.sort();
+    unique_names.dedup();
+
+    let placeholders: Vec<String> = unique_names.iter().map(|_| "?".to_string()).collect();
+    let sql = format!(
+        "SELECT ar.name, ar.id, ar.name, ar.profile_image, ar.banner_image
+         FROM artist ar
+         WHERE ar.name IN ({})",
+        placeholders.join(",")
+    );
+
+    if let Ok(mut stmt) = conn.prepare(&sql) {
+        if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(&unique_names), |row| {
+            let name: String = row.get(0)?;
+            Ok((
+                name,
+                Artist {
+                    id: row.get(1)?,
+                    name: row.get(2)?,
+                    profile_image: row.get(3)?,
+                    banner_image: row.get(4)?,
+                },
+            ))
+        }) {
+            for row in rows {
+                if let Ok((name, artist)) = row {
+                    map.entry(name).or_default().push(artist);
+                }
+            }
+        }
+    }
+
+    Ok(map)
 }
 
 pub fn prepare_tracks_list<P: Params>(
@@ -1100,40 +1194,12 @@ pub fn prepare_tracks_list<P: Params>(
         .map_err(Error::Db)?;
 
     if !raw_tracks.is_empty() {
-        // Batch-resolve album artists
         let names: Vec<&str> = raw_tracks
             .iter()
             .filter_map(|r| r.album_artist_name.as_deref())
             .collect();
         if !names.is_empty() {
-            let mut artist_map = std::collections::HashMap::<String, Vec<Artist>>::new();
-            let placeholders = names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-            let sql = format!(
-                "SELECT ar.name, ar.id, ar.name, ar.profile_image, ar.banner_image
-                 FROM artist ar
-                 WHERE ar.name IN ({})",
-                placeholders
-            );
-            if let Ok(mut stmt) = conn.prepare(&sql) {
-                if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(&names), |row| {
-                    let name: String = row.get(0)?;
-                    Ok((
-                        name,
-                        Artist {
-                            id: row.get(1)?,
-                            name: row.get(2)?,
-                            profile_image: row.get(3)?,
-                            banner_image: row.get(4)?,
-                        },
-                    ))
-                }) {
-                    for row in rows {
-                        if let Ok((name, artist)) = row {
-                            artist_map.entry(name).or_default().push(artist);
-                        }
-                    }
-                }
-            }
+            let artist_map = batch_resolve_album_artists(conn, &names)?;
             for rt in &mut raw_tracks {
                 if let Some(ref name) = rt.album_artist_name {
                     if let Some(artists) = artist_map.get(name) {
@@ -1172,9 +1238,9 @@ fn get_artists_for_tracks(
     }
 
     for chunk in track_ids.chunks(900) {
-        let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let placeholders = sql_placeholders(chunk.len());
         let sql = format!(
-            "SELECT ta.track_id, ar.id, ar.name, ar.profile_image
+            "SELECT ta.track_id, ar.id, ar.name, ar.profile_image, ar.banner_image
              FROM track_artist ta
              JOIN artist ar ON ta.artist_id = ar.id
              WHERE ta.track_id IN ({})",
@@ -1189,7 +1255,7 @@ fn get_artists_for_tracks(
                         id: row.get(1)?,
                         name: row.get(2)?,
                         profile_image: row.get(3)?,
-                        banner_image: None,
+                        banner_image: row.get(4)?,
                     },
                 ))
             })
@@ -1214,7 +1280,7 @@ fn get_playlist_ids_for_tracks(
     }
 
     for chunk in track_ids.chunks(900) {
-        let placeholders = chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let placeholders = sql_placeholders(chunk.len());
         let sql = format!(
             "SELECT track_id, playlist_id FROM playlist_track WHERE track_id IN ({})",
             placeholders
@@ -1297,7 +1363,7 @@ pub fn get_most_played_tracks(
 }
 
 pub fn get_top_artists(conn: &Connection, limit: usize) -> Result<Vec<Artist>> {
-    let sql = "SELECT ar.id, ar.name, ar.profile_image, SUM(IFNULL(s.play_count, 0)) as total_plays
+    let sql = "SELECT ar.id, ar.name, ar.profile_image, ar.banner_image, SUM(IFNULL(s.play_count, 0)) as total_plays
         FROM artist ar
         JOIN track_artist ta ON ta.artist_id = ar.id
         JOIN track t ON t.id = ta.track_id
@@ -1313,7 +1379,7 @@ pub fn get_top_artists(conn: &Connection, limit: usize) -> Result<Vec<Artist>> {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 profile_image: row.get(2)?,
-                banner_image: None,
+                banner_image: row.get(3)?,
             })
         })
         .map_err(Error::Db)?;
@@ -1400,94 +1466,44 @@ pub fn get_recently_added_tracks(conn: &Connection, limit: usize) -> Result<Vec<
 pub fn get_stats_overview(conn: &Connection, timeframe: Timeframe) -> Result<StatsOverview> {
     let time_filter = timeframe_where_clause("ph.played_at", timeframe);
 
-    let total_tracks: i64 = conn
-        .query_row("SELECT COUNT(*) FROM track", [], |row| row.get(0))
+    let (total_tracks, total_artists, total_albums, total_file_size, largest_file_size, played_tracks, unplayed): (i64, i64, i64, i64, i64, i64, i64) = conn
+        .query_row(
+            "SELECT
+                (SELECT COUNT(*) FROM track),
+                (SELECT COUNT(*) FROM artist),
+                (SELECT COUNT(*) FROM album),
+                (SELECT COALESCE(SUM(file_size), 0) FROM track),
+                (SELECT COALESCE(MAX(file_size), 0) FROM track),
+                (SELECT COUNT(DISTINCT ph.track_id) FROM playback_history ph),
+                (SELECT COUNT(*) FROM track t LEFT JOIN track_stats s ON t.id = s.track_id WHERE s.play_count IS NULL OR s.play_count = 0)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
+        )
         .map_err(Error::Db)?;
 
-    let total_artists: i64 = conn
-        .query_row("SELECT COUNT(*) FROM artist", [], |row| row.get(0))
-        .map_err(Error::Db)?;
-
-    let total_albums: i64 = conn
-        .query_row("SELECT COUNT(*) FROM album", [], |row| row.get(0))
-        .map_err(Error::Db)?;
-
-    let (total_plays, total_time): (i64, f64) = conn
+    let (total_plays, total_time, days_span): (i64, f64, f64) = conn
         .query_row(
             &format!(
-                "SELECT COALESCE(COUNT(ph.id), 0), COALESCE(SUM(t.duration_sec * ph.completion_percent / 100.0), 0)
+                "SELECT
+                    COALESCE(COUNT(ph.id), 0),
+                    COALESCE(SUM(t.duration_sec * ph.completion_percent / 100.0), 0),
+                    COALESCE(CAST(JULIANDAY('now') - JULIANDAY(MIN(ph.played_at)) AS REAL), 1)
                  FROM playback_history ph
                  JOIN track t ON t.id = ph.track_id
                  WHERE {}",
                 time_filter
             ),
             [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(Error::Db)?;
 
     let total_time_sec = total_time as i64;
-
-    let avg_daily: f64 = if total_time > 0.0 {
-        // Get earliest play date in range
-        let days: f64 = conn
-            .query_row(
-                &format!(
-                    "SELECT COALESCE(CAST(JULIANDAY('now') - JULIANDAY(MIN(ph.played_at)) AS REAL), 1)
-                     FROM playback_history ph
-                     WHERE {}",
-                    time_filter
-                ),
-                [],
-                |row| row.get(0),
-            )
-            .map_err(Error::Db)?;
-        let days = days.max(1.0);
-        total_time / 60.0 / days
-    } else {
-        0.0
-    };
-
-    let total_file_size: i64 = conn
-        .query_row("SELECT COALESCE(SUM(file_size), 0) FROM track", [], |row| {
-            row.get(0)
-        })
-        .map_err(Error::Db)?;
-
-    let largest_file: f64 = conn
-        .query_row("SELECT COALESCE(MAX(file_size), 0) FROM track", [], |row| {
-            row.get::<_, i64>(0)
-        })
-        .map_err(Error::Db)? as f64
-        / 1048576.0;
-
-    let avg_file_size: f64 = if total_tracks > 0 {
-        total_file_size as f64 / total_tracks as f64 / 1048576.0
-    } else {
-        0.0
-    };
-
-    let played_tracks: i64 = conn
-        .query_row(
-            "SELECT COUNT(DISTINCT ph.track_id) FROM playback_history ph",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(Error::Db)?;
-
-    let pct_played = if total_tracks > 0 {
-        played_tracks as f64 / total_tracks as f64 * 100.0
-    } else {
-        0.0
-    };
-
-    let unplayed: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM track t LEFT JOIN track_stats s ON t.id = s.track_id WHERE s.play_count IS NULL OR s.play_count = 0",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(Error::Db)?;
+    let days = days_span.max(1.0);
+    let avg_daily = if total_time > 0.0 { total_time / 60.0 / days } else { 0.0 };
+    let largest_file_mb = largest_file_size as f64 / 1048576.0;
+    let avg_file_size_mb = if total_tracks > 0 { total_file_size as f64 / total_tracks as f64 / 1048576.0 } else { 0.0 };
+    let pct_library_played = if total_tracks > 0 { played_tracks as f64 / total_tracks as f64 * 100.0 } else { 0.0 };
 
     let format_dist = get_format_distribution(conn)?;
 
@@ -1499,10 +1515,10 @@ pub fn get_stats_overview(conn: &Connection, timeframe: Timeframe) -> Result<Sta
         total_listening_time_sec: total_time_sec,
         avg_daily_listening_min: avg_daily,
         total_file_size_bytes: total_file_size,
-        avg_file_size_mb: avg_file_size,
-        largest_file_mb: largest_file,
+        avg_file_size_mb,
+        largest_file_mb,
         format_distribution: format_dist,
-        pct_library_played: pct_played,
+        pct_library_played,
         unplayed_tracks: unplayed,
     })
 }
@@ -1635,31 +1651,7 @@ pub fn get_top_tracks_with_stats(
             .filter_map(|r| r.album_artist_name.as_deref())
             .collect();
         if !names.is_empty() {
-            let mut album_artist_map = std::collections::HashMap::<String, Vec<Artist>>::new();
-            let placeholders = names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-            if let Ok(mut stmt) = conn.prepare(&format!(
-                "SELECT ar.name, ar.id, ar.name, ar.profile_image, ar.banner_image
-                 FROM artist ar WHERE ar.name IN ({})",
-                placeholders
-            )) {
-                if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(&names), |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        Artist {
-                            id: row.get(1)?,
-                            name: row.get(2)?,
-                            profile_image: row.get(3)?,
-                            banner_image: row.get(4)?,
-                        },
-                    ))
-                }) {
-                    for row in rows {
-                        if let Ok((name, artist)) = row {
-                            album_artist_map.entry(name).or_default().push(artist);
-                        }
-                    }
-                }
-            }
+            let album_artist_map = batch_resolve_album_artists(conn, &names)?;
             for rt in &mut raw_list {
                 if let Some(ref name) = rt.album_artist_name {
                     if let Some(artists) = album_artist_map.get(name) {
@@ -1690,7 +1682,7 @@ pub fn get_top_artists_with_stats(
 
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT ar.id, ar.name, ar.profile_image,
+            "SELECT ar.id, ar.name, ar.profile_image, ar.banner_image,
                     COUNT(DISTINCT ph.id) as play_count,
                     COALESCE(SUM(t.duration_sec * ph.completion_percent / 100.0), 0) as total_time,
                     COUNT(DISTINCT ph.track_id) as tracks_played
@@ -1713,11 +1705,11 @@ pub fn get_top_artists_with_stats(
                     id: row.get(0)?,
                     name: row.get(1)?,
                     profile_image: row.get(2)?,
-                    banner_image: None,
+                    banner_image: row.get(3)?,
                 },
-                play_count: row.get(3)?,
-                total_listening_time_sec: row.get::<_, f64>(4)? as i64,
-                tracks_played: row.get(5)?,
+                play_count: row.get(4)?,
+                total_listening_time_sec: row.get::<_, f64>(5)? as i64,
+                tracks_played: row.get(6)?,
             })
         })
         .map_err(Error::Db)?
@@ -2350,31 +2342,7 @@ pub fn get_playback_history_timeline(
             .filter_map(|r| r.album_artist_name.as_deref())
             .collect();
         if !names.is_empty() {
-            let mut album_artist_map = std::collections::HashMap::<String, Vec<Artist>>::new();
-            let placeholders = names.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-            if let Ok(mut stmt) = conn.prepare(&format!(
-                "SELECT ar.name, ar.id, ar.name, ar.profile_image, ar.banner_image
-                 FROM artist ar WHERE ar.name IN ({})",
-                placeholders
-            )) {
-                if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(&names), |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        Artist {
-                            id: row.get(1)?,
-                            name: row.get(2)?,
-                            profile_image: row.get(3)?,
-                            banner_image: row.get(4)?,
-                        },
-                    ))
-                }) {
-                    for row in rows {
-                        if let Ok((name, artist)) = row {
-                            album_artist_map.entry(name).or_default().push(artist);
-                        }
-                    }
-                }
-            }
+            let album_artist_map = batch_resolve_album_artists(conn, &names)?;
             for re in &mut raw_events {
                 if let Some(ref name) = re.album_artist_name {
                     if let Some(artists) = album_artist_map.get(name) {

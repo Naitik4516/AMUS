@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Track, PlaybackSource, RepeatMode } from "./types";
 import { store } from "./stores.svelte";
+import { saveSession } from "./session.svelte";
 
 // discriminated union matching the #[serde(tag = "event", content = "payload")] enum
 type PlayerEvent =
@@ -62,10 +63,10 @@ function toBackendSource(source: PlaybackSource): {
       return { sourceType: "ARTIST", sourceId: source.id };
     case "Favorites":
       return { sourceType: "FAVORITES", sourceId: null };
-    case "Search":
-      return { sourceType: "SEARCH", sourceId: null };
     case "Direct":
       return { sourceType: "DIRECT", sourceId: null };
+    case "Queue":
+      return { sourceType: "QUEUE", sourceId: null };
     default:
       return { sourceType: "OTHER", sourceId: null };
   }
@@ -112,7 +113,18 @@ class PlayerStore {
     if (this.#unlisten) return; // already initialized
     this.#unlisten = await listen<PlayerEvent>(EVENT_NAME, (e) => this.#handleEvent(e.payload));
     await this.#hydrate();
-    this.#startTicking();
+    this.#setupBeforeUnload();
+  }
+
+  #setupBeforeUnload() {
+    const save = () => {
+      if (this.#debounceTimer) {
+        clearTimeout(this.#debounceTimer);
+        this.#debounceTimer = null;
+      }
+      this.#saveSession();
+    };
+    window.addEventListener("beforeunload", save);
   }
 
   destroy() {
@@ -133,6 +145,9 @@ class PlayerStore {
       this.userQueue = snapshot.user_queue;
       this.#applyQueueView(snapshot.queue_view);
       this.#setPosition(snapshot.position_sec);
+      if (this.isPlaying) {
+        this.#startTicking();
+      }
     } catch (err) {
       console.error("failed to hydrate player state", err);
     } finally {
@@ -146,6 +161,29 @@ class PlayerStore {
     this.playNext = view.upcoming_context;
   }
 
+  #debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  #debouncedSave(fn: () => void) {
+    if (this.#debounceTimer) clearTimeout(this.#debounceTimer);
+    this.#debounceTimer = setTimeout(fn, 500);
+  }
+
+  #saveSession() {
+    saveSession({
+      current_track_id: this.currentTrack?.id ?? null,
+      context_type: this.contextSourceType,
+      context_id: this.source && "id" in this.source ? (this.source as any).id : null,
+      context_label: this.contextLabel,
+      context_position: this.contextPosition ?? 0,
+      user_queue_ids: this.userQueue.map((t) => t.id),
+      position_sec: this.#lastKnownPos,
+      volume: this.volume,
+      repeat: this.repeatMode,
+      shuffle: this.shuffleEnabled,
+      saved_at: Date.now(),
+    });
+  }
+
   #handleEvent(evt: PlayerEvent) {
     switch (evt.event) {
       case "TrackChanged":
@@ -154,9 +192,18 @@ class PlayerStore {
         this.source = evt.payload.source;
         this.errorMessage = null;
         this.#setPosition(0);
+        this.#debouncedSave(() => this.#saveSession());
+        if (this.isPlaying) {
+          this.#startTicking();
+        }
         break;
       case "StateChanged":
         this.isPlaying = evt.payload.is_playing;
+        if (this.isPlaying) {
+          this.#startTicking();
+        } else {
+          this.#stopTicking();
+        }
         break;
       case "Position":
         this.#setPosition(evt.payload.pos_sec, evt.payload.at_epoch_ms);
@@ -166,16 +213,24 @@ class PlayerStore {
         this.contextLength = evt.payload.context_len;
         this.contextPosition = evt.payload.context_position;
         this.#applyQueueView(evt.payload.queue_view);
+        this.#debouncedSave(() => this.#saveSession());
         break;
       case "RepeatShuffleChanged":
         this.repeatMode = evt.payload.repeat;
         this.shuffleEnabled = evt.payload.shuffle;
+        this.#debouncedSave(() => this.#saveSession());
         break;
       case "VolumeChanged":
         this.volume = evt.payload.volume;
+        this.#debouncedSave(() => this.#saveSession());
         break;
       case "PlaybackEnded":
+        this.currentTrack = null;
+        this.duration = 0;
+        this.source = null;
         this.isPlaying = false;
+        this.#setPosition(0);
+        this.#stopTicking();
         break;
       case "Error":
         this.errorMessage = evt.payload.message;
@@ -184,26 +239,35 @@ class PlayerStore {
   }
 
   #setPosition(posSec: number, atEpochMs = Date.now()) {
+    if (!this.currentTrack) {
+      this.position = 0;
+      return;
+    }
     this.#lastKnownPos = posSec;
     this.#lastUpdateAtMs = atEpochMs;
     this.position = posSec;
   }
 
   #startTicking() {
+    if (this.#rafHandle !== null) return;
     const tick = () => {
-      if (this.isPlaying) {
-        const elapsedSec = (Date.now() - this.#lastUpdateAtMs) / 1000;
-        const cap = this.duration > 0 ? this.duration : Infinity;
-        this.position = Math.min(this.#lastKnownPos + elapsedSec, cap);
+      if (!this.isPlaying || !this.currentTrack) {
+        this.#rafHandle = null;
+        return;
       }
+      const elapsedSec = (Date.now() - this.#lastUpdateAtMs) / 1000;
+      const cap = this.duration > 0 ? this.duration : Infinity;
+      this.position = Math.min(this.#lastKnownPos + elapsedSec, cap);
       this.#rafHandle = requestAnimationFrame(tick);
     };
     this.#rafHandle = requestAnimationFrame(tick);
   }
 
   #stopTicking() {
-    if (this.#rafHandle !== null) cancelAnimationFrame(this.#rafHandle);
-    this.#rafHandle = null;
+    if (this.#rafHandle !== null) {
+      cancelAnimationFrame(this.#rafHandle);
+      this.#rafHandle = null;
+    }
   }
 
   async play(
@@ -228,13 +292,6 @@ class PlayerStore {
 
   async stop() {
     await invoke("stop");
-    // reset state to initial values
-    this.currentTrack = null;
-    this.isPlaying = false;
-    this.position = 0;
-    this.duration = 0;
-    this.source = null;
-    this.errorMessage = null;
   }
 
   async next() {
@@ -293,6 +350,13 @@ class PlayerStore {
 
   async setAutoplay(enabled: boolean) {
     await invoke("set_autoplay", { enabled });
+  }
+
+  async playFromContextIndex(index: number) {
+    const track = this.playNext[index];
+    if (track) {
+      await invoke("play_track_from_context", { trackId: track.id });
+    }
   }
 
   async toggleFavorite(track: Track) {

@@ -94,7 +94,7 @@ fn toggle_miniplayer(app: &tauri::AppHandle) {
         }
     } else if let Ok(window) = create_miniplayer(app) {
         let _ = window.show();
-        let _ = window.move_window(Position::TrayRight);
+        let _ = window.move_window(Position::TrayCenter);
         let _ = window.set_focus();
     }
 }
@@ -137,13 +137,17 @@ fn create_miniplayer(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWind
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+    #[cfg(debug_assertions)]
+    let builder = tauri::Builder::default().plugin(tauri_plugin_devtools::init());
+    #[cfg(not(debug_assertions))]
+    let builder = tauri::Builder::default();
+
+    builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let w = app
                 .get_webview_window("main")
                 .expect("no main window");
             let _ = w.show();
-            let _ = w.set_focus();           
+            let _ = w.set_focus();
         }))
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_process::init())
@@ -266,10 +270,14 @@ pub fn run() {
             commands::get_recently_played,
             commands::get_most_played_tracks,
             commands::get_track_details,
+            commands::get_track_playlist_ids,
             commands::get_artists,
             commands::get_all_albums,
             commands::get_playlists,
             commands::get_tracks_by_playlist,
+            commands::get_tracks_by_album,
+            commands::get_tracks_by_artist,
+            commands::get_favorite_tracks,
             commands::create_playlist,
             commands::add_track_to_playlist,
             commands::remove_track_from_playlist,
@@ -292,6 +300,8 @@ pub fn run() {
             commands::clear_queue,
             commands::reorder_queue,
             commands::set_autoplay,
+            commands::play_track_from_context,
+            commands::restore_session,
             commands::get_current_state,
             commands::stop,
             commands::get_top_artists,

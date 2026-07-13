@@ -81,7 +81,7 @@
                     <TrackListSmall
                         {track}
                         className="rounded-xl"
-                        onclick={() => {}}
+                        onclick={() => player.playFromContextIndex(i)}
                     />
                 {/each}
             {/if}

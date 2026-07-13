@@ -33,7 +33,9 @@
     }: DropdownMenuProps = $props();
 
     let subMenu = $state<MenuItem | null>(null);
-    let Menu: HTMLDivElement | undefined = $state();
+
+    let menuWidth = $state(300);
+    let menuHeight = $state(600);
 
     let { x, y } = $derived.by(() => {
         let x, y;
@@ -45,9 +47,6 @@
             x = rect.left;
             y = rect.bottom;
         }
-
-        const menuWidth = 300;
-        const menuHeight = Menu?.offsetHeight ?? 400;
 
         return {
             x: Math.min(x, window.innerWidth - menuWidth),
@@ -130,7 +129,8 @@
 <div
     class="dropdown-menu fixed z-50 min-w-55 max-w-75 rounded-2xl border border-white/10 bg-card/40 shadow-lg backdrop-blur-xl isolate"
     role="menu"
-    bind:this={Menu}
+    bind:offsetWidth={menuWidth}
+    bind:offsetHeight={menuHeight}
     style="top: {y}px; left: {x}px;"
     transition:slide={{ duration: 200, easing: cubicOut }}
 >

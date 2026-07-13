@@ -31,6 +31,12 @@
     let isMaximized = $state(false);
 
     $effect(() => {
+        if (flags.ready && player.isReady) {
+            player.setAutoplay(settings.autoplayEnabled);
+        }
+    });
+
+    $effect(() => {
         let active = true;
         let cleanupGlobal: (() => void) | undefined;
 

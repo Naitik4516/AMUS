@@ -193,7 +193,7 @@
     function handleResultClick(result: SearchableItem) {
         console.log("Clicked result:", result);
         if (result.type === "track") {
-            player.play([result], { type: "Search" });
+            player.play([result], { type: "Other" });
         } else if (result.type === "artist") {
             goto(`/library/artists/${result.id}`);
         } else if (result.type === "album") {

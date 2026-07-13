@@ -18,9 +18,6 @@ pub enum Error {
     #[error("Audio engine error: {0}")]
     Audio(String),
 
-    #[error("Network error: {0}")]
-    Network(#[from] reqwest::Error),
-
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
 

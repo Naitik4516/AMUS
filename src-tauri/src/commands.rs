@@ -185,21 +185,6 @@ pub async fn toggle_favorite(id: i64, pool: State<'_, DbPool>) -> Result<Track> 
 }
 
 #[tauri::command]
-pub async fn get_similar_songs(id: i64, pool: State<'_, DbPool>) -> Result<Vec<Track>> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    db::get_similar_tracks(&conn, id, 20)
-}
-
-#[tauri::command]
-pub async fn get_playlist_cover_arts(
-    playlist_id: i64,
-    pool: State<'_, DbPool>,
-) -> Result<Vec<String>> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    db::get_playlist_cover_arts(&conn, playlist_id)
-}
-
-#[tauri::command]
 pub async fn get_playlist(
     playlist_id: i64,
     pool: State<'_, DbPool>,
@@ -212,6 +197,24 @@ pub async fn get_playlist(
 pub async fn get_all_playlist_tracks(pool: State<'_, DbPool>) -> Result<Vec<(i64, Vec<i64>)>> {
     let conn = pool.get().map_err(Error::Pool)?;
     db::get_all_playlist_tracks(&conn)
+}
+
+#[tauri::command]
+pub async fn get_tracks_by_album(album_id: i64, pool: State<'_, DbPool>) -> Result<Vec<Track>> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::get_tracks_by_album(&conn, album_id)
+}
+
+#[tauri::command]
+pub async fn get_tracks_by_artist(artist_id: i64, pool: State<'_, DbPool>) -> Result<Vec<Track>> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::get_tracks_by_artist(&conn, artist_id)
+}
+
+#[tauri::command]
+pub async fn get_favorite_tracks(pool: State<'_, DbPool>) -> Result<Vec<Track>> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::get_favorite_tracks(&conn)
 }
 
 // ---------------------------------------------------------------------------
@@ -325,6 +328,42 @@ pub fn reorder_queue(handle: State<PlayerHandle>, queue_id: i64, new_index: usiz
 #[tauri::command]
 pub fn set_autoplay(handle: State<PlayerHandle>, enabled: bool) -> Result<()> {
     send(&handle, PlayerCommand::SetAutoplay(enabled))
+}
+
+#[tauri::command]
+pub fn play_track_from_context(handle: State<PlayerHandle>, track_id: i64) -> Result<()> {
+    send(&handle, PlayerCommand::PlayTrackFromContext(track_id))
+}
+
+#[tauri::command]
+pub fn restore_session(
+    handle: State<PlayerHandle>,
+    context_tracks: Vec<Track>,
+    source_type: String,
+    source_id: Option<i64>,
+    start_index: usize,
+    context_label: Option<String>,
+    user_queue_tracks: Vec<Track>,
+    position_sec: f64,
+    volume: f32,
+    repeat: String,
+    shuffle: bool,
+) -> Result<()> {
+    let source = PlaybackSource::from_db(&source_type, source_id);
+    send(
+        &handle,
+        PlayerCommand::RestoreSession {
+            context_tracks,
+            source,
+            start_index,
+            context_label,
+            user_queue_tracks,
+            position_sec,
+            volume,
+            repeat: RepeatMode::from_str(&repeat),
+            shuffle,
+        },
+    )
 }
 
 #[tauri::command]

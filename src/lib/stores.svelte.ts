@@ -284,7 +284,7 @@ class LibraryStore {
     const track = this.tracks.find((t) => t.id === trackId);
     if (track) {
       track.playlist_ids = track.playlist_ids.filter((id) => id !== playlistId);
-      this.tracks[trackId] = track;
+      this.tracks = this.tracks.map((t) => (t.id === track.id ? track : t));
     }
   }
 
