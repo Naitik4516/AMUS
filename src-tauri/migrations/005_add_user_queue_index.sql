@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_user_queue_position ON user_queue(position);

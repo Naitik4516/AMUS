@@ -26,6 +26,8 @@ pub enum PlayerEvent {
     },
     QueueChanged {
         user_queue: Vec<Track>,
+        context_len: usize,
+        context_position: Option<usize>,
         queue_view: QueueViewPayload,
     },
     RepeatShuffleChanged {
