@@ -130,3 +130,7 @@ export async function getPlaybackHistoryTimeline(
 ): Promise<PlaybackEvent[]> {
   return invoke("get_playback_history_timeline", { timeframe, limit });
 }
+
+export async function setOsMediaControls(enabled: boolean): Promise<void> {
+  return invoke("set_os_media_controls", { enabled });
+}

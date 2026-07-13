@@ -9,11 +9,13 @@
         refreshWatcher,
         removeSource,
         scanLibrary,
+        setOsMediaControls,
     } from "$lib/commands.svelte";
     import { initSettings, setSetting, settings } from "$lib/settings.svelte";
     import { player } from "$lib/player.svelte";
     import { updater } from "$lib/update.svelte";
     import {
+        Disc3,
         Download,
         FolderOpen,
         Image,
@@ -220,6 +222,17 @@
                     onchange={(v) => setSetting("keepRunningInBg", v)}
                     icon={Minimize2}
                     iconActiveClass="text-orange-400"
+                />
+                <ToggleCard
+                    title="OS Media Controls"
+                    description="Integrate with your OS media playback controls (MPRIS on Linux, SMTC on Windows, Now Playing on macOS)."
+                    bind:checked={settings.osMediaControls}
+                    onchange={(v) =>
+                        setSetting("osMediaControls", v).then(() =>
+                            setOsMediaControls(v),
+                        )}
+                    icon={Disc3}
+                    iconActiveClass="text-blue-400"
                 />
             </div>
 

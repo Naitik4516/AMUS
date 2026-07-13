@@ -682,9 +682,9 @@
                                             <div class="min-w-0">
                                                 <button
                                                     type="button"
-                                                    class="block max-w-full truncate rounded text-left text-base font-medium {active
-                                                        ? 'text-accent'
-                                                        : 'text-zinc-50'} hover:underline {focusRing}"
+                                                    class="block max-w-full truncate rounded text-left text-base {active
+                                                        ? 'font-extrabold text-white'
+                                                        : 'text-zinc-100  font-medium'} hover:underline {focusRing}"
                                                     onclick={() =>
                                                         handleRowActivate(
                                                             track,

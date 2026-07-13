@@ -97,7 +97,7 @@
     });
 </script>
 
-<div class="relative w-full px-1">
+<section class="relative w-full px-1">
     <h2 class="text-5xl font-extrabold text-white font-switzer mb-4">
         {title}
     </h2>
@@ -124,9 +124,10 @@
             onmouseleave={handleMouseLeaveOrUp}
             onmouseup={handleMouseLeaveOrUp}
             onmousemove={handleMouseMove}
+            role="region"
         >
             {#each data as item (item.id)}
-                <div class="scroll-item">
+                <div class="scroll-item" role="listitem">
                     <Card data={item} />
                 </div>
             {/each}
@@ -142,7 +143,7 @@
             </button>
         {/if}
     </div>
-</div>
+</section>
 
 <style>
     .mask-container {

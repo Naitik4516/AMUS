@@ -1,7 +1,9 @@
 pub mod artist_pic_fetcher;
+pub mod cli;
 pub mod commands;
 pub mod db;
 pub mod error;
+pub mod media_controls;
 pub mod models;
 pub mod player;
 pub mod scanner;
@@ -210,6 +212,14 @@ pub fn run() {
             app.manage(sync_manager);
             app.manage(MiniPlayerPinned(AtomicBool::new(true)));
 
+            // Start CLI IPC server
+            cli::start_server(app_handle.clone());
+
+            // Start OS media controls (souvlaki) if enabled
+            if sync::get_setting(app_handle, "osMediaControls", true).unwrap_or(true) {
+                let _ = media_controls::init(app_handle.clone());
+            }
+
             // System Tray
             let tray_menu = build_tray_menu(app_handle)?;
 
@@ -330,6 +340,7 @@ pub fn run() {
             commands::toggle_mini_player_pin,
             commands::quit_app,
             commands::toggle_mini_player,
+            commands::set_os_media_controls,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

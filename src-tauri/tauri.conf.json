@@ -7,7 +7,7 @@
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../build",
-      "removeUnusedCommands": true
+    "removeUnusedCommands": true
   },
   "app": {
     "windows": [
@@ -33,8 +33,7 @@
         "scope": ["$APPDATA/**/*"]
       }
     },
-    "macOSPrivateApi": true,
-    "enableGTKAppId": false
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
@@ -48,7 +47,58 @@
     ],
     "createUpdaterArtifacts": true,
     "category": "Music",
-    "license": "MPL-2.0"
+    "license": "MPL-2.0",
+    "fileAssociations": [
+      {
+        "ext": ["mp3"],
+        "name": "MP3 Audio",
+        "description": "MP3 Audio File",
+        "mimeType": "audio/mpeg",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["flac"],
+        "name": "FLAC Audio",
+        "description": "FLAC Audio File",
+        "mimeType": "audio/flac",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["wav"],
+        "name": "WAV Audio",
+        "description": "Wave Audio File",
+        "mimeType": "audio/wav",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["ogg"],
+        "name": "OGG Audio",
+        "description": "OGG Audio File",
+        "mimeType": "audio/ogg",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["m4a"],
+        "name": "M4A Audio",
+        "description": "M4A Audio File",
+        "mimeType": "audio/mp4",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["aac"],
+        "name": "AAC Audio",
+        "description": "AAC Audio File",
+        "mimeType": "audio/aac",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["opus"],
+        "name": "Opus Audio",
+        "description": "Opus Audio File",
+        "mimeType": "audio/opus",
+        "role": "Viewer"
+      }
+    ]
   },
   "plugins": {
     "updater": {

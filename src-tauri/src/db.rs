@@ -983,6 +983,146 @@ pub fn update_album_full(conn: &Connection, id: i64, name: Option<&str>, cover_a
     get_album(conn, id)
 }
 
+// ---------------------------------------------------------------------------
+// Search & name-resolution helpers (used by CLI)
+// ---------------------------------------------------------------------------
+
+pub fn search_tracks(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Track>> {
+    let sql =
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        FROM track t
+        LEFT JOIN album_track alt ON t.id = alt.track_id
+        LEFT JOIN album al ON alt.album_id = al.id
+        WHERE t.title LIKE ?1
+           OR al.name LIKE ?1
+           OR EXISTS (SELECT 1 FROM track_artist ta JOIN artist ar ON ta.artist_id = ar.id WHERE ta.track_id = t.id AND ar.name LIKE ?1)
+        ORDER BY
+            CASE WHEN t.title LIKE ?2 THEN 0 ELSE 1 END,
+            t.title COLLATE NOCASE ASC
+        LIMIT ?3";
+    let pattern = format!("%{query}%");
+    let exact_start = format!("{query}%");
+    prepare_tracks_list(conn, sql, params![pattern, exact_start, limit as i64])
+}
+
+pub fn search_artists(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Artist>> {
+    let pattern = format!("%{query}%");
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, profile_image, banner_image
+             FROM artist
+             WHERE name LIKE ?1
+             ORDER BY
+                CASE WHEN name LIKE ?2 THEN 0 ELSE 1 END,
+                name COLLATE NOCASE ASC
+             LIMIT ?3",
+        )
+        .map_err(Error::Db)?;
+    let exact_start = format!("{query}%");
+    let rows = stmt
+        .query_map(params![pattern, exact_start, limit as i64], |row| {
+            Ok(Artist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                profile_image: row.get(2)?,
+                banner_image: row.get(3)?,
+            })
+        })
+        .map_err(Error::Db)?;
+    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Error::Db)
+}
+
+pub fn search_albums(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Album>> {
+    let pattern = format!("%{query}%");
+    let exact_start = format!("{query}%");
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, cover_art, album_artist, year
+             FROM album
+             WHERE name LIKE ?1
+             ORDER BY
+                CASE WHEN name LIKE ?2 THEN 0 ELSE 1 END,
+                name COLLATE NOCASE ASC
+             LIMIT ?3",
+        )
+        .map_err(Error::Db)?;
+    let raw: Vec<(Album, Option<String>)> = stmt
+        .query_map(params![pattern, exact_start, limit as i64], |row| {
+            let album = Album {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                cover_art: row.get(2)?,
+                album_artist: None,
+                year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+            };
+            Ok((album, row.get::<_, Option<String>>(3)?))
+        })
+        .map_err(Error::Db)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Error::Db)?;
+
+    let mut albums: Vec<Album> = Vec::with_capacity(raw.len());
+    for (mut album, aa) in raw {
+        album.album_artist = resolve_album_artist(conn, aa)?;
+        albums.push(album);
+    }
+    Ok(albums)
+}
+
+pub fn get_playlist_by_name(conn: &Connection, name: &str) -> Result<Playlist> {
+    conn.query_row(
+        "SELECT id, name, cover_art FROM playlist WHERE name = ?",
+        params![name],
+        |row| {
+            Ok(Playlist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                cover_art: row.get(2)?,
+            })
+        },
+    )
+    .map_err(Error::Db)
+}
+
+pub fn get_artist_by_name(conn: &Connection, name: &str) -> Result<Artist> {
+    conn.query_row(
+        "SELECT id, name, profile_image, banner_image FROM artist WHERE name = ?",
+        params![name],
+        |row| {
+            Ok(Artist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                profile_image: row.get(2)?,
+                banner_image: row.get(3)?,
+            })
+        },
+    )
+    .map_err(Error::Db)
+}
+
+pub fn get_album_by_name(conn: &Connection, name: &str) -> Result<Album> {
+    let (mut album, aa): (Album, Option<String>) = conn
+        .query_row(
+            "SELECT id, name, cover_art, album_artist, year FROM album WHERE name = ?",
+            params![name],
+            |row| {
+                let album = Album {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    cover_art: row.get(2)?,
+                    album_artist: None,
+                    year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+                };
+                Ok((album, row.get::<_, Option<String>>(3)?))
+            },
+        )
+        .map_err(Error::Db)?;
+    album.album_artist = resolve_album_artist(conn, aa)?;
+    Ok(album)
+}
+
+// ---------------------------------------------------------------------------
+
 pub fn get_all_playlist_tracks(conn: &Connection) -> Result<Vec<(i64, Vec<i64>)>> {
     let mut stmt = conn
         .prepare("SELECT playlist_id, track_id FROM playlist_track ORDER BY playlist_id, position")

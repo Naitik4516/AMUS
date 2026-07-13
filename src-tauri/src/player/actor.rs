@@ -23,10 +23,15 @@ pub enum PlayerCommand {
         context_label: Option<String>,
     },
     PlayPause,
+    Play,
+    Pause,
     Next,
     Previous,
     Seek(f64),
+    SeekRelative(f64),
     SetVolume(f32),
+    AdjustVolume(f32),
+    ToggleMute,
     SetRepeat(RepeatMode),
     ToggleShuffle,
     EnqueueNext(Track),
@@ -54,7 +59,7 @@ pub enum PlayerCommand {
     },
     GetState(oneshot::Sender<PlayerStateSnapshot>),
     Shutdown,
-    Tick, 
+    Tick,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -66,6 +71,7 @@ pub struct PlayerStateSnapshot {
     pub repeat: String,
     pub shuffle: bool,
     pub volume: f32,
+    pub muted: bool,
     pub user_queue: Vec<Track>,
     pub queue_view: QueueViewPayload,
 }
@@ -86,6 +92,8 @@ pub struct PlayerActor {
     engine: AudioEngine,
     queue: PlaybackQueue,
     volume: f32,
+    muted: bool,
+    volume_before_mute: f32,
     autoplay_enabled: bool,
     now_playing: Option<NowPlaying>,
     has_track_loaded: bool,
@@ -116,6 +124,8 @@ impl PlayerActor {
                     engine,
                     queue: PlaybackQueue::new(),
                     volume: 1.0,
+                    muted: false,
+                    volume_before_mute: 1.0,
                     autoplay_enabled: true,
                     now_playing: None,
                     has_track_loaded: false,
@@ -167,20 +177,21 @@ impl PlayerActor {
                     self.load_current_into_engine(true);
                 }
                 PlayerCommand::PlayPause => self.toggle_play_pause(),
+                PlayerCommand::Play => self.handle_play(),
+                PlayerCommand::Pause => self.handle_pause(),
                 PlayerCommand::Stop => self.stop_playback(),
                 PlayerCommand::Next => self.handle_next(),
                 PlayerCommand::Previous => self.handle_previous(),
                 PlayerCommand::Seek(pos) => self.handle_seek(pos),
-                PlayerCommand::SetVolume(v) => {
-                    self.volume = v.clamp(0.0, 1.0);
-                    self.engine.set_volume(self.volume);
-                    emit(
-                        &self.app,
-                        PlayerEvent::VolumeChanged {
-                            volume: self.volume,
-                        },
-                    );
+                PlayerCommand::SeekRelative(delta) => {
+                    let (pos, _) = self.engine.state();
+                    self.handle_seek((pos + delta).max(0.0));
                 }
+                PlayerCommand::SetVolume(v) => self.apply_volume(v),
+                PlayerCommand::AdjustVolume(delta) => {
+                    self.apply_volume(self.volume + delta);
+                }
+                PlayerCommand::ToggleMute => self.toggle_mute(),
                 PlayerCommand::SetRepeat(mode) => {
                     self.queue.set_repeat(mode);
                     self.emit_repeat_shuffle();
@@ -392,12 +403,64 @@ impl PlayerActor {
             return;
         }
         if self.engine.is_paused() {
-            self.engine.play();
-            emit(&self.app, PlayerEvent::StateChanged { is_playing: true });
+            self.handle_play();
         } else {
-            self.engine.pause();
-            emit(&self.app, PlayerEvent::StateChanged { is_playing: false });
+            self.handle_pause();
         }
+    }
+
+    fn handle_play(&mut self) {
+        if !self.has_track_loaded {
+            return;
+        }
+        self.engine.play();
+        emit(&self.app, PlayerEvent::StateChanged { is_playing: true });
+    }
+
+    fn handle_pause(&mut self) {
+        if !self.has_track_loaded {
+            return;
+        }
+        self.engine.pause();
+        emit(&self.app, PlayerEvent::StateChanged { is_playing: false });
+    }
+
+    fn apply_volume(&mut self, v: f32) {
+        let clamped = v.clamp(0.0, 1.0);
+        self.volume = clamped;
+        if self.muted {
+            // Unmute when volume is set explicitly while muted
+            self.muted = false;
+        }
+        self.engine.set_volume(self.volume);
+        emit(
+            &self.app,
+            PlayerEvent::VolumeChanged {
+                volume: self.volume,
+            },
+        );
+    }
+
+    fn toggle_mute(&mut self) {
+        if self.muted {
+            self.muted = false;
+            self.volume = self.volume_before_mute;
+            self.engine.set_volume(self.volume);
+        } else {
+            self.volume_before_mute = if self.volume > 0.0 {
+                self.volume
+            } else {
+                self.volume_before_mute
+            };
+            self.muted = true;
+            self.engine.set_volume(0.0);
+        }
+        emit(
+            &self.app,
+            PlayerEvent::VolumeChanged {
+                volume: if self.muted { 0.0 } else { self.volume },
+            },
+        );
     }
 
     fn handle_next(&mut self) {
@@ -546,7 +609,8 @@ impl PlayerActor {
             duration_sec: duration,
             repeat: self.queue.repeat_mode().as_str().to_string(),
             shuffle: self.queue.shuffle_enabled(),
-            volume: self.volume,
+            volume: if self.muted { 0.0 } else { self.volume },
+            muted: self.muted,
             user_queue: self
                 .queue
                 .user_queue()

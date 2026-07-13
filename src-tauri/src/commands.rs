@@ -635,6 +635,16 @@ pub(crate) fn quit_app(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+pub fn set_os_media_controls(enabled: bool, app: tauri::AppHandle) -> Result<()> {
+    if enabled {
+        crate::media_controls::init(app).map_err(|e| Error::Unknown(e))?;
+    } else {
+        crate::media_controls::detach().map_err(|e| Error::Unknown(e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub(crate) fn toggle_mini_player(app: tauri::AppHandle) -> std::result::Result<(), String> {
     if let Some(window) = app.get_webview_window("mini-player") {
         if window.is_visible().map_err(|e| e.to_string())? {

@@ -212,7 +212,7 @@
                     class="flex items-center gap-2 p-1 rounded-xl hover:bg-white/5 transition-colors"
                     animate:flip={{ duration: 200 }}
                 >
-                    <TrackListSmall {track} />
+                    <TrackListSmall {track} styled={false} />
                     <Button onclick={() => addTrackToPlaylist(track)}
                         >Add</Button
                     >

@@ -179,6 +179,71 @@ fn save_picture(app_dir: &Path, picture: &Picture) -> anyhow::Result<String> {
     Ok(filename)
 }
 
+/// Ensure a single track is in the database without a full rescan.
+/// Extracts metadata, upserts the track, and links artist/album.
+/// Returns the track id.
+pub fn ensure_track_in_db(conn: &Connection, path: &Path, app_dir: &Path) -> Result<i64> {
+    let meta = extract_metadata(path).map_err(|e| Error::Unknown(e.to_string()))?;
+
+    // upsert artist(s)
+    let mut artist_ids = Vec::new();
+    for name in &meta.artists {
+        let id = db::get_or_create_artist(conn, name)?;
+        artist_ids.push(id);
+    }
+
+    // upsert album
+    let album_id = db::get_or_create_album(
+        conn,
+        &meta.album,
+        None,
+        meta.release_year.map(|y| y as i32),
+    )?;
+
+    if let Some(ref aa) = meta.album_artist {
+        db::set_album_artist(conn, &meta.album, aa)?;
+    }
+
+    // upsert track
+    let track_id = db::update_track(
+        conn,
+        &meta.path,
+        &meta.title,
+        meta.duration,
+        meta.release_year.map(|y| y as i32),
+        meta.mtime,
+        meta.file_size as i64,
+        None,
+    )?;
+
+    // save cover art if present
+    let cover_url = meta.picture.as_ref().and_then(|pic| {
+        save_picture(app_dir, pic)
+            .inspect_err(|e| eprintln!("Failed to save picture for {}: {e}", path.display()))
+            .ok()
+    });
+    if let Some(ref url) = cover_url {
+        let _ = conn.execute(
+            "UPDATE track SET cover_art = ?1 WHERE id = ?2",
+            rusqlite::params![url, track_id],
+        );
+        let _ = conn.execute(
+            "UPDATE album SET cover_art = COALESCE(album.cover_art, ?1) WHERE id = ?2",
+            rusqlite::params![url, album_id],
+        );
+    }
+
+    // link artist(s) and album
+    db::clear_track_artists(conn, track_id)?;
+    for &aid in &artist_ids {
+        db::bulk_insert_track_artists(conn, &[(track_id, aid)])?;
+    }
+    db::clear_track_album(conn, track_id)?;
+    db::bulk_insert_track_albums(conn, &[(album_id, track_id, meta.track_number.unwrap_or(1) as i32)])?;
+
+    Ok(track_id)
+}
+
 pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result<()> {
     let source_dirs = db::get_source_dirs(conn)?;
     let audio_extensions = ["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];

@@ -35,8 +35,7 @@
 
                     <TrackListSmall
                         track={player.currentTrack}
-                        titleColor="text-accent"
-                        className="rounded-xl"
+                        styled={true}
                         onclick={() => {}}
                     />
                 </section>
@@ -61,7 +60,6 @@
                     {#each player.userQueue as track, i}
                         <TrackListSmall
                             {track}
-                            className="rounded-xl"
                             onclick={() => {
                                 player.contextPosition = i;
                             }}
@@ -80,7 +78,6 @@
                 {#each player.playNext.slice(0, 5) as track, i}
                     <TrackListSmall
                         {track}
-                        className="rounded-xl"
                         onclick={() => player.playFromContextIndex(i)}
                     />
                 {/each}

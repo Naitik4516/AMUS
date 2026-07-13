@@ -9,7 +9,7 @@
         width: 16%;
         height: 80%;
         animation: up-and-down 1.3s ease infinite alternate;
-        border-radius: 12px;
+        border-radius: 16px;
     }
 
     .playing__bar1 {
