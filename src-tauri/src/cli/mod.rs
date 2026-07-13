@@ -8,6 +8,7 @@ mod paths;
 pub mod protocol;
 mod server;
 
+pub use dispatch::play_paths;
 pub use server::{cleanup as cleanup_server, start as start_server};
 
 use std::io::Write;

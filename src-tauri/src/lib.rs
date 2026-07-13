@@ -144,7 +144,8 @@ pub fn run() {
     #[cfg(not(debug_assertions))]
     let builder = tauri::Builder::default();
 
-    builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+    let app = builder
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let w = app
                 .get_webview_window("main")
                 .expect("no main window");
@@ -342,6 +343,28 @@ pub fn run() {
             commands::toggle_mini_player,
             commands::set_os_media_controls,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // Event loop: handle file opens (macOS application:openFiles:, etc.)
+    app.run(move |_handle, _event| {
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+        if let tauri::RunEvent::Opened { urls } = event {
+            let paths: Vec<String> = urls
+                .iter()
+                .filter_map(|u| {
+                    if u.scheme() == "file" {
+                        u.to_file_path().ok().map(|p| p.to_string_lossy().into_owned())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if !paths.is_empty() {
+                if let Err(e) = cli::play_paths(handle, &paths) {
+                    eprintln!("file association: {e}");
+                }
+            }
+        }
+    });
 }

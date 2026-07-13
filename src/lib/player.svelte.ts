@@ -117,12 +117,12 @@ class PlayerStore {
   }
 
   #setupBeforeUnload() {
-    const save = () => {
+    const save = async () => {
       if (this.#debounceTimer) {
         clearTimeout(this.#debounceTimer);
         this.#debounceTimer = null;
       }
-      this.#saveSession();
+      await this.#saveSession();
     };
     window.addEventListener("beforeunload", save);
   }
@@ -168,8 +168,8 @@ class PlayerStore {
     this.#debounceTimer = setTimeout(fn, 500);
   }
 
-  #saveSession() {
-    saveSession({
+  async #saveSession() {
+    await saveSession({
       current_track_id: this.currentTrack?.id ?? null,
       context_type: this.contextSourceType,
       context_id: this.source && "id" in this.source ? (this.source as any).id : null,

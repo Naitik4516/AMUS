@@ -17,6 +17,24 @@ use crate::player::source::PlaybackSource;
 use crate::scanner;
 use crate::sync::SyncManager;
 
+/// Public entry: play a set of file paths (auto-imports missing tracks).
+pub fn play_paths(app: &AppHandle, paths: &[String]) -> Result<(), String> {
+    let tracks = resolve_paths_to_tracks(app, paths, true)?;
+    if tracks.is_empty() {
+        return Err("no tracks to play".into());
+    }
+    send_player(
+        app,
+        PlayerCommand::LoadContext {
+            tracks,
+            source: PlaybackSource::Direct,
+            start_index: 0,
+            context_label: Some("Files".into()),
+        },
+    )?;
+    Ok(())
+}
+
 pub fn handle(app: &AppHandle, cmd: CliCommand, id: u64) -> CliResponse {
     match dispatch(app, cmd) {
         Ok(data) => CliResponse::ok(id, data),
