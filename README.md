@@ -12,7 +12,7 @@ AMUS is built for people who own their music library. It runs completely offline
 [![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-FFC131?style=for-the-badge&logo=tauri&logoColor=white)](https://tauri.app/)
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://kit.svelte.dev/)
-[![GitHub release](https://img.shields.io/github/v/release/Naitik4516/AMUS?style=for-the-badge)](https://github.com/Naitik4516/AMUS/releases/latest)
+[![GitHub release](https://img.shields.io/github/v/release/Naitik4516/AMUS?style=for-the-badge&label=v0.5.0)](https://github.com/Naitik4516/AMUS/releases/latest)
 
 </div>
 
@@ -48,6 +48,8 @@ AMUS is built for people who own their music library. It runs completely offline
 - **Playback history & stats** — play counts, listening time, streaks, library growth, format distribution, hourly/weekday heatmaps, favorite trends
 - **System tray** — play/pause, previous/next, show/hide, quit
 - **Auto-updater** — updates from GitHub Releases (passive install on Windows)
+- **OS media controls** — integrate with system media keys (MPRIS/SMTC/Now Playing)
+- **File associations** — open audio files directly with AMUS
 - **Modern UI** — custom title bar, themes, and a responsive library layout
 
 ## Advanced search
@@ -137,6 +139,23 @@ Other useful commands:
 | `bun run dev`   | Frontend only (no native backend)           |
 | `bun run build` | Build frontend (`build/`)                   |
 | `bun run check` | Typecheck frontend                          |
+| `bun run test`  | Run frontend unit tests (Vitest)            |
+| `cargo test`    | Run Rust backend tests                      |
+
+### CLI Interface
+
+AMUS includes a built-in command-line interface for controlling playback externally. Available commands:
+
+| Command   | Description                    |
+| --------- | ------------------------------ |
+| `status`  | Show current track/playback   |
+| `play`    | Start/resume playback          |
+| `pause`   | Pause playback                 |
+| `next`    | Skip to next track             |
+| `prev`    | Go to previous track           |
+| `seek <seconds>` | Seek to position         |
+| `volume <0.0-1.0>` | Set volume level       |
+| `mute`    | Toggle mute                    |
 
 ## Architecture
 
@@ -199,12 +218,17 @@ amus/
 
 ### Recently completed
 
+- [x] OS media controls (MPRIS/SMTC/Now Playing)
+- [x] Command-line interface for remote control
+- [x] File associations (open audio files with AMUS)
 - [x] Mini player with always-on-top option
 - [x] Fuzzy global search (Fuse.js + type filters)
 - [x] Global and local keyboard shortcuts
 - [x] Track context menus (right-click)
-- [x] Playlist cover art + quick “Add more” flow
+- [x] Playlist cover art + quick "Add more" flow
 - [x] Startup library cache for snappier UI
+- [x] Comprehensive frontend test coverage (Vitest)
+- [x] Player subsystem refactor for better architecture
 
 ### Library & playback
 
@@ -221,7 +245,6 @@ amus/
 
 - [ ] Automatic metadata tagging
 - [ ] Lyrics support
-- [ ] File associations (open audio files with AMUS)
 
 ### User experience
 
