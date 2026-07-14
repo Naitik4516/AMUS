@@ -396,3 +396,237 @@ impl PlaybackQueue {
         PreviousOutcome::RestartCurrent
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Album, Artist};
+
+    fn make_track(id: i64) -> Track {
+        Track {
+            id,
+            title: format!("Track {}", id),
+            artists: vec![Artist {
+                id: 1,
+                name: "Test Artist".to_string(),
+                profile_image: None,
+                banner_image: None,
+            }],
+            album: Album {
+                id: 1,
+                name: "Test Album".to_string(),
+                cover_art: None,
+                album_artist: None,
+                year: None,
+            },
+            duration_seconds: 200,
+            is_favorite: false,
+            cover_art: None,
+            added_at: chrono::Utc::now(),
+            track_number: Some(id as u32),
+            playlist_ids: vec![],
+        }
+    }
+
+    #[test]
+    fn test_new_queue_is_empty() {
+        let q = PlaybackQueue::new();
+        assert!(q.current().is_none());
+        assert_eq!(q.context_len(), 0);
+        assert!(q.user_queue().is_empty());
+        assert_eq!(q.repeat_mode(), RepeatMode::Off);
+        assert!(!q.shuffle_enabled());
+    }
+
+    #[test]
+    fn test_load_context_sets_current() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![make_track(1), make_track(2), make_track(3)];
+        q.load_context(tracks.clone(), PlaybackSource::Album(1), 0, None);
+        assert_eq!(q.context_len(), 3);
+        assert_eq!(q.context_position(), Some(0));
+        assert_eq!(q.current().unwrap().0.id, 1);
+    }
+
+    #[test]
+    fn test_load_context_with_start_index() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![make_track(1), make_track(2), make_track(3)];
+        q.load_context(tracks, PlaybackSource::Album(1), 1, None);
+        assert_eq!(q.context_position(), Some(1));
+        assert_eq!(q.current().unwrap().0.id, 2);
+    }
+
+    #[test]
+    fn test_advance_next_through_context() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![make_track(1), make_track(2), make_track(3)];
+        q.load_context(tracks, PlaybackSource::Album(1), 0, None);
+
+        let result = q.advance_next();
+        assert!(matches!(result, NextOutcome::Track(t, _) if t.id == 2));
+
+        let result = q.advance_next();
+        assert!(matches!(result, NextOutcome::Track(t, _) if t.id == 3));
+    }
+
+    #[test]
+    fn test_advance_next_at_end_without_repeat() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![make_track(1), make_track(2)];
+        q.load_context(tracks, PlaybackSource::Album(1), 0, None);
+
+        q.advance_next(); // to track 2
+        let result = q.advance_next(); // past end
+        assert!(matches!(result, NextOutcome::NeedsAutoplay));
+    }
+
+    #[test]
+    fn test_advance_next_with_repeat_all() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![make_track(1), make_track(2)];
+        q.load_context(tracks, PlaybackSource::Album(1), 0, None);
+        q.set_repeat(RepeatMode::All);
+
+        q.advance_next(); // to track 2
+        let result = q.advance_next(); // wraps to track 1
+        assert!(matches!(result, NextOutcome::Track(t, _) if t.id == 1));
+    }
+
+    #[test]
+    fn test_advance_next_with_repeat_one() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![make_track(1), make_track(2)];
+        q.load_context(tracks, PlaybackSource::Album(1), 0, None);
+        q.set_repeat(RepeatMode::One);
+
+        let result = q.advance_next();
+        assert!(matches!(result, NextOutcome::Track(t, _) if t.id == 1));
+    }
+
+    #[test]
+    fn test_enqueue_next_plays_before_context() {
+        let mut q = PlaybackQueue::new();
+        q.load_context(vec![make_track(1)], PlaybackSource::Album(1), 0, None);
+        q.enqueue_next(100, make_track(99));
+
+        let result = q.advance_next();
+        assert!(matches!(result, NextOutcome::Track(t, _) if t.id == 99));
+    }
+
+    #[test]
+    fn test_enqueue_end_plays_after_user_queue() {
+        let mut q = PlaybackQueue::new();
+        q.load_context(vec![make_track(1)], PlaybackSource::Album(1), 0, None);
+        q.enqueue_end(100, make_track(99));
+        q.enqueue_next(101, make_track(98));
+
+        let result = q.advance_next();
+        assert!(matches!(result, NextOutcome::Track(t, _) if t.id == 98));
+        let result = q.advance_next();
+        assert!(matches!(result, NextOutcome::Track(t, _) if t.id == 99));
+    }
+
+    #[test]
+    fn test_remove_from_queue() {
+        let mut q = PlaybackQueue::new();
+        q.enqueue_next(1, make_track(10));
+        q.enqueue_next(2, make_track(20));
+
+        let removed = q.remove_from_queue(1);
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().track.id, 10);
+        assert_eq!(q.user_queue().len(), 1);
+    }
+
+    #[test]
+    fn test_reorder_queue() {
+        let mut q = PlaybackQueue::new();
+        q.enqueue_end(1, make_track(10));
+        q.enqueue_end(2, make_track(20));
+        q.enqueue_end(3, make_track(30));
+
+        q.reorder_queue(3, 0);
+        assert_eq!(q.user_queue()[0].db_id, 3);
+        assert_eq!(q.user_queue()[1].db_id, 1);
+    }
+
+    #[test]
+    fn test_clear_queue() {
+        let mut q = PlaybackQueue::new();
+        q.enqueue_next(1, make_track(10));
+        q.enqueue_next(2, make_track(20));
+        q.clear_queue();
+        assert!(q.user_queue().is_empty());
+    }
+
+    #[test]
+    fn test_jump_to_track_found() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![make_track(1), make_track(2), make_track(3)];
+        q.load_context(tracks, PlaybackSource::Album(1), 0, None);
+
+        assert!(q.jump_to_track(3));
+        assert_eq!(q.context_position(), Some(2));
+        assert_eq!(q.current().unwrap().0.id, 3);
+    }
+
+    #[test]
+    fn test_jump_to_track_not_found() {
+        let mut q = PlaybackQueue::new();
+        q.load_context(vec![make_track(1)], PlaybackSource::Album(1), 0, None);
+        assert!(!q.jump_to_track(999));
+    }
+
+    #[test]
+    fn test_previous_past_threshold_restarts() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![make_track(1), make_track(2)];
+        q.load_context(tracks, PlaybackSource::Album(1), 0, None);
+        q.advance_next(); // now at track 2
+
+        let result = q.previous(5.0); // past threshold
+        assert!(matches!(result, PreviousOutcome::RestartCurrent));
+    }
+
+    #[test]
+    fn test_previous_within_context() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![make_track(1), make_track(2)];
+        q.load_context(tracks, PlaybackSource::Album(1), 1, None); // start at track 2
+
+        let result = q.previous(1.0); // within threshold, goes back
+        assert!(matches!(result, PreviousOutcome::Track(t, _) if t.id == 1));
+    }
+
+    #[test]
+    fn test_peek_preview_user_queue_first() {
+        let mut q = PlaybackQueue::new();
+        q.load_context(vec![make_track(1), make_track(2)], PlaybackSource::Album(1), 0, None);
+        q.enqueue_next(100, make_track(99));
+
+        let preview = q.peek_preview(2);
+        assert_eq!(preview.len(), 2);
+        assert_eq!(preview[0].id, 99); // user queue first
+        assert_eq!(preview[1].id, 2);  // then upcoming context (skips current track at index 0)
+    }
+
+    #[test]
+    fn test_set_shuffle_enables_shuffle_order() {
+        let mut q = PlaybackQueue::new();
+        q.load_context(vec![make_track(1), make_track(2), make_track(3)], PlaybackSource::Album(1), 0, None);
+        assert!(!q.shuffle_enabled());
+
+        q.set_shuffle(true);
+        assert!(q.shuffle_enabled());
+    }
+
+    #[test]
+    fn test_set_shuffle_disabled_clears_shuffle_order() {
+        let mut q = PlaybackQueue::new();
+        q.load_context(vec![make_track(1), make_track(2)], PlaybackSource::Album(1), 0, None);
+        q.set_shuffle(true);
+        q.set_shuffle(false);
+        assert!(!q.shuffle_enabled());
+    }
+}

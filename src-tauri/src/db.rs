@@ -251,27 +251,27 @@ pub fn clear_artist_banner_image(conn: &Connection, artist_id: i64) -> Result<()
 }
 
 pub fn artist_has_photo(conn: &Connection, artist_id: i64) -> Result<bool> {
-    let res: Option<String> = conn
+    let has: Option<i64> = conn
         .query_row(
-            "SELECT profile_image FROM artist WHERE id = ?",
+            "SELECT 1 FROM artist WHERE id = ? AND profile_image IS NOT NULL",
             params![artist_id],
             |row| row.get(0),
         )
         .optional()
         .map_err(Error::Db)?;
-    Ok(res.is_some())
+    Ok(has.is_some())
 }
 
 pub fn artist_has_banner(conn: &Connection, artist_id: i64) -> Result<bool> {
-    let res: Option<String> = conn
+    let has: Option<i64> = conn
         .query_row(
-            "SELECT banner_image FROM artist WHERE id = ?",
+            "SELECT 1 FROM artist WHERE id = ? AND banner_image IS NOT NULL",
             params![artist_id],
             |row| row.get(0),
         )
         .optional()
         .map_err(Error::Db)?;
-    Ok(res.is_some())
+    Ok(has.is_some())
 }
 
 pub fn report_fetch_success(conn: &Connection, artist_id: i64) -> Result<()> {
@@ -2554,5 +2554,936 @@ mod tests {
     #[test]
     fn migrations_validate() {
         assert!(MIGRATIONS.validate().is_ok());
+    }
+
+    #[test]
+    fn test_timeframe_where_clause_today() {
+        let result = timeframe_where_clause("t.col", Timeframe::Today);
+        assert_eq!(result, "t.col >= datetime('now', 'start of day')");
+    }
+
+    #[test]
+    fn test_timeframe_where_clause_this_week() {
+        let result = timeframe_where_clause("t.col", Timeframe::ThisWeek);
+        assert_eq!(result, "t.col >= datetime('now', '-7 days')");
+    }
+
+    #[test]
+    fn test_timeframe_where_clause_this_month() {
+        let result = timeframe_where_clause("t.col", Timeframe::ThisMonth);
+        assert_eq!(result, "t.col >= datetime('now', '-30 days')");
+    }
+
+    #[test]
+    fn test_timeframe_where_clause_last_3_months() {
+        let result = timeframe_where_clause("t.col", Timeframe::Last3Months);
+        assert_eq!(result, "t.col >= datetime('now', '-90 days')");
+    }
+
+    #[test]
+    fn test_timeframe_where_clause_last_year() {
+        let result = timeframe_where_clause("t.col", Timeframe::LastYear);
+        assert_eq!(result, "t.col >= datetime('now', '-1 year')");
+    }
+
+    #[test]
+    fn test_timeframe_where_clause_all_time() {
+        let result = timeframe_where_clause("t.col", Timeframe::AllTime);
+        assert_eq!(result, "1=1");
+    }
+
+    #[test]
+    fn test_sql_placeholders_single() {
+        assert_eq!(sql_placeholders(1), "?");
+    }
+
+    #[test]
+    fn test_sql_placeholders_multiple() {
+        assert_eq!(sql_placeholders(3), "?,?,?");
+    }
+
+    #[test]
+    fn test_sql_placeholders_zero() {
+        assert_eq!(sql_placeholders(0), "");
+    }
+
+    #[test]
+    fn test_sql_placeholders_large() {
+        let result = sql_placeholders(5);
+        assert_eq!(result, "?,?,?,?,?");
+    }
+
+    #[test]
+    fn test_in_memory_db_init() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+        init_db(&mut conn).unwrap();
+        assert!(conn.query_row("SELECT COUNT(*) FROM track", [], |r| r.get::<_, i64>(0)).is_ok());
+    }
+
+    #[test]
+    fn test_add_and_get_source_dirs() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+        init_db(&mut conn).unwrap();
+
+        add_source_dir(&conn, "/music/rock").unwrap();
+        add_source_dir(&conn, "/music/jazz").unwrap();
+        let dirs = get_source_dirs(&conn).unwrap();
+        assert_eq!(dirs.len(), 2);
+        assert!(dirs.contains(&"/music/rock".to_string()));
+        assert!(dirs.contains(&"/music/jazz".to_string()));
+    }
+
+    #[test]
+    fn test_add_source_dir_ignores_duplicates() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+        init_db(&mut conn).unwrap();
+
+        add_source_dir(&conn, "/music/rock").unwrap();
+        add_source_dir(&conn, "/music/rock").unwrap();
+        let dirs = get_source_dirs(&conn).unwrap();
+        assert_eq!(dirs.len(), 1);
+    }
+
+    #[test]
+    fn test_get_or_create_artist_new() {
+        let conn = setup_memory_db();
+        let id = get_or_create_artist(&conn, "Test Artist").unwrap();
+        assert!(id > 0);
+    }
+
+    #[test]
+    fn test_get_or_create_artist_existing() {
+        let conn = setup_memory_db();
+        let id1 = get_or_create_artist(&conn, "Test Artist").unwrap();
+        let id2 = get_or_create_artist(&conn, "Test Artist").unwrap();
+        assert_eq!(id1, id2);
+    }
+
+    #[test]
+    fn test_get_or_create_album_new() {
+        let conn = setup_memory_db();
+        let id = get_or_create_album(&conn, "Test Album", None, None).unwrap();
+        assert!(id > 0);
+    }
+
+    #[test]
+    fn test_get_or_create_album_existing() {
+        let conn = setup_memory_db();
+        let id1 = get_or_create_album(&conn, "Test Album", None, None).unwrap();
+        let id2 = get_or_create_album(&conn, "Test Album", Some("cover.webp"), Some(2024)).unwrap();
+        assert_eq!(id1, id2);
+    }
+
+    #[test]
+    fn test_update_and_get_track() {
+        let conn = setup_memory_db();
+        let track_id = update_track(&conn, "/music/test.mp3", "Test Song", 200, Some(2024), 1000, 5000, None).unwrap();
+        assert!(track_id > 0);
+
+        let artist_id = get_or_create_artist(&conn, "Test Artist").unwrap();
+        set_track_artists(&conn, track_id, &[artist_id]).unwrap();
+
+        let album_id = get_or_create_album(&conn, "Test Album", None, None).unwrap();
+        set_track_album(&conn, track_id, album_id, 1).unwrap();
+
+        let track = get_track_by_id(&conn, track_id).unwrap();
+        assert_eq!(track.title, "Test Song");
+        assert_eq!(track.duration_seconds, 200);
+        assert_eq!(track.album.name, "Test Album");
+    }
+
+    #[test]
+    fn test_toggle_favorite() {
+        let conn = setup_memory_db();
+        let track_id = update_track(&conn, "/music/test.mp3", "Test", 100, None, 0, 100, None).unwrap();
+        let artist_id = get_or_create_artist(&conn, "Artist").unwrap();
+        set_track_artists(&conn, track_id, &[artist_id]).unwrap();
+        let album_id = get_or_create_album(&conn, "Album", None, None).unwrap();
+        set_track_album(&conn, track_id, album_id, 1).unwrap();
+
+        let track = toggle_favorite(&conn, track_id).unwrap();
+        assert!(track.is_favorite);
+
+        let track = toggle_favorite(&conn, track_id).unwrap();
+        assert!(!track.is_favorite);
+    }
+
+    #[test]
+    fn test_create_and_get_playlist() {
+        let conn = setup_memory_db();
+        let playlist = create_playlist(&conn, "My Favorites").unwrap();
+        assert_eq!(playlist.name, "My Favorites");
+
+        let playlists = get_all_playlists(&conn).unwrap();
+        assert_eq!(playlists.len(), 1);
+        assert_eq!(playlists[0].name, "My Favorites");
+    }
+
+    #[test]
+    fn test_add_track_to_playlist() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        let playlist = create_playlist(&conn, "Test Playlist").unwrap();
+
+        add_track_to_playlist(&conn, playlist.id, track_id).unwrap();
+        let tracks = get_tracks_in_playlist(&conn, playlist.id, None).unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].id, track_id);
+    }
+
+    #[test]
+    fn test_remove_track_from_playlist() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        let playlist = create_playlist(&conn, "Test").unwrap();
+
+        add_track_to_playlist(&conn, playlist.id, track_id).unwrap();
+        remove_track_from_playlist(&conn, playlist.id, track_id).unwrap();
+        let tracks = get_tracks_in_playlist(&conn, playlist.id, None).unwrap();
+        assert_eq!(tracks.len(), 0);
+    }
+
+    #[test]
+    fn test_delete_playlist() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        let playlist = create_playlist(&conn, "Test").unwrap();
+
+        add_track_to_playlist(&conn, playlist.id, track_id).unwrap();
+        delete_playlist(&conn, playlist.id).unwrap();
+
+        let playlists = get_all_playlists(&conn).unwrap();
+        assert_eq!(playlists.len(), 0);
+    }
+
+    #[test]
+    fn test_get_all_tracks() {
+        let conn = setup_memory_db();
+        insert_basic_track(&conn);
+        insert_basic_track_with_path(&conn, "/music/song2.mp3", 2);
+
+        let tracks = get_all_tracks(&conn, None).unwrap();
+        assert_eq!(tracks.len(), 2);
+    }
+
+    #[test]
+    fn test_search_tracks() {
+        let conn = setup_memory_db();
+        insert_basic_track(&conn);
+        // Second track with different artist/album so it doesn't match "Test"
+        let track_id = update_track(&conn, "/music/other.mp3", "Other Song", 200, Some(2024), 2000, 6000, None).unwrap();
+        let artist_id = get_or_create_artist(&conn, "Other Artist").unwrap();
+        set_track_artists(&conn, track_id, &[artist_id]).unwrap();
+        let album_id = get_or_create_album(&conn, "Other Album", None, None).unwrap();
+        set_track_album(&conn, track_id, album_id, 2).unwrap();
+
+        let results = search_tracks(&conn, "Test", 10).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Test Song");
+    }
+
+    #[test]
+    fn test_record_playback() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+
+        record_playback(&conn, track_id, "DIRECT", 100.0).unwrap();
+        record_playback(&conn, track_id, "ALBUM", 50.5).unwrap();
+    }
+
+    #[test]
+    fn test_get_track_path_by_id() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        let path = get_track_path_by_id(&conn, track_id).unwrap();
+        assert_eq!(path, "/music/test.mp3");
+    }
+
+    #[test]
+    fn test_artist_crud() {
+        let conn = setup_memory_db();
+
+        let id = get_or_create_artist(&conn, "Artist Name").unwrap();
+        update_artist_profile_image(&conn, id, "profile.webp").unwrap();
+        update_artist_banner_image(&conn, id, "banner.webp").unwrap();
+
+        assert!(artist_has_photo(&conn, id).unwrap());
+        assert!(artist_has_banner(&conn, id).unwrap());
+
+        clear_artist_profile_image(&conn, id).unwrap();
+        clear_artist_banner_image(&conn, id).unwrap();
+
+        assert!(!artist_has_photo(&conn, id).unwrap());
+        assert!(!artist_has_banner(&conn, id).unwrap());
+    }
+
+    #[test]
+    fn test_rename_artist_and_album() {
+        let conn = setup_memory_db();
+
+        let artist_id = get_or_create_artist(&conn, "Old Name").unwrap();
+        rename_artist(&conn, artist_id, "New Name").unwrap();
+        let artist = get_artist(&conn, artist_id).unwrap();
+        assert_eq!(artist.name, "New Name");
+
+        let album_id = get_or_create_album(&conn, "Old Album", None, None).unwrap();
+        rename_album(&conn, album_id, "New Album").unwrap();
+        let album = get_album(&conn, album_id).unwrap();
+        assert_eq!(album.name, "New Album");
+    }
+
+    #[test]
+    fn test_remove_source_dir() {
+        let mut conn = setup_memory_db();
+        add_source_dir(&conn, "/music/rock").unwrap();
+        add_source_dir(&conn, "/music/jazz").unwrap();
+
+        let track_id = update_track(&conn, "/music/rock/song.mp3", "Song", 100, None, 0, 100, None).unwrap();
+        let artist_id = get_or_create_artist(&conn, "Artist").unwrap();
+        set_track_artists(&conn, track_id, &[artist_id]).unwrap();
+
+        let album_id = get_or_create_album(&conn, "Album", None, None).unwrap();
+        set_track_album(&conn, track_id, album_id, 1).unwrap();
+
+        remove_source_dir(&mut conn, "/music/rock").unwrap();
+        let dirs = get_source_dirs(&conn).unwrap();
+        assert_eq!(dirs.len(), 1);
+    }
+
+    #[test]
+    fn test_get_track_details() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        let details = get_track_details(&conn, track_id).unwrap();
+        assert_eq!(details.title, "Test Song");
+        assert_eq!(details.path, "/music/test.mp3");
+    }
+
+    #[test]
+    fn test_get_similar_tracks() {
+        let conn = setup_memory_db();
+        let track1 = insert_basic_track(&conn);
+        let track2 = insert_basic_track_with_path(&conn, "/music/song2.mp3", 2);
+
+        let similar = get_similar_tracks(&conn, track1, 5).unwrap();
+        assert_eq!(similar.len(), 1);
+        assert_eq!(similar[0].id, track2);
+    }
+
+    #[test]
+    fn test_fetch_tracking() {
+        let conn = setup_memory_db();
+        let id = get_or_create_artist(&conn, "Fetch Artist").unwrap();
+
+        report_fetch_success(&conn, id).unwrap();
+        let needs = get_artists_needing_fetch(&conn).unwrap();
+        assert!(needs.iter().any(|(aid, _)| *aid == id));
+
+        report_fetch_failure(&conn, id).unwrap();
+        report_fetch_failure(&conn, id).unwrap();
+        report_fetch_failure(&conn, id).unwrap();
+        let needs = get_artists_needing_fetch(&conn).unwrap();
+        assert!(!needs.iter().any(|(aid, _)| *aid == id));
+    }
+
+    #[test]
+    fn test_get_all_tracks_with_sort() {
+        let conn = setup_memory_db();
+        insert_basic_track(&conn); // "Test Song"
+        insert_basic_track_with_path(&conn, "/music/a-song.mp3", 2);
+
+        let by_title = get_all_tracks(&conn, Some(SortBy::Title)).unwrap();
+        assert_eq!(by_title[0].title, "Other Song");
+        assert_eq!(by_title[1].title, "Test Song");
+
+        let by_recent = get_all_tracks(&conn, Some(SortBy::RecentlyAdded)).unwrap();
+        assert!(by_recent[0].added_at >= by_recent[1].added_at);
+    }
+
+    #[test]
+    fn test_toggle_favorite_nonexistent_track() {
+        let conn = setup_memory_db();
+        assert!(toggle_favorite(&conn, 9999).is_err());
+    }
+
+    #[test]
+    fn test_get_playlist_by_name() {
+        let conn = setup_memory_db();
+        create_playlist(&conn, "Unique Playlist").unwrap();
+        let found = get_playlist_by_name(&conn, "Unique Playlist").unwrap();
+        assert_eq!(found.name, "Unique Playlist");
+        assert!(get_playlist_by_name(&conn, "Does Not Exist").is_err());
+    }
+
+    fn setup_memory_db() -> Connection {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+        init_db(&mut conn).unwrap();
+        conn
+    }
+
+    fn insert_basic_track(conn: &Connection) -> i64 {
+        insert_basic_track_with_path(conn, "/music/test.mp3", 1)
+    }
+
+    fn insert_basic_track_with_path(conn: &Connection, path: &str, id_suffix: i64) -> i64 {
+        let track_id = update_track(conn, path, &format!("{} Song", if id_suffix == 1 { "Test" } else { "Other" }), 200, Some(2024), 1000, 5000, None).unwrap();
+        let artist_id = get_or_create_artist(conn, "Test Artist").unwrap();
+        set_track_artists(conn, track_id, &[artist_id]).unwrap();
+        let album_id = get_or_create_album(conn, "Test Album", None, None).unwrap();
+        set_track_album(conn, track_id, album_id, id_suffix as i32).unwrap();
+        track_id
+    }
+
+    // -----------------------------------------------------------------------
+    // Stats helpers
+    // -----------------------------------------------------------------------
+
+    fn insert_play_at(conn: &Connection, track_id: i64, played_at: &str, source_type: &str, completion_percent: f64) {
+        conn.execute(
+            "INSERT INTO playback_history (track_id, played_at, source_type, completion_percent) VALUES (?1, ?2, ?3, ?4)",
+            params![track_id, played_at, source_type, completion_percent],
+        ).unwrap();
+    }
+
+    // -----------------------------------------------------------------------
+    // Stats overview tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_stats_overview_empty() {
+        let conn = setup_memory_db();
+        let overview = get_stats_overview(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(overview.total_tracks, 0);
+        assert_eq!(overview.total_artists, 0);
+        assert_eq!(overview.total_albums, 0);
+        assert_eq!(overview.total_plays, 0);
+        assert_eq!(overview.total_listening_time_sec, 0);
+        assert_eq!(overview.avg_daily_listening_min, 0.0);
+        assert_eq!(overview.unplayed_tracks, 0);
+    }
+
+    #[test]
+    fn test_stats_overview_with_tracks_no_plays() {
+        let conn = setup_memory_db();
+        insert_basic_track(&conn);
+        let overview = get_stats_overview(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(overview.total_tracks, 1);
+        assert_eq!(overview.total_artists, 1);
+        assert_eq!(overview.total_albums, 1);
+        assert_eq!(overview.total_plays, 0);
+        assert_eq!(overview.total_listening_time_sec, 0);
+        assert_eq!(overview.unplayed_tracks, 1);
+    }
+
+    #[test]
+    fn test_stats_overview_with_plays() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        let overview = get_stats_overview(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(overview.total_plays, 1);
+        assert_eq!(overview.total_listening_time_sec, 200);
+        assert_eq!(overview.unplayed_tracks, 0);
+    }
+
+    #[test]
+    fn test_stats_overview_with_partial_play() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 50.0);
+        let overview = get_stats_overview(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(overview.total_plays, 1);
+        assert_eq!(overview.total_listening_time_sec, 100);
+    }
+
+    #[test]
+    fn test_stats_overview_timeframe_filters() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        // Today's timeframe should not include 2024 plays
+        let overview = get_stats_overview(&conn, Timeframe::Today).unwrap();
+        assert_eq!(overview.total_plays, 0);
+    }
+
+    #[test]
+    fn test_stats_overview_file_size() {
+        let conn = setup_memory_db();
+        update_track(&conn, "/music/small.mp3", "Small", 100, None, 0, 1048576, None).unwrap();
+        update_track(&conn, "/music/large.flac", "Large", 200, None, 0, 5242880, None).unwrap();
+        let overview = get_stats_overview(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(overview.total_tracks, 2);
+        assert_eq!(overview.total_file_size_bytes, 6291456);
+        assert!((overview.avg_file_size_mb - 3.0).abs() < 0.001);
+        assert!((overview.largest_file_mb - 5.0).abs() < 0.001);
+    }
+
+    // -----------------------------------------------------------------------
+    // get_top_tracks_with_stats tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_top_tracks_with_stats_empty() {
+        let conn = setup_memory_db();
+        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_top_tracks_with_stats_ordering() {
+        let conn = setup_memory_db();
+        let t1 = insert_basic_track(&conn);
+        let t2 = insert_basic_track_with_path(&conn, "/music/b.mp3", 2);
+        insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, t1, "2024-01-16 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].play_count, 2);
+        assert_eq!(result[1].play_count, 1);
+        assert_eq!(result[0].total_listening_time_sec, 400);
+        assert_eq!(result[1].total_listening_time_sec, 200);
+    }
+
+    #[test]
+    fn test_top_tracks_with_stats_partial_completion() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 50.0);
+        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].total_listening_time_sec, 100);
+    }
+
+    #[test]
+    fn test_top_tracks_with_stats_limit() {
+        let conn = setup_memory_db();
+        let t1 = insert_basic_track(&conn);
+        let t2 = insert_basic_track_with_path(&conn, "/music/b.mp3", 2);
+        insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 1).unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_top_tracks_with_stats_last_played() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-06-20 15:30:00", "ALBUM", 100.0);
+        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].play_count, 2);
+        assert!(result[0].last_played_at.is_some());
+    }
+
+    // -----------------------------------------------------------------------
+    // get_top_artists_with_stats tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_top_artists_with_stats_empty() {
+        let conn = setup_memory_db();
+        let result = get_top_artists_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_top_artists_with_stats_single() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        let result = get_top_artists_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].artist.name, "Test Artist");
+        assert_eq!(result[0].play_count, 1);
+        assert_eq!(result[0].tracks_played, 1);
+        assert_eq!(result[0].total_listening_time_sec, 200);
+    }
+
+    #[test]
+    fn test_top_artists_with_stats_multiple_artists() {
+        let conn = setup_memory_db();
+        // Track 1 with "Test Artist"
+        let t1 = insert_basic_track(&conn);
+        // Track 2 with a different artist
+        let t2_path = "/music/other.mp3";
+        let t2 = update_track(&conn, t2_path, "Other Song", 200, Some(2024), 2000, 6000, None).unwrap();
+        let artist2_id = get_or_create_artist(&conn, "Second Artist").unwrap();
+        set_track_artists(&conn, t2, &[artist2_id]).unwrap();
+        let album_id = get_or_create_album(&conn, "Other Album", None, None).unwrap();
+        set_track_album(&conn, t2, album_id, 1).unwrap();
+
+        insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        let result = get_top_artists_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].artist.name, "Test Artist"); // same play count, arbitrary order but both present
+        assert_eq!(result[1].artist.name, "Second Artist");
+    }
+
+    // -----------------------------------------------------------------------
+    // get_top_albums_with_stats tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_top_albums_with_stats_empty() {
+        let conn = setup_memory_db();
+        let result = get_top_albums_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_top_albums_with_stats_single() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 50.0);
+        let result = get_top_albums_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].album.name, "Test Album");
+        assert_eq!(result[0].play_count, 1);
+        assert_eq!(result[0].total_listening_time_sec, 100);
+        assert_eq!(result[0].tracks_played, 1);
+    }
+
+    #[test]
+    fn test_top_albums_with_stats_multiple_albums() {
+        let conn = setup_memory_db();
+        let t1 = insert_basic_track(&conn); // "Test Album"
+        let t2_path = "/music/other.mp3";
+        let t2 = update_track(&conn, t2_path, "Other Song", 200, Some(2024), 2000, 6000, None).unwrap();
+        let artist_id = get_or_create_artist(&conn, "Artist").unwrap();
+        set_track_artists(&conn, t2, &[artist_id]).unwrap();
+        let album2_id = get_or_create_album(&conn, "Other Album", None, None).unwrap();
+        set_track_album(&conn, t2, album2_id, 1).unwrap();
+
+        insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        let result = get_top_albums_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // get_listening_time_trend tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_listening_time_trend_empty() {
+        let conn = setup_memory_db();
+        let result = get_listening_time_trend(&conn, Timeframe::AllTime).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_listening_time_trend_single_day() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        let result = get_listening_time_trend(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].date, "2024-01-15");
+        assert!((result[0].value - 200.0_f64 / 60.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_listening_time_trend_multiple_days() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-01-16 10:00:00", "ALBUM", 100.0);
+        let result = get_listening_time_trend(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].date, "2024-01-15");
+        assert_eq!(result[1].date, "2024-01-16");
+    }
+
+    // -----------------------------------------------------------------------
+    // get_streak_data tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_streak_data_no_plays() {
+        let conn = setup_memory_db();
+        let result = get_streak_data(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result.current_streak, 0);
+        assert_eq!(result.longest_streak, 0);
+        assert!(result.streak_dates.is_empty());
+        assert!(result.daily_counts.is_empty());
+    }
+
+    #[test]
+    fn test_streak_data_single_day() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        let result = get_streak_data(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result.streak_dates.len(), 1);
+        assert_eq!(result.streak_dates[0], "2024-01-15");
+        assert_eq!(*result.daily_counts.get("2024-01-15").unwrap(), 1);
+        assert_eq!(result.longest_streak, 1);
+    }
+
+    #[test]
+    fn test_streak_data_consecutive_days() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-01-16 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-01-17 10:00:00", "ALBUM", 100.0);
+        let result = get_streak_data(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result.streak_dates.len(), 3);
+        assert_eq!(result.longest_streak, 3);
+    }
+
+    #[test]
+    fn test_streak_data_gap_resets_streak() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-01-16 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-01-20 10:00:00", "ALBUM", 100.0);
+        let result = get_streak_data(&conn, Timeframe::AllTime).unwrap();
+        // Longest streak is 2 (Jan 15-16), not 3 (gap on 17-19)
+        assert_eq!(result.longest_streak, 2);
+    }
+
+    #[test]
+    fn test_streak_data_multiple_plays_same_day() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-01-15 14:00:00", "ALBUM", 100.0);
+        let result = get_streak_data(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result.streak_dates.len(), 1);
+        assert_eq!(*result.daily_counts.get("2024-01-15").unwrap(), 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // get_library_growth tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_library_growth_empty() {
+        let conn = setup_memory_db();
+        let result = get_library_growth(&conn, Timeframe::AllTime).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_library_growth_with_tracks() {
+        let conn = setup_memory_db();
+        insert_basic_track(&conn);
+        let result = get_library_growth(&conn, Timeframe::AllTime).unwrap();
+        assert!(!result.is_empty());
+        assert!(result[0].tracks_added >= 1);
+    }
+
+    #[test]
+    fn test_library_growth_multiple_tracks() {
+        let conn = setup_memory_db();
+        let t1 = insert_basic_track(&conn);
+        conn.execute("UPDATE track SET added_at = '2024-01-01 10:00:00' WHERE id = ?", params![t1]).unwrap();
+        let t2 = insert_basic_track_with_path(&conn, "/music/other.mp3", 2);
+        conn.execute("UPDATE track SET added_at = '2024-01-15 10:00:00' WHERE id = ?", params![t2]).unwrap();
+        let result = get_library_growth(&conn, Timeframe::AllTime).unwrap();
+        assert!(!result.is_empty());
+        // The last entry should have cumulative tracks >= 2
+        assert!(result.last().unwrap().tracks_added >= 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // get_heatmap_hourly tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_heatmap_hourly_empty() {
+        let conn = setup_memory_db();
+        let result = get_heatmap_hourly(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result.len(), 168);
+        for cell in &result {
+            assert_eq!(cell.value, 0);
+        }
+    }
+
+    #[test]
+    fn test_heatmap_hourly_with_plays() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        // 2024-01-15 is a Monday (strftime('%w') = 1)
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        let result = get_heatmap_hourly(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result.len(), 168);
+        // Monday=1, hour=10 => index = 1*24 + 10 = 34
+        assert_eq!(result[34].value, 1);
+    }
+
+    #[test]
+    fn test_heatmap_hourly_multiple_hours() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 08:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-01-15 22:00:00", "ALBUM", 100.0);
+        let result = get_heatmap_hourly(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result[32].value, 1); // Monday, 08:00
+        assert_eq!(result[46].value, 1); // Monday, 22:00
+    }
+
+    // -----------------------------------------------------------------------
+    // get_heatmap_weekday tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_heatmap_weekday_empty() {
+        let conn = setup_memory_db();
+        let result = get_heatmap_weekday(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result.len(), 7);
+        for cell in &result {
+            assert_eq!(cell.value, 0);
+        }
+    }
+
+    #[test]
+    fn test_heatmap_weekday_with_plays() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        // 2024-01-15 = Monday, 2024-01-17 = Wednesday
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-01-17 10:00:00", "ALBUM", 100.0);
+        let result = get_heatmap_weekday(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result.len(), 7);
+        assert_eq!(result[1].value, 1); // Monday
+        assert_eq!(result[3].value, 1); // Wednesday
+    }
+
+    // -----------------------------------------------------------------------
+    // get_favorite_trends tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_favorite_trends_empty() {
+        let conn = setup_memory_db();
+        let result = get_favorite_trends(&conn, Timeframe::AllTime).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_favorite_trends_single_period() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        let result = get_favorite_trends(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].period, "2024-01");
+        assert_eq!(result[0].top_track_id, Some(track_id));
+        assert_eq!(result[0].top_track_name.as_deref(), Some("Test Song"));
+        assert_eq!(result[0].top_artist_name.as_deref(), Some("Test Artist"));
+        assert_eq!(result[0].top_album_name.as_deref(), Some("Test Album"));
+    }
+
+    #[test]
+    fn test_favorite_trends_two_months() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-02-10 10:00:00", "ALBUM", 100.0);
+        let result = get_favorite_trends(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].period, "2024-01");
+        assert_eq!(result[1].period, "2024-02");
+    }
+
+    // -----------------------------------------------------------------------
+    // get_playback_history_timeline tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_playback_history_timeline_empty() {
+        let conn = setup_memory_db();
+        let result = get_playback_history_timeline(&conn, Timeframe::AllTime, 10).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_playback_history_timeline_ordering() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-01-20 10:00:00", "ALBUM", 50.0);
+        let result = get_playback_history_timeline(&conn, Timeframe::AllTime, 10).unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result[0].played_at > result[1].played_at);
+        assert!((result[0].completion_percent - 50.0).abs() < 0.001);
+        assert!((result[1].completion_percent - 100.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_playback_history_timeline_limit() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-01-16 10:00:00", "ALBUM", 100.0);
+        let result = get_playback_history_timeline(&conn, Timeframe::AllTime, 1).unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_playback_history_timeline_source_type() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "PLAYLIST", 100.0);
+        let result = get_playback_history_timeline(&conn, Timeframe::AllTime, 10).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].source_type, "playlist");
+    }
+
+    // -----------------------------------------------------------------------
+    // get_format_distribution tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_format_distribution_empty() {
+        let conn = setup_memory_db();
+        let result = get_format_distribution(&conn).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_format_distribution_single_format() {
+        let conn = setup_memory_db();
+        update_track(&conn, "/music/song1.mp3", "Song 1", 100, None, 0, 1000, None).unwrap();
+        update_track(&conn, "/music/song2.mp3", "Song 2", 200, None, 0, 2000, None).unwrap();
+        let result = get_format_distribution(&conn).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].format, "mp3");
+        assert_eq!(result[0].count, 2);
+        assert!((result[0].percentage - 100.0).abs() < 0.001);
+        assert_eq!(result[0].total_bytes, 3000);
+    }
+
+    #[test]
+    fn test_format_distribution_multiple_formats() {
+        let conn = setup_memory_db();
+        update_track(&conn, "/music/song1.mp3", "Song 1", 100, None, 0, 1000, None).unwrap();
+        update_track(&conn, "/music/song2.flac", "Song 2", 200, None, 0, 2000, None).unwrap();
+        let result = get_format_distribution(&conn).unwrap();
+        assert_eq!(result.len(), 2);
+        for stat in &result {
+            assert_eq!(stat.count, 1);
+            assert!((stat.percentage - 50.0).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn test_format_distribution_uppercase_extension() {
+        let conn = setup_memory_db();
+        update_track(&conn, "/music/song.MP3", "Song", 100, None, 0, 1000, None).unwrap();
+        let result = get_format_distribution(&conn).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].format, "mp3");
     }
 }

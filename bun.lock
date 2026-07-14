@@ -44,6 +44,7 @@
         "typescript": "~5.6.3",
         "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4",
         "vite-plus": "0.2.4",
+        "vitest": "^4.1.10",
       },
     },
   },

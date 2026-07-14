@@ -17,8 +17,10 @@
 | `bun run build`   | Build frontend only (output: `build/`)                 |
 | `bun run check`   | Typecheck frontend (`svelte-kit sync && svelte-check`) |
 | `bun run preview` | Vite preview of built frontend                         |
+| `bun run test`    | Vitest frontend tests (159 tests across 6 files)       |
+| `cargo test`      | Rust backend tests (165 tests across 5 files)          |
 
-No test, lint, or format scripts are configured. `bun run check` is the only available verification command.
+**⚠️ Always `bun run test`, never `bun test`.** Bun's native test runner (`bun test`) does not use the Vite pipeline; it cannot resolve `$lib` aliases or compile Svelte 5 `$state` runes. `bun run test` invokes Vitest, which uses Vite plugins and handles `.svelte.ts` files correctly.
 
 ## Project Map
 

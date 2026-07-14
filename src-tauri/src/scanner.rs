@@ -46,6 +46,214 @@ pub(crate) struct TrackMetadata {
     pub(crate) track_number: Option<u32>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_artists_single() {
+        let result = split_artists("John Doe");
+        assert_eq!(result, vec!["John Doe"]);
+    }
+
+    #[test]
+    fn test_split_artists_comma_separated() {
+        let result = split_artists("Artist A, Artist B, Artist C");
+        assert_eq!(result, vec!["Artist A", "Artist B", "Artist C"]);
+    }
+
+    #[test]
+    fn test_split_artists_feat() {
+        let result = split_artists("Artist A feat. Artist B");
+        assert_eq!(result, vec!["Artist A", "Artist B"]);
+    }
+
+    #[test]
+    fn test_split_artists_ft() {
+        let result = split_artists("Artist A ft. Artist B");
+        assert_eq!(result, vec!["Artist A", "Artist B"]);
+    }
+
+    #[test]
+    fn test_split_artists_featuring() {
+        let result = split_artists("Artist A featuring Artist B");
+        assert_eq!(result, vec!["Artist A", "Artist B"]);
+    }
+
+    #[test]
+    fn test_split_artists_semicolon() {
+        let result = split_artists("Artist A; Artist B");
+        assert_eq!(result, vec!["Artist A", "Artist B"]);
+    }
+
+    #[test]
+    fn test_split_artists_empty() {
+        let result = split_artists("");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_split_artists_only_separator_returns_empty() {
+        // " feat. " is entirely replaced by ", " then split gives empty strings
+        let result = split_artists(" feat. ");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_split_artists_trims_whitespace() {
+        let result = split_artists("  Artist A  ,  Artist B  ");
+        assert_eq!(result, vec!["Artist A", "Artist B"]);
+    }
+
+    #[test]
+    fn test_split_artists_multiple_separators() {
+        let result = split_artists("A, B feat. C; D");
+        assert_eq!(result, vec!["A", "B", "C", "D"]);
+    }
+
+    #[test]
+    fn test_split_artists_ampersand_no_split() {
+        let result = split_artists("A & B");
+        assert_eq!(result, vec!["A & B"]);
+    }
+
+    #[test]
+    fn test_split_artists_feat_no_spaces() {
+        let result = split_artists("A feat.B");
+        assert_eq!(result, vec!["A feat.B"]);
+    }
+
+    #[test]
+    fn test_split_artists_only_whitespace() {
+        let result = split_artists("   ");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_split_artists_multiple_feat() {
+        let result = split_artists("A feat. B feat. C");
+        assert_eq!(result, vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn test_extract_metadata_nonexistent() {
+        let result = extract_metadata(Path::new("/nonexistent/path.flac"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_metadata_wav_no_tags() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let wav_path = tmp.path().join("test.wav");
+        create_minimal_wav(&wav_path);
+
+        let meta = extract_metadata(&wav_path).unwrap();
+        assert_eq!(meta.title, "test");
+        assert_eq!(meta.artists, vec!["Unknown Artist"]);
+        assert_eq!(meta.album, "Unknown Album");
+        assert!(meta.album_artist.is_none());
+        assert!(meta.picture.is_none());
+        assert!(meta.release_year.is_none());
+        assert!(meta.track_number.is_none());
+    }
+
+    #[test]
+    fn test_save_image_to_app_dir_valid() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let app_dir = tmp.path().join("app");
+        let src = tmp.path().join("test.png");
+        create_test_png(&src);
+
+        let result = save_image_to_app_dir(&app_dir, src.to_str().unwrap(), "covers").unwrap();
+        assert!(result.ends_with(".webp"));
+        assert!(app_dir.join("covers").join(&result).exists());
+    }
+
+    #[test]
+    fn test_save_image_to_app_dir_nonexistent() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let app_dir = tmp.path().join("app");
+        let result = save_image_to_app_dir(&app_dir, "/nonexistent/image.png", "covers");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_save_picture_valid() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let app_dir = tmp.path();
+
+        let png_bytes = create_test_png_bytes();
+        let picture = lofty::picture::Picture::new_unchecked(
+            lofty::picture::PictureType::CoverFront,
+            Some(lofty::picture::MimeType::Png),
+            None,
+            png_bytes,
+        );
+
+        let result = save_picture(&app_dir, &picture).unwrap();
+        assert!(result.ends_with(".webp"));
+        assert!(app_dir.join("covers").join(&result).exists());
+    }
+
+    #[test]
+    fn test_ensure_track_in_db_with_wav() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+        db::init_db(&mut conn).unwrap();
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let wav_path = tmp.path().join("test.wav");
+        create_minimal_wav(&wav_path);
+
+        let track_id = ensure_track_in_db(&conn, &wav_path, tmp.path()).unwrap();
+        assert!(track_id > 0);
+
+        let (title, artist_count): (String, i64) = conn
+            .query_row(
+                "SELECT t.title, (SELECT COUNT(*) FROM track_artist WHERE track_id = ?1) FROM track t WHERE t.id = ?1",
+                rusqlite::params![track_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(title, "test");
+        assert_eq!(artist_count, 1);
+    }
+
+    // --- Helpers ---
+
+    fn create_minimal_wav(path: &Path) {
+        let wav_data: Vec<u8> = vec![
+            0x52, 0x49, 0x46, 0x46, // "RIFF"
+            0x26, 0x00, 0x00, 0x00, // file size - 8 (38)
+            0x57, 0x41, 0x56, 0x45, // "WAVE"
+            0x66, 0x6d, 0x74, 0x20, // "fmt "
+            0x10, 0x00, 0x00, 0x00, // fmt chunk size (16)
+            0x01, 0x00,             // PCM format
+            0x01, 0x00,             // 1 channel
+            0x44, 0xac, 0x00, 0x00, // 44100 Hz
+            0x88, 0x58, 0x01, 0x00, // byte rate (88200)
+            0x02, 0x00,             // block align (2)
+            0x10, 0x00,             // 16 bits per sample
+            0x64, 0x61, 0x74, 0x61, // "data"
+            0x02, 0x00, 0x00, 0x00, // data size (2)
+            0x00, 0x00,             // one silent 16-bit sample
+        ];
+        fs::write(path, wav_data).unwrap();
+    }
+
+    fn create_test_png(path: &Path) {
+        let img = image::RgbaImage::new(1, 1);
+        img.save(path).unwrap();
+    }
+
+    fn create_test_png_bytes() -> Vec<u8> {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("t.png");
+        create_test_png(&path);
+        fs::read(&path).unwrap()
+    }
+}
+
 fn split_artists(input: &str) -> Vec<String> {
     let normalized = input
         .replace(" feat. ", ", ")

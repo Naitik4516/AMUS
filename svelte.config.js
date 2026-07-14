@@ -17,6 +17,8 @@ const config = {
     },
   },
   compilerOptions: {
+    runes: true,
+    discloseVersion: false,
     experimental: {
       async: true,
     },
