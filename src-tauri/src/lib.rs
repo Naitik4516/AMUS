@@ -349,7 +349,7 @@ pub fn run() {
     // Event loop: handle file opens (macOS application:openFiles:, etc.)
     app.run(move |_handle, _event| {
         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
-        if let tauri::RunEvent::Opened { urls } = event {
+        if let tauri::RunEvent::Opened { urls } = _event {
             let paths: Vec<String> = urls
                 .iter()
                 .filter_map(|u| {
@@ -361,7 +361,7 @@ pub fn run() {
                 })
                 .collect();
             if !paths.is_empty() {
-                if let Err(e) = cli::play_paths(handle, &paths) {
+                if let Err(e) = cli::play_paths(_handle, &paths) {
                     eprintln!("file association: {e}");
                 }
             }
