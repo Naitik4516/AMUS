@@ -74,6 +74,75 @@ Open global search and type normally for fuzzy matching, or use these **extended
 - Prefix a query with a slash command to limit type: `/albums ^The`, `/tracks !live$`.
 - Tab accepts the ghost suggestion when one is shown.
 
+### CLI Interface
+
+The `amus` binary doubles as a remote control for the running app. If AMUS isn't running, it's auto-started in the background. Use `amus help` to see everything, or `amus <command> --help` for details on a specific command.
+
+| Command | Description |
+|---------|-------------|
+| `play [paths...]` | Resume playback, or play files/folders/globs |
+| `play -s <query>` | Play the top search result for a query |
+| `pause` | Pause playback |
+| `stop` | Stop playback |
+| `toggle` | Toggle play/pause |
+| `next` | Skip to the next track |
+| `prev` | Go to the previous track |
+| `seek <value>` | Seek to a position (e.g. `90`) or by offset (`+10`, `-5`) |
+| `volume <value>` | Set volume as a percent (e.g. `80`) or adjust (`+5`, `-10`) |
+| `mute` | Toggle mute |
+| `status` | Show current track, playback state, and position |
+| `queue add [paths...]` | Add files/folders/globs to the end of the queue |
+| `queue add -s <query>` | Add search results to the queue |
+| `queue clear` | Clear the user queue |
+| `queue shuffle` | Toggle shuffle on/off |
+| `queue show` | Print the current queue contents |
+| `library rescan` | Rescan all library sources |
+| `search [scope] <query>` | Search the library (`artist:`, `album:`, or bare `track:`) |
+| `playlist [name]` | Show a playlist's contents (omit to list all) |
+| `playlist create <name>` | Create a new playlist |
+| `playlist play <name>` | Play a playlist |
+| `playlist add <name> <path>` | Add a track to a playlist |
+| `playlist remove <name> <path>` | Remove a track from a playlist |
+| `playlist delete <name>` | Delete a playlist |
+| `albums` | List all albums |
+| `artists` | List all artists |
+| `album <id_or_name>` | Show an album's track listing |
+| `artist <id_or_name>` | Show an artist's track listing |
+| `import <path>` | Import a folder as a library source and scan it |
+| `info <path>` | Print local metadata for an audio file (no server needed) |
+| `open` | Show and focus the main window |
+| `hide` | Hide the main window |
+| `close` | Close or hide the main window |
+| `update` | Check for and install updates |
+| `version` | Print the AMUS version |
+
+**Examples**
+
+```
+amus                                                # start the GUI
+amus ~/Music/album.flac ~/Downloads/track.mp3       # play specific files
+amus ~/Music                                        # play an entire folder
+amus play -s "artist:Radiohead"                     # play the top artist match
+amus next                                           # skip to next track
+amus seek +30                                       # jump forward 30 seconds
+amus volume 60                                      # set volume to 60%
+amus queue add ~/Music/New\ Albums/*.flac           # glob and queue
+amus queue show                                     # see what's coming next
+amus playlist create "Late Night"                   # new empty playlist
+amus playlist add "Late Night" ~/Music/jazz.mp3     # add a track to it
+amus playlist play "Late Night"                     # start playing it
+amus albums                                         # browse the library
+amus search album "In Rainbows"                     # find an album
+amus info ~/Downloads/unknown.flac                  # peek at metadata
+```
+
+**Notes**
+
+- Paths accept glob patterns (`**/*.flac`) and can be files or directories — everything is scanned recursively for audio.
+- The `-s` / `--search` flag is only available on `play` and `queue add`. For general lookups use `search`.
+- Seek and volume values prefixed with `+` or `-` are treated as relative adjustments; bare numbers are absolute.
+- On first invocation of any command, AMUS launches in the background if it isn't already running.
+
 ## Installation
 
 <p align="center">
@@ -131,31 +200,7 @@ bun install
 bun tauri dev
 ```
 
-Other useful commands:
 
-| Command         | Purpose                                     |
-| --------------- | ------------------------------------------- |
-| `bun tauri dev` | Full app (Vite + Tauri backend, hot reload) |
-| `bun run dev`   | Frontend only (no native backend)           |
-| `bun run build` | Build frontend (`build/`)                   |
-| `bun run check` | Typecheck frontend                          |
-| `bun run test`  | Run frontend unit tests (Vitest)            |
-| `cargo test`    | Run Rust backend tests                      |
-
-### CLI Interface
-
-AMUS includes a built-in command-line interface for controlling playback externally. Available commands:
-
-| Command   | Description                    |
-| --------- | ------------------------------ |
-| `status`  | Show current track/playback   |
-| `play`    | Start/resume playback          |
-| `pause`   | Pause playback                 |
-| `next`    | Skip to next track             |
-| `prev`    | Go to previous track           |
-| `seek <seconds>` | Seek to position         |
-| `volume <0.0-1.0>` | Set volume level       |
-| `mute`    | Toggle mute                    |
 
 ## Architecture
 
