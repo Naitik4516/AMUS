@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="{{product_name}}" Version="{{version}}" Manufacturer="{{manufacturer}}" UpgradeCode="{{upgrade_code}}">
+    <Package Compressed="yes" InstallScope="perMachine" InstallerVersion="200" />
+
+    <Media Id="1" Cabinet="app.cab" EmbedCab="yes" />
+    
+    <Property Id="ApplicationFolderName" Value="{{product_name}}" />
+    <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
+
+    <Property Id="INSTALLDIR">
+      <RegistrySearch Id="InstallDirReg" Root="HKLM" Key="SOFTWARE\{{manufacturer}}\{{product_name}}" Name="InstallDir" Type="raw" Win64="yes" />
+    </Property>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="{{product_name}}" />
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="AppFiles" Guid="*">
+        <File Id="AppExe" Source="{{bin_path}}" KeyPath="yes" />
+      </Component>
+      <Component Id="PathEnv" Guid="*">
+        <Environment Id="PATH" Name="PATH" Value="[INSTALLDIR]" Permanent="no" Part="last" Action="set" System="no" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="MainFeature" Title="{{product_name}}" Level="1">
+      <ComponentRef Id="AppFiles" />
+      <ComponentRef Id="PathEnv" />
+    </Feature>
+
+    <Icon Id="app.ico" SourceFile="{{icon_path}}" />
+    <Property Id="ARPPRODUCTICON" Value="app.ico" />
+  </Product>
+</Wix>
