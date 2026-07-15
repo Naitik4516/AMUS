@@ -254,6 +254,7 @@ fn command_to_protocol(command: Commands, cwd: &std::path::Path) -> Result<CliCo
         Commands::Info { .. } => unreachable!("handled locally"),
         Commands::Update => CliCommand::Update,
         Commands::Version => unreachable!("handled locally"),
+        Commands::Reset { force } => CliCommand::Reset { force },
     })
 }
 

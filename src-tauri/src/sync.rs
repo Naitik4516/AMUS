@@ -42,7 +42,9 @@ impl SyncManager {
                     );
                     let pool = app_handle.state::<DbPool>();
                     if let Ok(mut conn) = pool.get() {
-                        let _ = scanner::scan_directories(&mut conn, &app_handle);
+                        let _ = tokio::task::block_in_place(|| {
+                            scanner::scan_directories(&mut conn, &app_handle)
+                        });
                     }
                 }
             }
@@ -163,7 +165,9 @@ impl SyncManager {
                         if !paths_to_scan.is_empty() {
                             let pool = app_handle.state::<DbPool>();
                             if let Ok(mut conn) = pool.get() {
-                                let _ = scanner::scan_files(&mut conn, &app_handle, paths_to_scan);
+                                let _ = tokio::task::block_in_place(|| {
+                                    scanner::scan_files(&mut conn, &app_handle, paths_to_scan)
+                                });
                             }
                         }
                     }

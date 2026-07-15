@@ -17,6 +17,7 @@ use crate::player::source::PlaybackSource;
 use crate::scanner;
 use crate::sync::SyncManager;
 
+
 /// Public entry: play a set of file paths (auto-imports missing tracks).
 pub fn play_paths(app: &AppHandle, paths: &[String]) -> Result<(), String> {
     let tracks = resolve_paths_to_tracks(app, paths, true)?;
@@ -221,6 +222,32 @@ fn dispatch(app: &AppHandle, cmd: CliCommand) -> Result<CliData, String> {
         CliCommand::Version => Ok(CliData::Version {
             version: app.package_info().version.to_string(),
         }),
+        CliCommand::Reset { force: _ } => {
+            let app_dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| format!("failed to resolve app data dir: {e}"))?;
+
+            let _ = std::fs::remove_file(app_dir.join("music.db"));
+            let _ = std::fs::remove_file(app_dir.join("music.db-wal"));
+            let _ = std::fs::remove_file(app_dir.join("music.db-shm"));
+
+            let _ = std::fs::remove_file(app_dir.join("session.json"));
+            let _ = std::fs::remove_file(app_dir.join("settings.json"));
+
+            for dir in &["artists", "artist_banner", "cover_art"] {
+                let _ = std::fs::remove_dir_all(app_dir.join(dir));
+            }
+
+            // Spawn a fresh instance before exiting
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = std::process::Command::new(exe).spawn();
+            }
+            app.exit(0);
+
+            #[allow(unreachable_code)]
+            Ok(msg("App data reset"))
+        }
     }
 }
 

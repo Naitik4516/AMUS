@@ -7,6 +7,7 @@ pub mod media_controls;
 pub mod models;
 pub mod player;
 pub mod scanner;
+pub mod startup;
 pub mod sync;
 
 use crate::player::actor::PlayerCommand;
@@ -178,45 +179,60 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let app_handle = app.handle();
+            let startup_status = startup::StartupStatus::new();
 
-            let app_dir = app_handle
-                .path()
-                .app_data_dir()
-                .expect("failed to get app data dir");
-            std::fs::create_dir_all(&app_dir).expect("failed to create app data dir");
-            let db_path = app_dir.join("music.db");
+            if let Err(e) = (|| -> Result<(), String> {
+                let app_dir = app_handle
+                    .path()
+                    .app_data_dir()
+                    .map_err(|e| format!("failed to get app data dir: {e}"))?;
+                std::fs::create_dir_all(&app_dir)
+                    .map_err(|e| format!("failed to create app data dir: {e}"))?;
+                let db_path = app_dir.join("music.db");
 
-            let manager = SqliteConnectionManager::file(db_path).with_init(|c| {
-                c.execute_batch(
-                    "PRAGMA foreign_keys = ON;\n\
-                    PRAGMA journal_mode = WAL;\n\
-                    PRAGMA synchronous = NORMAL;\n\
-                    PRAGMA temp_store = MEMORY;\n\
-                    PRAGMA busy_timeout = 5000;",
-                )
-            });
-            let pool = Pool::new(manager).expect("failed to create db pool");
+                let manager = SqliteConnectionManager::file(db_path).with_init(|c| {
+                    c.execute_batch(
+                        "PRAGMA foreign_keys = ON;\n\
+                        PRAGMA journal_mode = WAL;\n\
+                        PRAGMA synchronous = NORMAL;\n\
+                        PRAGMA temp_store = MEMORY;\n\
+                        PRAGMA busy_timeout = 5000;",
+                    )
+                });
+                let pool = Pool::new(manager)
+                    .map_err(|e| format!("failed to create db pool: {e}"))?;
 
-            {
-                let mut conn = pool.get().expect("failed to get db connection");
-                db::init_db(&mut conn).expect("failed to initialize database");
+                {
+                    let mut conn = pool.get()
+                        .map_err(|e| format!("failed to get db connection: {e}"))?;
+                    db::init_db(&mut conn)
+                        .map_err(|e| format!("failed to initialize database: {e}"))?;
+                }
+
+                let handle =
+                    crate::player::actor::PlayerActor::spawn(app.handle().clone(), pool.clone());
+                app.manage(commands::PlayerHandle(handle));
+                app.manage(pool);
+
+                let sync_manager = SyncManager::new();
+                sync_manager.init(app_handle);
+                app.manage(sync_manager);
+
+                Ok(())
+            })() {
+                startup_status.fail(&e);
+                eprintln!("Startup error: {e}");
+            } else {
+                startup_status.succeed();
             }
 
-            let handle =
-                crate::player::actor::PlayerActor::spawn(app.handle().clone(), pool.clone());
-            app.manage(commands::PlayerHandle(handle));
-
-            app.manage(pool);
-
-            let sync_manager = SyncManager::new();
-            sync_manager.init(app_handle);
-            app.manage(sync_manager);
+            app.manage(startup_status);
             app.manage(MiniPlayerPinned(AtomicBool::new(true)));
 
-            // Start CLI IPC server
+            // CLI IPC server — always start (doesn't depend on DB)
             cli::start_server(app_handle.clone());
 
-            // Start OS media controls (souvlaki) if enabled
+            // OS media controls — best-effort, non-critical
             if sync::get_setting(app_handle, "osMediaControls", true).unwrap_or(true) {
                 let _ = media_controls::init(app_handle.clone());
             }
@@ -342,6 +358,8 @@ pub fn run() {
             commands::quit_app,
             commands::toggle_mini_player,
             commands::set_os_media_controls,
+            commands::get_startup_status,
+            commands::reset_app_data,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

@@ -224,4 +224,21 @@
     </svg>
 {:else if name === "circle-minus"}
     <CircleMinus {...properties} />
+{:else if name === "triangle-alert"}
+    <svg
+        viewBox="0 0 24 24"
+        width={size}
+        height={size}
+        class={className}
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M21.7 19.5 13 4.8c-.5-.9-1.7-.9-2.2 0L2.1 19.5c-.5.9.1 2 1.1 2h17.6c1 0 1.6-1.1 1.1-2Z" />
+        <path d="M12 10.6v3.4" />
+        <path d="M12 16.7v.01" />
+    </svg>
 {/if}

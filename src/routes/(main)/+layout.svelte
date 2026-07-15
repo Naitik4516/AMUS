@@ -93,6 +93,11 @@
     });
 
     onMount(() => {
+        window.onunhandledrejection = (e) => {
+            console.error("Unhandled rejection:", e.reason);
+            toast.error("An unexpected error occurred");
+        };
+
         initSettings();
         store.init();
 

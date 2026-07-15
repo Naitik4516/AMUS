@@ -114,6 +114,8 @@ The `amus` binary doubles as a remote control for the running app. If AMUS isn't
 | `hide` | Hide the main window |
 | `close` | Close or hide the main window |
 | `update` | Check for and install updates |
+| `reset` | Reset all app data (DB, settings, cache) and restart |
+| `reset --force` | Skip confirmation prompt |
 | `version` | Print the AMUS version |
 
 **Examples**
@@ -306,6 +308,27 @@ amus/
 
 **Is this a vibe-coded / fully AI-generated project?**  
 No. AMUS is a personal project I designed and built. I use AI tools (including coding agents and autocomplete) for implementation help and boilerplate — especially while learning Rust or working through low-level pieces. Some areas (for example parts of the scanner and sync logic) had substantial AI assistance. Everything is reviewed, tested, and integrated by me; architecture, features, and maintenance are intentional human decisions.
+
+## Troubleshooting
+
+### App fails to start
+If AMUS crashes or shows a blank window after launch:
+
+- **Try Again** — restart the app from the error page
+- **Reset App Data** — click the "Reset App Data" button on the error page, or run `amus reset --force` from a terminal. This clears your database, settings, session, and cached art, then restarts fresh.
+- **Report the issue** — open a [GitHub issue](https://github.com/Naitik4516/AMUS/issues/new) and include any error details shown on the page
+- **Downgrade** — install the previous stable version from the [Releases page](https://github.com/Naitik4516/AMUS/releases)
+
+### CLI not found on Windows
+If `amus` is not recognized in Command Prompt or PowerShell after installation, add the AMUS installation directory to your PATH manually, or reinstall using the NSIS installer (it now adds AMUS to PATH automatically).
+
+### `amus reset` command
+Resets all app data and restarts the application. Useful for troubleshooting startup failures or data corruption.
+
+```
+amus reset           # prompts for confirmation
+amus reset --force   # skip confirmation (useful in scripts)
+```
 
 **Does it need the cloud or an account?**  
 No. Your library stays on your machine. Artist image fetch is the only optional network use for metadata art.

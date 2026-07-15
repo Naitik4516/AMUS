@@ -96,6 +96,10 @@ pub enum CliCommand {
     // Meta
     Update,
     Version,
+    /// Reset all app data and restart
+    Reset {
+        force: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]

@@ -114,6 +114,12 @@ pub enum Commands {
     Update,
     /// Print version
     Version,
+    /// Reset all app data and restart
+    Reset {
+        /// Skip confirmation prompt
+        #[arg(long, short)]
+        force: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

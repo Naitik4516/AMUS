@@ -6,6 +6,7 @@ use crate::models::*;
 use crate::player::actor::{PlayerCommand, PlayerStateSnapshot};
 use crate::player::source::{PlaybackSource, RepeatMode};
 use crate::scanner;
+use crate::startup::StartupStatus;
 use crate::sync::SyncManager;
 use std::sync::mpsc::Sender;
 use tauri::Manager;
@@ -71,7 +72,7 @@ pub async fn has_music(pool: State<'_, DbPool>) -> Result<bool> {
 #[tauri::command]
 pub async fn scan_library(app_handle: tauri::AppHandle, pool: State<'_, DbPool>) -> Result<()> {
     let mut conn = pool.get().map_err(Error::Pool)?;
-    scanner::scan_directories(&mut conn, &app_handle)?;
+    tokio::task::block_in_place(|| scanner::scan_directories(&mut conn, &app_handle))?;
     Ok(())
 }
 
@@ -656,5 +657,39 @@ pub(crate) fn toggle_mini_player(app: tauri::AppHandle) -> std::result::Result<(
     } else {
         crate::toggle_miniplayer(&app);
     }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_startup_status(startup: State<'_, StartupStatus>) -> Option<String> {
+    startup.get()
+}
+
+#[tauri::command]
+pub fn reset_app_data(app_handle: tauri::AppHandle) -> std::result::Result<(), String> {
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("failed to resolve app data dir: {e}"))?;
+
+    let _ = std::fs::remove_file(app_dir.join("music.db"));
+    let _ = std::fs::remove_file(app_dir.join("music.db-wal"));
+    let _ = std::fs::remove_file(app_dir.join("music.db-shm"));
+
+    let _ = std::fs::remove_file(app_dir.join("session.json"));
+
+    let _ = std::fs::remove_file(app_dir.join("settings.json"));
+
+    for dir in &["artists", "artist_banner", "cover_art"] {
+        let _ = std::fs::remove_dir_all(app_dir.join(dir));
+    }
+
+    // Spawn a fresh instance before exiting
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe).spawn();
+    }
+    app_handle.exit(0);
+
+    #[allow(unreachable_code)]
     Ok(())
 }
