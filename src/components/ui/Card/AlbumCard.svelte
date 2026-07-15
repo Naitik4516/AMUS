@@ -19,7 +19,7 @@
             />
         {:else}
             <img
-                src="/PhonographRecord.png"
+                src="/PhonographRecord.webp"
                 alt="Album Icon"
                 class="w-full h-full"
             />

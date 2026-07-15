@@ -55,7 +55,7 @@
 >
     <div class="flex gap-15 items-end p-5 pb-30">
         <img
-            src={coverArt ? coverArt : "/PhonographRecord.png"}
+            src={coverArt ? coverArt : "/PhonographRecord.webp"}
             alt={name}
             class="w-64 {coverArt ? 'rounded-xl shadow-xl' : 'drop-shadow-xl drop-shadow-black/50'}"
             crossorigin="anonymous"

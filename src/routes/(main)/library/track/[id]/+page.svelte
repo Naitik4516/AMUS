@@ -46,7 +46,7 @@
                 <img
                     src={track.cover_art
                         ? store.getImageSrc(track.cover_art)
-                        : "/PhonographRecord.png"}
+                        : "/PhonographRecord.webp"}
                     alt={track.title}
                     class="w-full h-full object-cover"
                 />
