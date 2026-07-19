@@ -48,7 +48,7 @@
 
 <div
     bind:this={slider}
-    class="w-full max-w-96 h-1.5 rounded-full bg-gray-400/40 relative cursor-pointer"
+    class="w-full max-w-96 h-1.5 rounded-full bg-gray-300/40 relative cursor-pointer"
     title="Seek"
     role="slider"
     aria-valuemin="0"

@@ -6,24 +6,20 @@
     import { player } from "$lib/player.svelte";
     import { invoke } from "@tauri-apps/api/core";
     import { loadSession, clearSession, hasSession } from "$lib/session.svelte";
+    import { store } from "$lib/stores.svelte";
 
     let { hasMusic } = $props();
 
-    let totalTracks = $state(0);
-    let totalArtists = $state(0);
-    let totalAlbums = $state(0);
+    let totalTracks = $derived(store.tracks.length);
+    let totalArtists = $derived(store.artists.length);
+    let totalAlbums = $derived(store.albums.length);
     let hasSessionState = $state(false);
 
     onMount(async () => {
         if (hasMusic) {
             try {
-                const [overview, sessionExists] = await Promise.all([
-                    getStatsOverview("all_time"),
-                    hasSession(),
-                ]);
-                totalTracks = overview.total_tracks;
-                totalArtists = overview.total_artists;
-                totalAlbums = overview.total_albums;
+                const sessionExists = await hasSession();
+
                 hasSessionState = sessionExists && !player.currentTrack;
             } catch (e) {
                 console.error("Failed to load stats", e);
@@ -32,13 +28,8 @@
     });
 
     async function playAllTracks() {
-        try {
-            const tracks = await invoke("get_all_tracks", { sortBy: null });
-            if (tracks.length > 0) {
-                await player.play(tracks, { type: "Other" }, 0);
-            }
-        } catch (e) {
-            console.error("Failed to play all tracks", e);
+        if (store.tracks.length > 0) {
+            await player.play(store.tracks, { type: "Other" }, 0);
         }
     }
 
@@ -55,20 +46,34 @@
         try {
             switch (session.context_type) {
                 case "ALBUM":
-                    contextTracks = await invoke<Track[]>("get_tracks_by_album", { albumId: session.context_id });
+                    contextTracks = await invoke<Track[]>(
+                        "get_tracks_by_album",
+                        { albumId: session.context_id },
+                    );
                     break;
                 case "PLAYLIST":
-                    contextTracks = await invoke<Track[]>("get_tracks_by_playlist", { playlistId: session.context_id });
+                    contextTracks = await invoke<Track[]>(
+                        "get_tracks_by_playlist",
+                        { playlistId: session.context_id },
+                    );
                     break;
                 case "ARTIST":
-                    contextTracks = await invoke<Track[]>("get_tracks_by_artist", { artistId: session.context_id });
+                    contextTracks = await invoke<Track[]>(
+                        "get_tracks_by_artist",
+                        { artistId: session.context_id },
+                    );
                     break;
                 case "FAVORITES":
-                    contextTracks = await invoke<Track[]>("get_favorite_tracks");
+                    contextTracks = await invoke<Track[]>(
+                        "get_favorite_tracks",
+                    );
                     break;
                 default:
                     if (session.current_track_id) {
-                        const details = await invoke<TrackDetails>("get_track_details", { id: session.current_track_id });
+                        const details = await invoke<TrackDetails>(
+                            "get_track_details",
+                            { id: session.current_track_id },
+                        );
                         contextTracks = [details];
                     }
             }
@@ -84,17 +89,24 @@
         let userQueueTracks: Track[] = [];
         if (session.user_queue_ids.length > 0) {
             try {
-                const all = await invoke<Track[]>("get_all_tracks", { sortBy: null });
+                const all = await invoke<Track[]>("get_all_tracks", {
+                    sortBy: null,
+                });
                 const idSet = new Set(session.user_queue_ids);
                 userQueueTracks = all.filter((t) => idSet.has(t.id));
                 const idOrder = session.user_queue_ids;
-                userQueueTracks.sort((a, b) => idOrder.indexOf(a.id) - idOrder.indexOf(b.id));
+                userQueueTracks.sort(
+                    (a, b) => idOrder.indexOf(a.id) - idOrder.indexOf(b.id),
+                );
             } catch (e) {
                 console.error("Failed to fetch user queue tracks", e);
             }
         }
 
-        const startIndex = Math.min(session.context_position, contextTracks.length - 1);
+        const startIndex = Math.min(
+            session.context_position,
+            contextTracks.length - 1,
+        );
         const sourceType = session.context_type;
         const sourceId = session.context_id;
 
@@ -121,7 +133,9 @@
 
     async function resumeFallback() {
         try {
-            const recent = await invoke<Track[]>("get_recently_played", { limit: 1 });
+            const recent = await invoke<Track[]>("get_recently_played", {
+                limit: 1,
+            });
             if (recent.length > 0) {
                 await player.play(recent, { type: "Other" }, 0);
             } else {
@@ -135,10 +149,9 @@
 
     async function randomMix() {
         try {
-            const tracks = await invoke("get_all_tracks", { sortBy: null });
-            if (tracks.length > 0) {
-                const randomIndex = Math.floor(Math.random() * tracks.length);
-                await player.play([tracks[randomIndex]]);
+            if (store.tracks.length > 0) {
+                const randomIndex = Math.floor(Math.random() * store.tracks.length);
+                await player.play([store.tracks[randomIndex]]);
             }
         } catch (e) {
             console.error("Failed to play random mix", e);
@@ -154,7 +167,7 @@
     >
         <div class="relative w-full h-full p-5">
             <img
-                src="/headphones.png"
+                src="/headphones.webp"
                 alt="3D Headphones"
                 class="w-full h-full object-contain object-right"
                 style="filter: hue-rotate(var(--model-hue-rotate, 175deg))"

@@ -18,8 +18,8 @@
     const currentRoute = $derived(page.url.pathname);
 </script>
 
-<div
-    class="fixed left-4 top-[30%] flex flex-col gap-3 p-6 rounded-full bg-gray-300/5 border-zinc-700/30 border text-white shadow-lg z-40 w-21"
+<aside
+    class="fixed left-4 top-[33%] flex flex-col gap-3 p-6 rounded-full bg-gray-300/5 border-zinc-700/30 border text-white shadow-lg z-40 w-21"
 >
     {#each menuItems as item (item)}
         {@const active = currentRoute === item.route}
@@ -47,4 +47,4 @@
             </span>
         </button>
     {/each}
-</div>
+</aside>

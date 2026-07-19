@@ -157,10 +157,6 @@
     let actionMenuOpen = $state<MenuPosition | null>(null);
     let rowMenuOpen = $state<[MenuPosition, Track] | null>(null);
 
-    let VListHeight = $derived(
-        Math.min(orderedTracks.length * 74, window.innerHeight),
-    );
-
     function compareTracks(a: Track, b: Track, key: ColumnKey) {
         if (key === "title") return a.title.localeCompare(b.title);
         if (key === "album")
@@ -189,6 +185,10 @@
         const sorted = [...tracks].sort((a, b) => compareTracks(a, b, key));
         return sortDir === "desc" ? sorted.reverse() : sorted;
     });
+
+    let VListHeight = $derived(
+        Math.min(orderedTracks.length * 74, window.innerHeight),
+    );
 
     function toggleSort(key: ColumnKey) {
         if (!canSort || context.type === "Album") return;
@@ -585,6 +585,7 @@
         <div class="mt-1 w-full overflow-x-scroll">
             {#if orderedTracks.length > 0}
                 <VList
+                    class="vlist"
                     data={orderedTracks}
                     style="height: {VListHeight}px;"
                     getKey={(_, i) => i}
@@ -810,7 +811,6 @@
         playlistId={context.id ?? 0}
         name={context.name}
         coverArt={context.coverArt}
-        onClose={() => (showEditDialog = false)}
     />
 {/if}
 

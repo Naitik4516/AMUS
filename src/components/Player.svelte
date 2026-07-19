@@ -38,20 +38,22 @@
 </script>
 
 {#if player.currentTrack}
-    <div class="fixed bottom-0 left-0 w-full px-4 pb-3 z-15">
+    <div class=" fixed bottom-0 left-0 w-full px-4 pb-3 z-15">
         <div
-            class="bg-zinc-950/50 border-2 border-neutral-800/40 backdrop-blur-xl grid grid-cols-3 items-center justify-between px-6 py-3 shadow-lg rounded-3xl relative"
-            ondblclick={() => player.stop()}
+            class="grid grid-cols-3 items-center justify-between px-6 py-3 rounded-3xl relative player-container"
+            ondblclick={() => player.close()}
             role="contentinfo"
         >
             <!-- Track Info -->
-            <div class="flex items-center gap-4 pr-10">
+            <div class="flex items-center gap-4 pr-10 z-1">
                 <div
-                    class="w-14 h-14 rounded-lg bg-neutral-800 shadow-md flex items-center justify-center overflow-hidden shrink-0"
+                    class="w-15 h-15 rounded-lg bg-neutral-800 shadow-md flex items-center justify-center overflow-hidden shrink-0"
                 >
                     {#if player.currentTrack?.cover_art}
                         <img
-                            src={store.getImageSrc(player.currentTrack.cover_art)}
+                            src={store.getImageSrc(
+                                player.currentTrack.cover_art,
+                            )}
                             alt=""
                             class="w-full h-full object-cover"
                         />
@@ -63,7 +65,7 @@
                     <Marquee>
                         <a
                             href="/library/track/{player.currentTrack?.id}"
-                            class="font-bold truncate text-white hover:underline cursor-pointer inline-block"
+                            class="font-bold truncate text-white hover:underline cursor-pointer inline-block text-lg"
                         >
                             {player.currentTrack?.title}
                         </a>
@@ -76,7 +78,7 @@
                                 {/if}
                                 <a
                                     href="/library/artists/{artist.id}"
-                                    class=" hover:text-white font-medium text-xs"
+                                    class=" hover:text-white font-medium text-sm"
                                     >{artist.name}</a
                                 >
                             {/each}
@@ -99,7 +101,7 @@
             </div>
 
             <!-- Controls -->
-            <div class="flex flex-col items-center gap-2">
+            <div class="flex flex-col items-center gap-2 z-1">
                 <div class="flex items-center gap-6">
                     <button
                         class="hover:text-white transition-colors"
@@ -155,8 +157,7 @@
                         value={player.progress}
                         onValueChange={(val) => {
                             if (player.currentTrack) {
-                                let seekVal =
-                                    val * player.duration;
+                                let seekVal = val * player.duration;
 
                                 player.seek(seekVal);
                             }
@@ -171,7 +172,7 @@
             </div>
 
             <!-- Volume & Queue -->
-            <div class="flex items-center gap-4 justify-end">
+            <div class="flex items-center gap-4 justify-end z-1">
                 <button
                     onclick={() => (showQueue = !showQueue)}
                     class="text-gray-300 hover:text-white transition-colors"
@@ -192,10 +193,7 @@
                 >
                     <button
                         class="text-gray-300 group-hover:text-white transition-colors"
-                        onclick={() =>
-                            player.volume != 0
-                                ? player.setVolume(0)
-                                : player.setVolume(1)}
+                        onclick={() => player.toggleMute()}
                     >
                         {#if player.volume === 0}
                             <VolumeX size={18} />
@@ -217,3 +215,16 @@
         </div>
     </div>
 {/if}
+
+<style>
+    .player-container::before {
+        backdrop-filter: saturate(220%) blur(18px);
+        background: rgb(29, 26, 30, 0.6);
+        border-radius: inherit;
+        box-shadow: 0 10px 40px rgb(0, 0, 0, 0.2);
+        content: "";
+        inset: 0;
+        position: absolute;
+        z-index: var(--z-default);
+    }
+</style>

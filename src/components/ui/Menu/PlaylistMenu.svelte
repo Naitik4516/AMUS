@@ -3,11 +3,13 @@
     import type { Playlist, Track, Context } from "$lib/types";
     import { Input } from "../input";
     import Button from "../button/button.svelte";
-    import { Disc, Plus, CircleCheck, X } from "@lucide/svelte";
+    import { Plus, CircleCheck, X } from "@lucide/svelte";
     import { store } from "$lib/stores.svelte";
     import { toast } from "svelte-sonner";
+    import PlaylistCoverArt from "$components/ui/PlaylistCoverArt.svelte";
 
-    let { track, context = null }: { track: Track; context?: Context | null } = $props();
+    let { track, context = null }: { track: Track; context?: Context | null } =
+        $props();
 
     let playlists = $state<Playlist[]>([]);
     let searchQuery = $state("");
@@ -16,7 +18,8 @@
 
     let filtered = $derived(
         playlists.filter((p) => {
-            if (context?.type === "Playlist" && p.id === context.id) return false;
+            if (context?.type === "Playlist" && p.id === context.id)
+                return false;
             return p.name.toLowerCase().includes(searchQuery.toLowerCase());
         }),
     );
@@ -110,39 +113,7 @@
                         <div
                             class="aspect-square w-8 rounded-lg overflow-hidden bg-neutral-800 shadow-lg relative"
                         >
-                            {#if !playlist.coverArts || playlist.coverArts.length === 0}
-                                <div
-                                    class="absolute inset-0 flex items-center justify-center"
-                                >
-                                    <Disc size={28} class="text-neutral-700" />
-                                </div>
-                            {:else if playlist.coverArts.length < 4}
-                                {#if store.getImageSrc(playlist.coverArts[0])}
-                                    <img
-                                        src={store.getImageSrc(playlist.coverArts[0])}
-                                        alt={playlist.name}
-                                        class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                    />
-                                {/if}
-                            {:else}
-                                <div
-                                    class="grid grid-cols-2 grid-rows-2 w-full h-full group-hover:scale-105 transition-transform duration-500"
-                                >
-                                    {#each playlist.coverArts.slice(0, 4) as art}
-                                        {#if store.getImageSrc(art)}
-                                            <img
-                                                src={store.getImageSrc(art)}
-                                                alt=""
-                                                class="w-full h-full object-cover"
-                                            />
-                                        {:else}
-                                            <div
-                                                class="w-full h-full bg-neutral-800 animate-pulse"
-                                            ></div>
-                                        {/if}
-                                    {/each}
-                                </div>
-                            {/if}
+                            <PlaylistCoverArt {playlist} />
                         </div>
                         <div class="flex-1 truncate text-left">
                             {playlist.name}

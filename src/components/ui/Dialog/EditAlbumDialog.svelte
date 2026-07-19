@@ -1,73 +1,55 @@
 <script lang="ts">
-    import { invoke } from "@tauri-apps/api/core";
-    import { invalidateAll } from "$app/navigation";
-    import * as Dialog from "$components/ui/dialog/index.js";
     import { Button } from "$components/ui/button/index.js";
-    import { Input } from "$components/ui/input/index.js";
-    import { Label } from "$components/ui/label/index.js";
     import { selectAndUploadImage } from "$lib/edit-helpers";
     import { store } from "$lib/stores.svelte";
     import { ImagePlus, X, LoaderCircle } from "@lucide/svelte";
+    import Dialog from "$components/Dialog.svelte";
 
     let {
         open = $bindable(false),
         albumId = 0,
         name = "",
         coverArt = null as string | null,
-        onClose = () => {},
     }: {
         open: boolean;
         albumId: number;
         name: string;
         coverArt?: string | null;
-        onClose?: () => void;
     } = $props();
 
     let editName = $state("");
     let editCoverArt = $state<string | null>(null);
-    let coverPreviewUrl = $state<string | null>(null);
+    let coverChanged = $state(false);
     let saving = $state(false);
-    let nameDirty = $state(false);
-    let coverDirty = $state(false);
 
     $effect(() => {
         editName = name;
         editCoverArt = coverArt;
-        nameDirty = false;
-        coverDirty = false;
+        coverChanged = false;
     });
-
-    $effect(() => {
-        coverPreviewUrl = editCoverArt ? store.getImageSrc(editCoverArt, "cover") : null;
-    });
-
-    function onNameInput() {
-        nameDirty = true;
-    }
 
     async function pickCover() {
         const filename = await selectAndUploadImage("cover");
         if (filename) {
             editCoverArt = filename;
-            coverDirty = true;
+            coverChanged = true;
         }
     }
 
     function removeCover() {
         editCoverArt = null;
-        coverPreviewUrl = null;
-        coverDirty = true;
+        coverChanged = true;
     }
 
     async function save() {
         saving = true;
         try {
-            const args: Record<string, unknown> = { id: albumId };
-            if (nameDirty && editName.trim()) args.name = editName.trim();
-            if (coverDirty) args.coverArt = editCoverArt ?? "";
-            await invoke("update_album", args);
-            await invalidateAll();
-            onClose();
+            if (coverChanged) {
+                await store.saveAlbum(albumId, editName.trim(), editCoverArt ?? "");
+            } else {
+                await store.saveAlbum(albumId, editName.trim());
+            }
+            open = false;
         } catch (e) {
             console.error("Failed to update album", e);
         } finally {
@@ -76,71 +58,56 @@
     }
 </script>
 
-<Dialog.Root bind:open>
-    <Dialog.Content class="sm:max-w-md">
-        <Dialog.Header>
-            <Dialog.Title>Edit Album</Dialog.Title>
-        </Dialog.Header>
+<Dialog bind:open title="Edit Album">
+    <div class="flex flex-col gap-5">
+        <div class="flex flex-col gap-2">
+            <label for="album-name" class="text-sm font-medium text-zinc-300">Name</label>
+            <input
+                id="album-name"
+                type="text"
+                bind:value={editName}
+                placeholder="Album name"
+                class="w-full px-3 py-2 rounded-xl text-lg font-semibold text-white placeholder-gray-400 focus:outline-2"
+            />
+        </div>
 
-        <div class="flex flex-col gap-5">
-            <div class="flex flex-col gap-2">
-                <Label for="album-name">Name</Label>
-                <Input
-                    id="album-name"
-                    type="text"
-                    bind:value={editName}
-                    oninput={onNameInput}
-                    placeholder="Album name"
-                />
-            </div>
-
-            <div class="flex flex-col gap-2">
-                <Label>Cover Art</Label>
-                <div class="flex items-center gap-3">
-                    {#if coverPreviewUrl}
-                        <img
-                            src={coverPreviewUrl}
-                            alt="Cover preview"
-                            class="h-16 w-16 shrink-0 rounded-lg object-cover"
-                        />
-                    {:else}
-                        <div
-                            class="h-16 w-16 shrink-0 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-500"
-                        >
-                            <ImagePlus size={20} />
-                        </div>
-                    {/if}
-                    <div class="flex gap-2">
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onclick={pickCover}
-                        >
-                            {coverPreviewUrl ? "Replace" : "Choose"}
-                        </Button>
-                        {#if coverPreviewUrl}
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onclick={removeCover}
-                            >
-                                <X size={14} />
-                                Remove
-                            </Button>
-                        {/if}
+        <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium text-zinc-300">Cover Art</label>
+            <div class="flex items-center gap-3">
+                {#if editCoverArt || coverArt}
+                    <img
+                        src={store.getImageSrc(editCoverArt ?? coverArt, "cover")}
+                        alt="Cover preview"
+                        class="h-16 w-16 shrink-0 rounded-lg object-cover"
+                    />
+                {:else}
+                    <div
+                        class="h-16 w-16 shrink-0 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-500"
+                    >
+                        <ImagePlus size={20} />
                     </div>
+                {/if}
+                <div class="flex gap-2">
+                    <Button variant="secondary" size="sm" onclick={pickCover}>
+                        {editCoverArt || coverArt ? "Replace" : "Choose"}
+                    </Button>
+                    {#if editCoverArt || coverArt}
+                        <Button variant="ghost" size="sm" onclick={removeCover}>
+                            <X size={14} />
+                            Remove
+                        </Button>
+                    {/if}
                 </div>
             </div>
         </div>
+    </div>
 
-        <Dialog.Footer class="flex gap-3">
-            <Button variant="secondary" onclick={onClose}>Cancel</Button>
-            <Button onclick={save} disabled={saving || !editName.trim()}>
-                {#if saving}
-                    <LoaderCircle size={14} class="animate-spin" />
-                {/if}
-                Save
-            </Button>
-        </Dialog.Footer>
-    </Dialog.Content>
-</Dialog.Root>
+    {#snippet Footer()}
+        <Button onclick={save} disabled={saving || !editName.trim()}>
+            {#if saving}
+                <LoaderCircle size={14} class="animate-spin" />
+            {/if}
+            Save
+        </Button>
+    {/snippet}
+</Dialog>

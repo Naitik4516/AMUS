@@ -5,6 +5,7 @@
     import type { Component } from "svelte";
     import { ArrowLeft } from "@lucide/svelte";
     import type { Track, MenuPosition, Context } from "$lib/types";
+    import { on } from "svelte/events";
 
     interface MenuItem {
         label?: string;
@@ -52,15 +53,14 @@
             x: Math.min(x, window.innerWidth - menuWidth),
             y: Math.min(y, window.innerHeight - menuHeight),
         };
-        // return { x, y };
     });
-
 
     const handleClick = (item: MenuItem) => {
         if (item.submenu) {
             subMenu = item;
         } else if (item.onClick) {
             item.onClick();
+            onClose();
         }
     };
 </script>
@@ -142,11 +142,14 @@
                 </button>
             </div>
             <div class="p-2">
-                <subMenu.submenu track={subMenu.track} context={subMenu.context} />
+                <subMenu.submenu
+                    track={subMenu.track}
+                    context={subMenu.context}
+                />
             </div>
         </div>
     {:else}
-        <div class="p-2">
+        <div class="p-2" role="menu">
             {#each items as item, i (i)}
                 {@render MenuItem(item)}
             {/each}

@@ -1,136 +1,107 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
-  import { invalidateAll } from "$app/navigation";
-  import * as Dialog from "$components/ui/dialog/index.js";
-  import { Button } from "$components/ui/button/index.js";
-  import { Input } from "$components/ui/input/index.js";
-  import { Label } from "$components/ui/label/index.js";
-  import { selectAndUploadImage } from "$lib/edit-helpers";
-  import { store } from "$lib/stores.svelte";
-  import { ImagePlus, X, LoaderCircle } from "@lucide/svelte";
+    import { Button } from "$components/ui/button/index.js";
+    import { selectAndUploadImage } from "$lib/edit-helpers";
+    import { store } from "$lib/stores.svelte";
+    import { X, LoaderCircle, Pen } from "@lucide/svelte";
+    import PlaylistCoverArt from "$components/ui/PlaylistCoverArt.svelte";
+    import Dialog from "$components/Dialog.svelte";
+    import { onMount } from "svelte";
 
-  let {
-    open = $bindable(false),
-    playlistId = 0,
-    name = "",
-    coverArt = null as string | null,
-    onClose = () => {},
-  }: {
-    open: boolean;
-    playlistId: number;
-    name: string;
-    coverArt?: string | null;
-    onClose?: () => void;
-  } = $props();
+    let {
+        open = $bindable(false),
+        playlistId = 0,
+        name = "",
+        coverArt = null,
+    }: {
+        open: boolean;
+        playlistId: number;
+        name: string;
+        coverArt?: string | null;
+    } = $props();
 
-  let editName = $state("");
-  let editCoverArt = $state<string | null>(null);
-  let coverPreviewUrl = $state<string | null>(null);
-  let saving = $state(false);
-  let nameDirty = $state(false);
-  let coverDirty = $state(false);
+    let editName = $state("");
+    let editCoverArt = $state<string | null>(null);
+    let saving = $state(false);
 
-  $effect(() => {
-    editName = name;
-    editCoverArt = coverArt;
-    nameDirty = false;
-    coverDirty = false;
-  });
+    onMount(() => {
+        editName = name;
+        editCoverArt = coverArt;
+    });
 
-  $effect(() => {
-    coverPreviewUrl = editCoverArt ? store.getImageSrc(editCoverArt, "cover") : null;
-  });
-
-  function onNameInput() {
-    nameDirty = true;
-  }
-
-  async function pickCover() {
-    const filename = await selectAndUploadImage("cover");
-    if (filename) {
-      editCoverArt = filename;
-      coverDirty = true;
+    async function pickCover() {
+        const filename = await selectAndUploadImage("cover");
+        console.log("Selected cover art:", filename);
+        if (filename) {
+            editCoverArt = filename;
+        }
     }
-  }
 
-  function removeCover() {
-    editCoverArt = null;
-    coverPreviewUrl = null;
-    coverDirty = true;
-  }
-
-  async function save() {
-    saving = true;
-    try {
-      const args: Record<string, unknown> = { id: playlistId };
-      if (nameDirty && editName.trim()) args.name = editName.trim();
-      if (coverDirty) args.coverArt = editCoverArt ?? "";
-      await invoke("update_playlist", args);
-      await invalidateAll();
-      onClose();
-    } catch (e) {
-      console.error("Failed to update playlist", e);
-    } finally {
-      saving = false;
+    function removeCover() {
+        editCoverArt = null;
     }
-  }
+
+    async function save() {
+        saving = true;
+        try {
+            await store.savePlaylist(playlistId, editName.trim(), editCoverArt);
+            open = false;
+        } catch (e) {
+            console.error("Failed to update playlist", e);
+        } finally {
+            saving = false;
+        }
+    }
+
+    $inspect("Cover Art", editCoverArt);
 </script>
 
-<Dialog.Root bind:open>
-  <Dialog.Content class="sm:max-w-md">
-    <Dialog.Header>
-      <Dialog.Title>Edit Playlist</Dialog.Title>
-    </Dialog.Header>
+<Dialog bind:open title="Edit Playlist">
+    <div class="flex gap-5 items-center">
+        <div class="flex flex-col gap-2">
+            <div class="relative w-42 h-42 rounded-3xl overflow-clip group">
+                <PlaylistCoverArt
+                    playlist={{
+                        id: playlistId,
+                        name: editName,
+                        cover_art: editCoverArt,
+                    }}
+                />
 
-    <div class="flex flex-col gap-5">
-      <div class="flex flex-col gap-2">
-        <Label for="playlist-name">Name</Label>
-        <Input
-          id="playlist-name"
-          type="text"
-          bind:value={editName}
-          oninput={onNameInput}
-          placeholder="Playlist name"
-        />
-      </div>
-
-      <div class="flex flex-col gap-2">
-        <Label>Cover Image</Label>
-        <div class="flex items-center gap-3">
-          {#if coverPreviewUrl}
-            <img
-              src={coverPreviewUrl}
-              alt="Cover preview"
-              class="h-16 w-16 shrink-0 rounded-lg object-cover"
-            />
-          {:else}
-            <div class="h-16 w-16 shrink-0 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-500">
-              <ImagePlus size={20} />
+                <div
+                    class="absolute bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center inset-0"
+                >
+                    <button onclick={pickCover}>
+                        <Pen size={28} fill="white" />
+                    </button>
+                    <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onclick={removeCover}
+                        class="absolute top-1 right-1"
+                    >
+                        <X />
+                    </Button>
+                </div>
             </div>
-          {/if}
-          <div class="flex gap-2">
-            <Button variant="secondary" size="sm" onclick={pickCover}>
-              {coverPreviewUrl ? "Replace" : "Choose"}
-            </Button>
-            {#if coverPreviewUrl}
-              <Button variant="ghost" size="sm" onclick={removeCover}>
-                <X size={14} />
-                Remove
-              </Button>
-            {/if}
-          </div>
         </div>
-      </div>
+
+        <div class="flex flex-col gap-2">
+            <input
+                id="playlist-name"
+                type="text"
+                bind:value={editName}
+                placeholder="Playlist name"
+                class="w-64 px-3 py-2 rounded-xl text-lg font-semibold text-white placeholder-gray-400 focus:outline-2"
+            />
+        </div>
     </div>
 
-    <Dialog.Footer class="flex gap-3">
-      <Button variant="secondary" onclick={onClose}>Cancel</Button>
-      <Button onclick={save} disabled={saving || !editName.trim()}>
-        {#if saving}
-          <LoaderCircle size={14} class="animate-spin" />
-        {/if}
-        Save
-      </Button>
-    </Dialog.Footer>
-  </Dialog.Content>
-</Dialog.Root>
+    {#snippet Footer()}
+        <Button onclick={save} disabled={saving || !editName.trim()}>
+            {#if saving}
+                <LoaderCircle size={14} class="animate-spin" />
+            {/if}
+            Save
+        </Button>
+    {/snippet}
+</Dialog>

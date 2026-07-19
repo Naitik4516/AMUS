@@ -32,7 +32,9 @@
         } else if (loadFunction) {
             invoke<Track[]>(loadFunction, { limit: 10, ...args } as InvokeArgs)
                 .then((data) => {
-                    tracks = data;
+                    if (data.length > 5) {
+                        tracks = data;
+                    }
                 })
                 .catch((error) => {
                     console.error("Error loading tracks:", error);
