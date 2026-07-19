@@ -1,9 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 
-export async function selectAndUploadImage(
-  type: "cover" | "artist" | "banner",
-): Promise<string | null> {
+export async function selectAndUploadImage(type: "cover" | "artist"): Promise<string | null> {
   const selected = await open({
     multiple: false,
     title: "Select Image",

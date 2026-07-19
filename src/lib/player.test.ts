@@ -252,7 +252,7 @@ describe("public command methods", () => {
   });
 
   it("stop invokes stop", async () => {
-    await player.stop();
+    await player.close();
     expect(mockInvoke).toHaveBeenCalledWith("stop");
   });
 

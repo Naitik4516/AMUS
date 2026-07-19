@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import type { Track, Album, Artist, Playlist } from "$lib/types";
 import { store } from "$lib/stores.svelte";
@@ -235,13 +235,15 @@ describe("LibraryStore async operations", () => {
   });
 
   describe("createPlaylist", () => {
-    it("invokes and updates playlistsById", async () => {
+    it("invokes and updates playlistsById and playlists array", async () => {
       const created = { id: 2, name: "New Playlist", coverArts: [] };
       invokeMock.mockResolvedValue(created);
 
       const result = await store.createPlaylist("New Playlist");
       expect(result.name).toBe("New Playlist");
       expect(store.playlistsById.get(2)?.name).toBe("New Playlist");
+      expect(store.playlists).toHaveLength(1);
+      expect(store.playlists[0].name).toBe("New Playlist");
     });
   });
 
@@ -298,8 +300,8 @@ describe("LibraryStore async operations", () => {
 
     it("passes correct banner path to convertFileSrc", () => {
       store.appDataDirPath = "/app/data";
-      store.getImageSrc("banner.jpg", "banner");
-      expect(vi.mocked(convertFileSrc)).toHaveBeenCalledWith("/app/data/artist_banner/banner.jpg");
+      store.getImageSrc("banner.jpg", "artist");
+      expect(vi.mocked(convertFileSrc)).toHaveBeenCalledWith("/app/data/artists/banner.jpg");
     });
   });
 

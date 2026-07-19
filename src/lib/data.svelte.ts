@@ -17,11 +17,3 @@ export async function getPlaylists() {
     return { playlists: [] };
   }
 }
-
-export async function fetchArtistImages(artistId: number): Promise<void> {
-  try {
-    await invoke("fetch_artist_images", { artistId });
-  } catch (error) {
-    console.error("Failed to fetch artist images:", error);
-  }
-}

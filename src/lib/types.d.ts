@@ -14,10 +14,9 @@ export interface Album {
 }
 
 export interface Playlist {
-  coverArts: string[];
   id: number;
   name: string;
-  coverArt?: string;
+  cover_art?: string | null;
 }
 
 export interface Track {
@@ -57,7 +56,7 @@ export type PlaybackSource =
   | { type: "Other" };
 
 export type Context =
-  | { type: "Playlist"; id: number; name: string; coverArt: string | null }
+  | { type: "Playlist"; id: number; name: string; coverArt: string | null | undefined }
   | { type: "Album"; id: number; name: string; coverArt: string | null }
   | {
       type: "Artist";

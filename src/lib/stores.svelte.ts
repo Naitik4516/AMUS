@@ -13,7 +13,6 @@ class LibraryStore {
   loading = $state(false);
   error = $state<string | null>(null);
 
-  /** Reactive so cover/artist images re-render when the path becomes available. */
   appDataDirPath = $state<string | null>(null);
   #appDataDirPromise: Promise<string> | null = null;
 
@@ -73,7 +72,7 @@ class LibraryStore {
 
   getImageSrc(
     filename: string | undefined | null,
-    type: "cover" | "artist" | "banner" = "cover",
+    type: "cover" | "artist" = "cover",
   ): string | null {
     if (!filename) {
       return null;
@@ -82,7 +81,7 @@ class LibraryStore {
     if (!this.appDataDirPath) {
       return null;
     }
-    const subdir = type === "artist" ? "artists" : type === "banner" ? "artist_banner" : "covers";
+    const subdir = type === "artist" ? "artists" : "covers";
     return convertFileSrc(`${this.appDataDirPath}/${subdir}/${filename}`);
   }
 
@@ -111,9 +110,9 @@ class LibraryStore {
       this.loading = false;
     }
 
-    // Listen for library-updated events from scanner/watcher
-    listen("library-updated", () => {
-      this.#reloadAll();
+    await listen("library-updated", async () => {
+      console.log("Library updated event received, reloading library...");
+      await this.#reloadAll();
     });
   }
 
@@ -147,7 +146,7 @@ class LibraryStore {
   }
 
   async #loadPlaylists() {
-    const result = await invoke<(Playlist & { coverArts: string[] })[]>("get_playlists");
+    const result = await invoke<Playlist[]>("get_playlists");
     this.playlists = result || [];
   }
 
@@ -205,10 +204,12 @@ class LibraryStore {
     this.artistsById.set(artist.id, artist);
   }
 
-  applyPlaylistUpdate(playlist: Playlist & { coverArts: string[] }) {
+  applyPlaylistUpdate(playlist: Playlist) {
     const idx = this.playlists.findIndex((p) => p.id === playlist.id);
     if (idx !== -1) {
       this.playlists[idx] = playlist;
+    } else {
+      this.playlists = [...this.playlists, playlist];
     }
     this.playlistsById.set(playlist.id, playlist);
   }
@@ -219,11 +220,14 @@ class LibraryStore {
     return updated;
   }
 
-  async saveAlbum(id: number, name?: string, cover_art?: string): Promise<Album> {
+  async saveAlbum(id: number, name: string, cover_art?: string | null): Promise<Album> {
+    if (name.trim().length === 0) {
+      throw new Error("Album name cannot be empty");
+    }
     const updated = await invoke<Album>("update_album", {
       id,
-      name: name ?? null,
-      coverArt: cover_art ?? null,
+      name,
+      ...(cover_art !== undefined ? { cover_art: cover_art ?? "" } : {}),
     });
     this.applyAlbumUpdate(updated);
     return updated;
@@ -231,15 +235,20 @@ class LibraryStore {
 
   async saveArtist(
     id: number,
-    name?: string,
-    profile_image?: string,
-    banner_image?: string,
+    name: string,
+    profile_image?: string | null,
+    banner_image?: string | null,
   ): Promise<Artist> {
+    if (name.trim().length === 0) {
+      throw new Error("Artist name cannot be empty");
+    }
     const updated = await invoke<Artist>("update_artist", {
-      id,
-      name: name ?? null,
-      profileImage: profile_image ?? null,
-      bannerImage: banner_image ?? null,
+      artist: {
+        id,
+        name,
+        profile_image,
+        banner_image,
+      },
     });
     this.applyArtistUpdate(updated);
     return updated;
@@ -247,20 +256,32 @@ class LibraryStore {
 
   async savePlaylist(
     id: number,
-    name?: string,
-    cover_art?: string,
-  ): Promise<Playlist & { coverArts: string[] }> {
-    const updated = await invoke<Playlist & { coverArts: string[] }>("update_playlist", {
-      id,
-      name: name ?? null,
-      coverArt: cover_art ?? null,
+    name?: string | null,
+    cover_art?: string | null,
+  ): Promise<Playlist> {
+    const updated = await invoke<Playlist>("update_playlist", {
+      playlist: { id, name, cover_art },
     });
+    console.log("Updated playlist:", updated);
     this.applyPlaylistUpdate(updated);
     return updated;
   }
 
-  async createPlaylist(name: string): Promise<Playlist & { coverArts: string[] }> {
-    const created = await invoke<Playlist & { coverArts: string[] }>("create_playlist", { name });
+  async updateTrackMetadata(trackId: number, title: string, year?: number): Promise<Track> {
+    if (title.trim().length === 0) {
+      throw new Error("Track title cannot be empty");
+    }
+    const updated = await invoke<Track>("update_track_metadata", {
+      trackId,
+      title: title ?? null,
+      year: year ?? null,
+    });
+    this.applyTrackUpdate(updated);
+    return updated;
+  }
+
+  async createPlaylist(name: string): Promise<Playlist> {
+    const created = await invoke<Playlist>("create_playlist", { name });
     this.applyPlaylistUpdate(created);
     return created;
   }

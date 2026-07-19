@@ -38,6 +38,7 @@ interface StateSnapshot {
   repeat: RepeatMode;
   shuffle: boolean;
   volume: number;
+  muted: boolean;
   user_queue: Track[];
   queue_view: QueueView;
 }
@@ -80,6 +81,7 @@ class PlayerStore {
 
   position = $state(0);
   volume = $state(1);
+  muted = $state(false);
   repeatMode = $state<RepeatMode>("OFF");
   shuffleEnabled = $state(false);
   userQueue = $state<Track[]>([]);
@@ -142,6 +144,7 @@ class PlayerStore {
       this.repeatMode = snapshot.repeat;
       this.shuffleEnabled = snapshot.shuffle;
       this.volume = snapshot.volume;
+      this.muted = snapshot.muted;
       this.userQueue = snapshot.user_queue;
       this.#applyQueueView(snapshot.queue_view);
       this.#setPosition(snapshot.position_sec);
@@ -290,8 +293,8 @@ class PlayerStore {
     await invoke("play_pause");
   }
 
-  async stop() {
-    await invoke("stop");
+  async close() {
+    await invoke("close_player");
   }
 
   async next() {
@@ -300,6 +303,10 @@ class PlayerStore {
 
   async previous() {
     await invoke("previous");
+  }
+
+  async toggleMute() {
+    await invoke("toggle_mute");
   }
 
   async seek(positionSec: number) {
