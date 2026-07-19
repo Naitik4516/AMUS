@@ -1,7 +1,7 @@
 use crate::artist_pic_fetcher;
 use crate::db;
 use crate::error::{Error, Result};
-use crate::sync;
+use crate::sync::{self, SyncManager};
 use image::ImageFormat;
 use lofty::picture::Picture;
 use lofty::prelude::*;
@@ -13,10 +13,13 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use walkdir::WalkDir;
+
+/// Unique suffix for temporary cover files written concurrently.
+static COVER_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 const PHASE_META_START: usize = 25;
 const PHASE_META_END: usize = 55;
@@ -190,9 +193,78 @@ mod tests {
             png_bytes,
         );
 
-        let result = save_picture(&app_dir, &picture).unwrap();
+        let result = save_picture(app_dir, &picture).unwrap();
         assert!(result.ends_with(".webp"));
         assert!(app_dir.join("covers").join(&result).exists());
+    }
+
+    #[test]
+    fn test_save_picture_skips_existing_without_reencode() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let app_dir = tmp.path();
+
+        let png_bytes = create_test_png_bytes();
+        let picture = lofty::picture::Picture::new_unchecked(
+            lofty::picture::PictureType::CoverFront,
+            Some(lofty::picture::MimeType::Png),
+            None,
+            png_bytes,
+        );
+
+        let filename = save_picture(app_dir, &picture).unwrap();
+        let dest = app_dir.join("covers").join(&filename);
+        let mtime_before = fs::metadata(&dest).unwrap().modified().unwrap();
+
+        // Second save must reuse the existing file (no rewrite).
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let filename2 = save_picture(app_dir, &picture).unwrap();
+        assert_eq!(filename, filename2);
+        let mtime_after = fs::metadata(&dest).unwrap().modified().unwrap();
+        assert_eq!(mtime_before, mtime_after);
+    }
+
+    #[test]
+    fn test_picture_content_hash_stable() {
+        let png_bytes = create_test_png_bytes();
+        let picture = lofty::picture::Picture::new_unchecked(
+            lofty::picture::PictureType::CoverFront,
+            Some(lofty::picture::MimeType::Png),
+            None,
+            png_bytes,
+        );
+        let h1 = picture_content_hash(&picture);
+        let h2 = picture_content_hash(&picture);
+        assert_eq!(h1, h2);
+        assert_eq!(h1.len(), 64); // sha256 hex
+    }
+
+    #[test]
+    fn test_save_covers_dedupes_identical_art() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let app_dir = tmp.path();
+        let covers_dir = app_dir.join("covers");
+        fs::create_dir_all(&covers_dir).unwrap();
+
+        let png_bytes = create_test_png_bytes();
+        let picture = lofty::picture::Picture::new_unchecked(
+            lofty::picture::PictureType::CoverFront,
+            Some(lofty::picture::MimeType::Png),
+            None,
+            png_bytes,
+        );
+        let hash = picture_content_hash(&picture);
+
+        // Simulate many tracks sharing one cover — only one encode should run.
+        let mut unique: HashMap<String, Picture> = HashMap::new();
+        for _ in 0..20 {
+            unique
+                .entry(hash.clone())
+                .or_insert_with(|| picture.clone());
+        }
+        assert_eq!(unique.len(), 1);
+
+        encode_and_save_cover(&covers_dir, &hash, unique.get(&hash).unwrap()).unwrap();
+        assert!(covers_dir.join(format!("{hash}.webp")).exists());
     }
 
     #[test]
@@ -228,15 +300,15 @@ mod tests {
             0x57, 0x41, 0x56, 0x45, // "WAVE"
             0x66, 0x6d, 0x74, 0x20, // "fmt "
             0x10, 0x00, 0x00, 0x00, // fmt chunk size (16)
-            0x01, 0x00,             // PCM format
-            0x01, 0x00,             // 1 channel
+            0x01, 0x00, // PCM format
+            0x01, 0x00, // 1 channel
             0x44, 0xac, 0x00, 0x00, // 44100 Hz
             0x88, 0x58, 0x01, 0x00, // byte rate (88200)
-            0x02, 0x00,             // block align (2)
-            0x10, 0x00,             // 16 bits per sample
+            0x02, 0x00, // block align (2)
+            0x10, 0x00, // 16 bits per sample
             0x64, 0x61, 0x74, 0x61, // "data"
             0x02, 0x00, 0x00, 0x00, // data size (2)
-            0x00, 0x00,             // one silent 16-bit sample
+            0x00, 0x00, // one silent 16-bit sample
         ];
         fs::write(path, wav_data).unwrap();
     }
@@ -342,6 +414,42 @@ pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
     })
 }
 
+/// SHA-256 of embedded picture bytes — used as the cover filename stem.
+fn picture_content_hash(picture: &Picture) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(picture.data());
+    hex::encode(hasher.finalize())
+}
+
+/// Decode, thumbnail, and write a cover as WebP using a temp file + rename so
+/// concurrent writers for the same hash cannot leave a half-written dest file.
+fn encode_and_save_cover(covers_dir: &Path, hash: &str, picture: &Picture) -> anyhow::Result<()> {
+    let dest_path = covers_dir.join(format!("{hash}.webp"));
+    if dest_path.exists() {
+        return Ok(());
+    }
+
+    let img = image::load_from_memory(picture.data())?.thumbnail(500, 500);
+
+    let tmp_id = COVER_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp_path = covers_dir.join(format!(".{hash}.{tmp_id}.tmp.webp"));
+
+    img.save_with_format(&tmp_path, ImageFormat::WebP)?;
+
+    match fs::rename(&tmp_path, &dest_path) {
+        Ok(()) => Ok(()),
+        Err(_) if dest_path.exists() => {
+            // Another writer finished first — drop our temp and treat as success.
+            let _ = fs::remove_file(&tmp_path);
+            Ok(())
+        }
+        Err(e) => {
+            let _ = fs::remove_file(&tmp_path);
+            Err(e.into())
+        }
+    }
+}
+
 pub fn save_image_to_app_dir(app_dir: &Path, source_path: &str, subdir: &str) -> Result<String> {
     let data = std::fs::read(source_path).map_err(Error::Io)?;
     let mut hasher = Sha256::new();
@@ -355,35 +463,50 @@ pub fn save_image_to_app_dir(app_dir: &Path, source_path: &str, subdir: &str) ->
     }
 
     let dest_path = dest_dir.join(&filename);
-    if !dest_path.exists() {
-        let img = image::load_from_memory(&data)
-            .map_err(|e| Error::Unknown(format!("Failed to open image: {e}")))?;
-        img.save_with_format(&dest_path, ImageFormat::WebP)
-            .map_err(|e| Error::Unknown(format!("Failed to save image: {e}")))?;
+    // Skip decode/encode when the hashed file is already on disk.
+    if dest_path.exists() {
+        return Ok(filename);
+    }
+
+    let img = image::load_from_memory(&data)
+        .map_err(|e| Error::Unknown(format!("Failed to open image: {e}")))?;
+
+    let tmp_id = COVER_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp_path = dest_dir.join(format!(".{hash}.{tmp_id}.tmp.webp"));
+    img.save_with_format(&tmp_path, ImageFormat::WebP)
+        .map_err(|e| Error::Unknown(format!("Failed to save image: {e}")))?;
+
+    match std::fs::rename(&tmp_path, &dest_path) {
+        Ok(()) => {}
+        Err(_) if dest_path.exists() => {
+            let _ = std::fs::remove_file(&tmp_path);
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(Error::Io(e));
+        }
     }
 
     Ok(filename)
 }
 
 fn save_picture(app_dir: &Path, picture: &Picture) -> anyhow::Result<String> {
-    let data = picture.data();
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    let hash = hex::encode(hasher.finalize());
-
-    let img = image::load_from_memory(data)?.thumbnail(500, 500);
-
-    let filename = format!("{}.webp", hash);
+    let hash = picture_content_hash(picture);
+    let filename = format!("{hash}.webp");
     let covers_dir = app_dir.join("covers");
-    if !covers_dir.exists() {
-        fs::create_dir_all(&covers_dir)?;
+
+    // Fast path: hash + existence check only (no decode/thumbnail).
+    if covers_dir.join(&filename).exists() {
+        return Ok(filename);
     }
 
-    let dest_path = covers_dir.join(&filename);
-    if !dest_path.exists() {
-        img.save_with_format(dest_path, ImageFormat::WebP)?;
+    fs::create_dir_all(&covers_dir)?;
+    // Re-check after create — another thread may have written it.
+    if covers_dir.join(&filename).exists() {
+        return Ok(filename);
     }
 
+    encode_and_save_cover(&covers_dir, &hash, picture)?;
     Ok(filename)
 }
 
@@ -401,12 +524,8 @@ pub fn ensure_track_in_db(conn: &Connection, path: &Path, app_dir: &Path) -> Res
     }
 
     // upsert album
-    let album_id = db::get_or_create_album(
-        conn,
-        &meta.album,
-        None,
-        meta.release_year.map(|y| y as i32),
-    )?;
+    let album_id =
+        db::get_or_create_album(conn, &meta.album, None, meta.release_year.map(|y| y as i32))?;
 
     if let Some(ref aa) = meta.album_artist {
         db::set_album_artist(conn, &meta.album, aa)?;
@@ -447,12 +566,20 @@ pub fn ensure_track_in_db(conn: &Connection, path: &Path, app_dir: &Path) -> Res
         db::bulk_insert_track_artists(conn, &[(track_id, aid)])?;
     }
     db::clear_track_album(conn, track_id)?;
-    db::bulk_insert_track_albums(conn, &[(album_id, track_id, meta.track_number.unwrap_or(1) as i32)])?;
+    db::bulk_insert_track_albums(
+        conn,
+        &[(album_id, track_id, meta.track_number.unwrap_or(1) as i32)],
+    )?;
 
     Ok(track_id)
 }
 
 pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result<()> {
+    // Pause realtime file watcher while scanning to avoid redundant processing
+    if let Some(sync_manager) = app_handle.try_state::<SyncManager>() {
+        sync_manager.set_scanning(true);
+    }
+
     let source_dirs = db::get_source_dirs(conn)?;
     let audio_extensions = ["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];
 
@@ -570,6 +697,11 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
     );
     let _ = app_handle.emit("library-updated", ());
 
+    // Resume realtime file watcher after scan completes
+    if let Some(sync_manager) = app_handle.try_state::<SyncManager>() {
+        sync_manager.set_scanning(false);
+    }
+
     Ok(())
 }
 
@@ -604,13 +736,11 @@ pub fn scan_files(
 
     let metadata_results: Vec<TrackMetadata> = to_scan
         .into_par_iter()
-        .filter_map(|path| {
-            match extract_metadata(&path) {
-                Ok(m) => Some(m),
-                Err(e) => {
-                    eprintln!("Failed to scan {:?}: {}", path, e);
-                    None
-                }
+        .filter_map(|path| match extract_metadata(&path) {
+            Ok(m) => Some(m),
+            Err(e) => {
+                eprintln!("Failed to scan {:?}: {}", path, e);
+                None
             }
         })
         .collect();
@@ -622,21 +752,76 @@ pub fn scan_files(
         return Ok(());
     }
 
-    // Phase 2: Parallel cover art saving
+    // Phase 2: Cover art — dedupe by content hash, encode each unique image once.
+    // Previously every track re-decoded/thumbnailed its embedded art even when
+    // dozens of tracks shared the same cover, which froze the UI and raced on disk.
     emit_scan_progress(app_handle, PHASE_COVER_START, 100, "Saving cover art...");
+    let cover_start = Instant::now();
 
-    let metadata_with_covers: Vec<(TrackMetadata, Option<String>)> = metadata_results
-        .into_par_iter()
-        .map(|meta| {
-            let cover_url = meta.picture.as_ref().and_then(|pic| {
-                save_picture(&app_dir, pic)
-                    .inspect_err(|e| eprintln!("Failed to save picture: {e}"))
-                    .ok()
-            });
+    let covers_dir = app_dir.join("covers");
+    fs::create_dir_all(&covers_dir).map_err(Error::Io)?;
+
+    // Take pictures out of metadata, keep one owned copy per content hash.
+    let mut stripped_metadata: Vec<TrackMetadata> = Vec::with_capacity(track_count);
+    let mut track_cover_hashes: Vec<Option<String>> = Vec::with_capacity(track_count);
+    let mut unique_pictures: HashMap<String, Picture> = HashMap::new();
+
+    for mut meta in metadata_results {
+        if let Some(pic) = meta.picture.take() {
+            let hash = picture_content_hash(&pic);
+            unique_pictures.entry(hash.clone()).or_insert(pic);
+            track_cover_hashes.push(Some(hash));
+        } else {
+            track_cover_hashes.push(None);
+        }
+        stripped_metadata.push(meta);
+    }
+
+    // Only encode covers that are not already on disk.
+    let to_encode: Vec<(String, Picture)> = unique_pictures
+        .into_iter()
+        .filter(|(hash, _)| !covers_dir.join(format!("{hash}.webp")).exists())
+        .collect();
+
+    let encode_total = to_encode.len();
+    if encode_total > 0 {
+        let progress = AtomicUsize::new(0);
+        let progress_step = (encode_total / 20).max(1);
+        let range = PHASE_COVER_END - PHASE_COVER_START;
+
+        to_encode.into_par_iter().for_each(|(hash, pic)| {
+            if let Err(e) = encode_and_save_cover(&covers_dir, &hash, &pic) {
+                eprintln!("Failed to save picture {hash}: {e}");
+            }
+            let n = progress.fetch_add(1, Ordering::Relaxed) + 1;
+            if n == 1 || n % progress_step == 0 || n == encode_total {
+                let pct = PHASE_COVER_START + (n * range / encode_total);
+                emit_scan_progress(
+                    app_handle,
+                    pct,
+                    100,
+                    &format!("Saving cover art ({n}/{encode_total})"),
+                );
+            }
+        });
+    }
+
+    // Map each track to its cover filename (hash.webp); pictures already freed.
+    let metadata_with_covers: Vec<(TrackMetadata, Option<String>)> = stripped_metadata
+        .into_iter()
+        .zip(track_cover_hashes)
+        .map(|(meta, hash)| {
+            let cover_url = hash.map(|h| format!("{h}.webp"));
             (meta, cover_url)
         })
         .collect();
 
+    println!(
+        "Cover art phase: {} unique encodes for {} tracks in {:?}",
+        encode_total,
+        track_count,
+        cover_start.elapsed()
+    );
     emit_scan_progress(app_handle, PHASE_COVER_END, 100, "Cover art saved");
 
     // Phase 3: DB writes — batch artist, album, track; collect relationships for bulk insert
@@ -680,7 +865,9 @@ pub fn scan_files(
                 meta.release_year.map(|y| y as i32),
             )?;
             if let Some(ref aa) = meta.album_artist {
-                album_artists.entry(album_key.clone()).or_insert_with(|| aa.clone());
+                album_artists
+                    .entry(album_key.clone())
+                    .or_insert_with(|| aa.clone());
             }
             album_cache.insert(album_key, id);
             id
@@ -730,12 +917,10 @@ pub fn scan_files(
     let _ = app_handle.emit("library-updated", ());
 
     if !unique_artists_to_fetch.is_empty() {
-        let fetch_pic =
-            sync::get_setting(app_handle, "autoFetchArtistPic", true).unwrap_or(true);
-        let fetch_banner =
-            sync::get_setting(app_handle, "autoFetchArtistBanner", true).unwrap_or(true);
+        let fetch_pic = sync::get_setting(app_handle, "autoFetchArtistPic", true).unwrap_or(true);
 
-        if fetch_pic || fetch_banner {
+        if fetch_pic {
+            let n_artists = unique_artists_to_fetch.len();
             let pool = app_handle.state::<db::DbPool>();
             let app_handle_clone = app_handle.clone();
             let app_dir_clone = app_dir.clone();
@@ -747,11 +932,13 @@ pub fn scan_files(
                     &app_dir_clone,
                     pool_clone,
                     &app_handle_clone,
-                    fetch_pic,
-                    fetch_banner,
                 )
                 .await;
             });
+            println!(
+                "Scheduled fetch for {} unique artists (pic: {})",
+                n_artists, fetch_pic
+            );
         }
     }
 
