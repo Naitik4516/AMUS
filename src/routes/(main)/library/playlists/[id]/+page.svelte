@@ -1,21 +1,20 @@
 <script lang="ts">
     import { page } from "$app/state";
+    import EditPlaylistDialog from "$components/ui/Dialog/EditPlaylistDialog.svelte";
+    import PlaylistCoverArt from "$components/ui/PlaylistCoverArt.svelte";
     import TrackList from "$components/ui/TrackList.svelte";
     import TrackListSmall from "$components/ui/TrackListSmall.svelte";
     import Button from "$components/ui/button/button.svelte";
     import { store } from "$lib/stores.svelte";
-    import type { Track } from "$lib/types";
-    import { Music, Music2, Search, X } from "@lucide/svelte";
-    import Fuse from "fuse.js";
-    import { fade, slide } from "svelte/transition";
-    import { flip } from "svelte/animate";
+    import type { Playlist, Track } from "$lib/types";
     import { formatDuration } from "$lib/utils";
+    import { Music2, Search, X } from "@lucide/svelte";
+    import { getSwatches } from "colorthief";
+    import Fuse from "fuse.js";
     import { onMount } from "svelte";
-    import type { Playlist } from "$lib/types";
-    import PlaylistCoverArt from "$components/ui/PlaylistCoverArt.svelte";
-    import EditPlaylistDialog from "$components/ui/Dialog/EditPlaylistDialog.svelte";
-    import { getPalette, getSwatches } from "colorthief";
+    import { flip } from "svelte/animate";
     import type { Attachment } from "svelte/attachments";
+    import { slide } from "svelte/transition";
 
     let playlistId = $derived(Number(page.params.id));
     let playlist: Playlist = $derived(
@@ -114,8 +113,6 @@
             }
         });
     };
-
-    $inspect("Color Palette", colorPalette);
 </script>
 
 <div
@@ -124,10 +121,9 @@
 ></div>
 
 <div
-    class="fixed w-[90vw] h-80 top-30 px-100 pt-50 right-20  blur-[150px]"
+    class="fixed w-[90vw] h-80 top-30 px-100 pt-50 right-20 blur-[150px]"
     style:background={colorPalette[2]}
 ></div>
-
 
 <div class="flex flex-col p-5 z-1 isolate">
     <div class="flex gap-4 mb-4">
@@ -252,6 +248,7 @@
         </div>
     {/if}
 </div>
+
 <EditPlaylistDialog
     bind:open={editOpen}
     {playlistId}

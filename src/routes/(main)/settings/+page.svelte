@@ -21,6 +21,7 @@
         Image,
         Keyboard,
         Minimize2,
+        Mouse,
         Plus,
         Power,
         RefreshCw,
@@ -133,7 +134,50 @@
                                 >
                                     {source}
                                 </span>
-                            </div>
+</div>
+
+<style>
+    .smooth-scroll-range {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 999px;
+        outline: none;
+        cursor: pointer;
+    }
+
+    .smooth-scroll-range::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: white;
+        cursor: pointer;
+        transition: transform 0.15s ease;
+    }
+
+    .smooth-scroll-range::-webkit-slider-thumb:hover {
+        transform: scale(1.15);
+    }
+
+    .smooth-scroll-range::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: white;
+        cursor: pointer;
+        border: none;
+    }
+
+    .smooth-scroll-range::-moz-range-track {
+        height: 6px;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 999px;
+    }
+</style>
                             <button
                                 onclick={() => handleRemoveSource(source)}
                                 class="shrink-0 p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
@@ -250,6 +294,76 @@
                     iconActiveClass="text-yellow-400"
                 />
             </div>
+
+            <h3 class="text-lg font-bold text-gray-300 mt-6">Smooth Scroll</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ToggleCard
+                    title="Smooth Scrolling"
+                    description="Enable smooth scrolling throughout the app using Lenis."
+                    bind:checked={settings.smoothScrollEnabled}
+                    onchange={(v) => setSetting("smoothScrollEnabled", v)}
+                    icon={Mouse}
+                    iconActiveClass="text-gray-300"
+                />
+            </div>
+            {#if settings.smoothScrollEnabled}
+                <div class="flex flex-col gap-4 mt-4 md:flex-row">
+                    <div
+                        class="flex-1 bg-card/50 backdrop-blur-lg border border-border/60 rounded-3xl shadow-lg p-6"
+                    >
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="font-bold text-white text-lg">Lerp</h3>
+                            <span class="text-sm text-gray-400 font-mono"
+                                >{settings.smoothScrollLerp.toFixed(3)}</span
+                            >
+                        </div>
+                        <input
+                            type="range"
+                            min="0.01"
+                            max="1"
+                            step="0.005"
+                            bind:value={settings.smoothScrollLerp}
+                            onchange={() =>
+                                setSetting(
+                                    "smoothScrollLerp",
+                                    settings.smoothScrollLerp,
+                                )}
+                            class="smooth-scroll-range"
+                        />
+                        <p class="text-sm text-gray-400 mt-2">
+                            Lower values = smoother, slower scroll
+                        </p>
+                    </div>
+                    <div
+                        class="flex-1 bg-card/50 backdrop-blur-lg border border-border/60 rounded-3xl shadow-lg p-6"
+                    >
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="font-bold text-white text-lg">
+                                Duration
+                            </h3>
+                            <span class="text-sm text-gray-400 font-mono"
+                                >{settings.smoothScrollDuration.toFixed(1)}s</span
+                            >
+                        </div>
+                        <input
+                            type="range"
+                            min="0.1"
+                            max="5"
+                            step="0.1"
+                            bind:value={settings.smoothScrollDuration}
+                            onchange={() =>
+                                setSetting(
+                                    "smoothScrollDuration",
+                                    settings.smoothScrollDuration,
+                                )}
+                            class="smooth-scroll-range"
+                        />
+                        <p class="text-sm text-gray-400 mt-2">
+                            Duration of the scroll animation in seconds
+                        </p>
+                    </div>
+                </div>
+            {/if}
 
             <h3 class="text-lg font-bold text-gray-300 mt-6">Shortcuts</h3>
             <button

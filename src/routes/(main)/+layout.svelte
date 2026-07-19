@@ -50,7 +50,7 @@
     let showFAB = $state(false);
 
     let scrollContainer: Element | undefined = $state();
-    let lenis: Lenis;
+    let lenis: Lenis | undefined;
 
     $effect(() => {
         if (flags.ready && player.isReady) {
@@ -60,27 +60,35 @@
 
     const setupSmoothScroll: Action = (node) => {
         $effect(() => {
+            const enabled = settings.smoothScrollEnabled;
+            const lerp = settings.smoothScrollLerp;
+            const duration = settings.smoothScrollDuration;
+
             if (!scrollContainer) {
                 console.warn("Scroll container not found for smooth scrolling");
                 return;
             }
-            lenis = new Lenis({
+
+            if (!enabled) return;
+
+            const newLenis = new Lenis({
                 wrapper: scrollContainer,
                 content: node,
-                lerp: 0.1,
-                duration: 1.2,
+                lerp,
+                duration,
                 prevent: (node) => {
                     return node.classList.contains("vlist");
                 },
             });
+            lenis = newLenis;
 
-            lenis.on("scroll", (e) => {
+            newLenis.on("scroll", (e) => {
                 ScrollTrigger.update();
                 showFAB = e.scroll > SCROLL_THRESHOLD;
             });
 
             const updateTick = (time: number) => {
-                lenis.raf(time * 1000);
+                newLenis.raf(time * 1000);
             };
             gsap.ticker.add(updateTick);
             gsap.ticker.lagSmoothing(0);
@@ -88,9 +96,9 @@
             ScrollTrigger.scrollerProxy(scrollContainer, {
                 scrollTop(value) {
                     if (arguments.length) {
-                        lenis.scrollTo(value!, { immediate: true });
+                        newLenis.scrollTo(value!, { immediate: true });
                     }
-                    return lenis.scroll;
+                    return newLenis.scroll;
                 },
 
                 getBoundingClientRect() {
@@ -103,19 +111,24 @@
                 },
             });
 
-            ScrollTrigger.addEventListener("refresh", () => lenis.resize());
+            ScrollTrigger.addEventListener("refresh", () => newLenis.resize());
             ScrollTrigger.refresh();
 
             return () => {
-                lenis.destroy();
+                newLenis.destroy();
+                lenis = undefined;
                 gsap.ticker.remove(updateTick);
             };
         });
     };
 
     const scrollToTop = () => {
-        if (scrollContainer && lenis) {
-            lenis.scrollTo(0);
+        if (scrollContainer) {
+            if (lenis) {
+                lenis.scrollTo(0);
+            } else {
+                scrollContainer.scrollTo({ top: 0, behavior: "smooth" });
+            }
         }
     };
 
@@ -222,7 +235,11 @@
 
     afterNavigate(() => {
         if (scrollContainer) {
-            lenis.scrollTo(0, { immediate: true });
+            if (lenis) {
+                lenis.scrollTo(0, { immediate: true });
+            } else {
+                scrollContainer.scrollTop = 0;
+            }
         }
     });
 </script>
