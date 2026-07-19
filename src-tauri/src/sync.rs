@@ -5,15 +5,17 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_store::StoreExt;
-use tauri::async_runtime::JoinHandle;
 
 const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];
 
 pub struct SyncManager {
     watcher: Arc<parking_lot::Mutex<Option<RecommendedWatcher>>>,
     task: Arc<parking_lot::Mutex<Option<JoinHandle<()>>>>,
+    scanning: Arc<AtomicBool>,
 }
 
 impl SyncManager {
@@ -21,7 +23,12 @@ impl SyncManager {
         Self {
             watcher: Arc::new(parking_lot::Mutex::new(None)),
             task: Arc::new(parking_lot::Mutex::new(None)),
+            scanning: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    pub fn set_scanning(&self, active: bool) {
+        self.scanning.store(active, Ordering::Relaxed);
     }
 
     pub fn init(&self, app: &AppHandle) {
@@ -29,23 +36,31 @@ impl SyncManager {
 
         // Startup Sync
         tauri::async_runtime::spawn(async move {
-            if let Ok(sync_on_startup) = get_setting(&app_handle, "syncOnStartup", true) {
-                if sync_on_startup {
-                    println!("Performing startup sync...");
-                    let _ = app_handle.emit(
-                        "scan-progress",
-                        crate::scanner::ScanProgress {
-                            current: 0,
-                            total: 100,
-                            message: "Performing startup sync...".to_string(),
-                        },
-                    );
-                    let pool = app_handle.state::<DbPool>();
+            let sync_on_startup = get_setting(&app_handle, "syncOnStartup", true).unwrap_or(true);
+            if sync_on_startup {
+                println!("Performing startup sync...");
+                let _ = app_handle.emit(
+                    "scan-progress",
+                    crate::scanner::ScanProgress {
+                        current: 0,
+                        total: 100,
+                        message: "Performing startup sync...".to_string(),
+                    },
+                );
+                if let Some(sync_manager) = app_handle.try_state::<SyncManager>() {
+                    sync_manager.set_scanning(true);
+                }
+                let pool = app_handle.state::<DbPool>();
+                let pool = pool.inner().clone();
+                let handle_for_scan = app_handle.clone();
+                let _ = tokio::task::spawn_blocking(move || {
                     if let Ok(mut conn) = pool.get() {
-                        let _ = tokio::task::block_in_place(|| {
-                            scanner::scan_directories(&mut conn, &app_handle)
-                        });
+                        let _ = scanner::scan_directories(&mut conn, &handle_for_scan);
                     }
+                })
+                .await;
+                if let Some(sync_manager) = app_handle.try_state::<SyncManager>() {
+                    sync_manager.set_scanning(false);
                 }
             }
 
@@ -53,9 +68,9 @@ impl SyncManager {
             {
                 let pool = app_handle.state::<DbPool>();
                 if let Ok(conn) = pool.get() {
-                    let fetch_pic = get_setting(&app_handle, "autoFetchArtistPic", true).unwrap_or(true);
-                    let fetch_banner = get_setting(&app_handle, "autoFetchArtistBanner", true).unwrap_or(true);
-                    if fetch_pic || fetch_banner {
+                    let fetch_pic =
+                        get_setting(&app_handle, "autoFetchArtistPic", true).unwrap_or(true);
+                    if fetch_pic {
                         if let Ok(artists) = db::get_artists_needing_fetch(&conn) {
                             if !artists.is_empty() {
                                 let app_dir = app_handle
@@ -64,19 +79,21 @@ impl SyncManager {
                                     .map_err(|e| eprintln!("Failed to get app dir: {e}"))
                                     .ok();
                                 if let Some(app_dir) = app_dir {
-                                    let artists_map: HashMap<i64, String> = artists.into_iter().collect();
+                                    let artists_map: HashMap<i64, String> =
+                                        artists.into_iter().collect();
                                     let pool_clone = pool.inner().clone();
                                     let app_handle_clone = app_handle.clone();
                                     let app_dir_clone = app_dir.clone();
-                                    println!("Retrying artist image fetch for {} artists", artists_map.len());
+                                    println!(
+                                        "Retrying artist image fetch for {} artists",
+                                        artists_map.len()
+                                    );
                                     tauri::async_runtime::spawn(async move {
                                         let _ = artist_pic_fetcher::fetch_artist_images(
                                             &artists_map,
                                             &app_dir_clone,
                                             pool_clone,
                                             &app_handle_clone,
-                                            fetch_pic,
-                                            fetch_banner,
                                         )
                                         .await;
                                     });
@@ -145,8 +162,15 @@ impl SyncManager {
 
         *watcher_lock = Some(watcher);
 
+        let scanning = self.scanning.clone();
         let handle = tauri::async_runtime::spawn(async move {
             while let Some(event) = rx.recv().await {
+                if scanning.load(Ordering::Relaxed)
+                    && matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_))
+                {
+                    continue;
+                }
+
                 match event.kind {
                     EventKind::Create(_) | EventKind::Modify(_) => {
                         let paths_to_scan: Vec<PathBuf> = event
@@ -164,11 +188,18 @@ impl SyncManager {
 
                         if !paths_to_scan.is_empty() {
                             let pool = app_handle.state::<DbPool>();
-                            if let Ok(mut conn) = pool.get() {
-                                let _ = tokio::task::block_in_place(|| {
-                                    scanner::scan_files(&mut conn, &app_handle, paths_to_scan)
-                                });
-                            }
+                            let pool = pool.inner().clone();
+                            let handle_for_scan = app_handle.clone();
+                            let _ = tokio::task::spawn_blocking(move || {
+                                if let Ok(mut conn) = pool.get() {
+                                    let _ = scanner::scan_files(
+                                        &mut conn,
+                                        &handle_for_scan,
+                                        paths_to_scan,
+                                    );
+                                }
+                            })
+                            .await;
                         }
                     }
                     EventKind::Remove(_) => {
@@ -191,10 +222,9 @@ impl SyncManager {
                                             .unwrap_or(false);
 
                                         if is_audio_file {
-                                            let mut stmt = conn.prepare(
-                                                "SELECT path FROM track WHERE path = ?",
-                                            )
-                                            .map_err(crate::error::Error::Db)?;
+                                            let mut stmt = conn
+                                                .prepare("SELECT path FROM track WHERE path = ?")
+                                                .map_err(crate::error::Error::Db)?;
                                             let rows = stmt
                                                 .query_map(rusqlite::params![path], |row| {
                                                     row.get::<_, String>(0)
@@ -210,9 +240,10 @@ impl SyncManager {
                                                 "SELECT path FROM track WHERE path = ? OR path LIKE ? || '/%' OR path LIKE ? || '\\%'"
                                             ).map_err(crate::error::Error::Db)?;
                                             let rows = stmt
-                                                .query_map(rusqlite::params![path, path, path], |row| {
-                                                    row.get::<_, String>(0)
-                                                })
+                                                .query_map(
+                                                    rusqlite::params![path, path, path],
+                                                    |row| row.get::<_, String>(0),
+                                                )
                                                 .map_err(crate::error::Error::Db)?;
                                             for r in rows {
                                                 if let Ok(p) = r {
