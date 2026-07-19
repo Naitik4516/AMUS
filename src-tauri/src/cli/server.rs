@@ -2,13 +2,12 @@
 
 use std::io::BufReader;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::thread;
 
 use tauri::{AppHandle, Listener};
 
 use super::dispatch;
-use super::paths::{app_data_dir, socket_path};
+use super::paths::{socket_path};
 use super::protocol::{read_frame, write_frame, CliRequest};
 
 static SERVER_RUNNING: AtomicBool = AtomicBool::new(false);
@@ -17,8 +16,6 @@ pub fn start(app: AppHandle) {
     if SERVER_RUNNING.swap(true, Ordering::SeqCst) {
         return;
     }
-
-    let _ = std::fs::create_dir_all(app_data_dir());
 
     #[cfg(unix)]
     {
@@ -146,15 +143,10 @@ where
     }
 }
 
-/// Remove stale socket/port file (call on graceful shutdown if needed).
 pub fn cleanup() {
     let path = socket_path();
     let _ = std::fs::remove_file(path);
     SERVER_RUNNING.store(false, Ordering::SeqCst);
 }
 
-// Silence unused import on non-unix for Arc if needed
-#[allow(dead_code)]
-fn _arc_marker() -> Arc<()> {
-    Arc::new(())
-}
+

@@ -1,5 +1,3 @@
-//! AMUS CLI — dual-mode client that talks to the running GUI instance.
-
 mod args;
 mod client;
 mod dispatch;
@@ -12,7 +10,6 @@ pub use dispatch::play_paths;
 pub use server::{cleanup as cleanup_server, start as start_server};
 
 use std::io::Write;
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -23,16 +20,11 @@ use args::{
 };
 use protocol::{CliCommand, SearchKind};
 
-/// Returns true when argv indicates CLI mode (not a plain GUI launch).
 pub fn is_cli_invocation(args: &[String]) -> bool {
-    // No args → GUI
     if args.len() <= 1 {
         return false;
     }
-    // Known GUI-only flags (none currently); everything else is CLI.
-    // Tauri / WebView may pass nothing. Special: `--` separators.
     let first = args[1].as_str();
-    // Allow forcing GUI with --gui
     if first == "--gui" {
         return false;
     }
@@ -42,11 +34,9 @@ pub fn is_cli_invocation(args: &[String]) -> bool {
 pub fn run_cli(args: Vec<String>) -> ExitCode {
     attach_console();
 
-    // Skip binary name for clap
     let cli = match Cli::try_parse_from(&args) {
         Ok(c) => c,
         Err(e) => {
-            // clap already formats help/version errors
             let _ = e.print();
             return if e.use_stderr() {
                 ExitCode::FAILURE
@@ -68,7 +58,6 @@ pub fn run_cli(args: Vec<String>) -> ExitCode {
 fn run_cli_inner(cli: Cli) -> Result<(), String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
 
-    // Positional paths without subcommand → play them
     if cli.command.is_none() {
         if cli.paths.is_empty() {
             return Err("no command given. Try `amus help`.".into());
@@ -83,7 +72,6 @@ fn run_cli_inner(cli: Cli) -> Result<(), String> {
 
     let command = cli.command.unwrap();
 
-    // Local-only commands
     match &command {
         Commands::Version => {
             println!("AMUS {}", env!("CARGO_PKG_VERSION"));
@@ -187,9 +175,8 @@ fn command_to_protocol(command: Commands, cwd: &std::path::Path) -> Result<CliCo
                     kind,
                 }
             } else {
-                // Bare query — search all
                 let (q, kind) = parse_search_query(&scope_or_query);
-                // For bare search without prefix, show all categories
+
                 let kind = if kind == SearchKind::Track
                     && !scope_or_query.contains(':')
                 {
@@ -279,8 +266,4 @@ fn attach_console() {
 #[cfg(not(windows))]
 fn attach_console() {}
 
-// Keep PathBuf import used via args
-#[allow(dead_code)]
-fn _pb() -> PathBuf {
-    PathBuf::new()
-}
+

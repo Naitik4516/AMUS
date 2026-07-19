@@ -1,35 +1,14 @@
-//! Path resolution helpers for the CLI.
-
 use std::path::{Path, PathBuf};
 
+const APP_QUALIFIER: &str = "com";
+const APP_ORG: &str = "amus";
+const APP_NAME: &str = "AMUS";
 const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];
 
-/// Resolve app data directory to match Tauri's `app_data_dir` for identifier `AMUS`.
 pub fn app_data_dir() -> PathBuf {
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-            return PathBuf::from(xdg).join("AMUS");
-        }
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-        return PathBuf::from(home).join(".local/share/AMUS");
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-        return PathBuf::from(home).join("Library/Application Support/AMUS");
-    }
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            return PathBuf::from(appdata).join("AMUS");
-        }
-        return PathBuf::from(r"C:\AMUS");
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    {
-        PathBuf::from(".").join("AMUS")
-    }
+    dirs::data_dir()
+        .map(|d| d.join(format!("{}.{}.{}", APP_QUALIFIER, APP_ORG, APP_NAME)))
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 pub fn socket_path() -> PathBuf {
@@ -43,7 +22,6 @@ pub fn socket_path() -> PathBuf {
     }
 }
 
-/// Absolute path for a user-supplied path relative to `cwd`.
 pub fn absolutize(path: &str, cwd: &Path) -> PathBuf {
     let p = PathBuf::from(path);
     if p.is_absolute() {

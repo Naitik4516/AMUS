@@ -18,7 +18,6 @@ use crate::scanner;
 use crate::sync::SyncManager;
 
 
-/// Public entry: play a set of file paths (auto-imports missing tracks).
 pub fn play_paths(app: &AppHandle, paths: &[String]) -> Result<(), String> {
     let tracks = resolve_paths_to_tracks(app, paths, true)?;
     if tracks.is_empty() {
