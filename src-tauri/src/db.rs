@@ -52,7 +52,9 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
     M::up(include_str!("../migrations/003_add_fetch_tracking.sql")),
     M::up(include_str!("../migrations/004_add_playlist_cover_art.sql")),
     M::up(include_str!("../migrations/005_add_user_queue_index.sql")),
-    M::up(include_str!("../migrations/006_alter_playback_history_source_type.sql")),
+    M::up(include_str!(
+        "../migrations/006_alter_playback_history_source_type.sql"
+    )),
 ];
 
 const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);
@@ -109,6 +111,26 @@ pub fn remove_source_dir(conn: &mut Connection, path: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn report_fetch_success(conn: &Connection, artist_id: i64) -> Result<()> {
+    conn.prepare_cached(
+        "UPDATE artist SET fetch_attempts = 0, last_fetch_attempt = NULL WHERE id = ?",
+    )
+    .map_err(Error::Db)?
+    .execute(params![artist_id])
+    .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn report_fetch_failure(conn: &Connection, artist_id: i64) -> Result<()> {
+    conn
+        .prepare_cached(
+            "UPDATE artist SET fetch_attempts = fetch_attempts + 1, last_fetch_attempt = datetime('now') WHERE id = ?",
+        )
+        .map_err(Error::Db)?
+        .execute(params![artist_id])
+        .map_err(Error::Db)?;
+    Ok(())
+}
 
 pub fn get_all_track_paths_and_mtimes(conn: &Connection) -> Result<HashMap<String, i64>> {
     let mut stmt = conn
@@ -170,6 +192,25 @@ pub fn get_or_create_artist(conn: &Connection, name: &str) -> Result<i64> {
         .map_err(Error::Db)
 }
 
+pub fn get_or_create_album(
+    conn: &Connection,
+    name: &str,
+    cover_art: Option<&str>,
+    year: Option<i32>,
+) -> Result<i64> {
+    conn.prepare_cached(
+        "INSERT INTO album (name, cover_art, year) VALUES (?1, ?2, ?3)
+             ON CONFLICT(name) DO UPDATE SET
+               name = excluded.name,
+               cover_art = COALESCE(excluded.cover_art, album.cover_art),
+               year = COALESCE(excluded.year, album.year)
+             RETURNING id",
+    )
+    .map_err(Error::Db)?
+    .query_row(params![name, cover_art, year], |row| row.get(0))
+    .map_err(Error::Db)
+}
+
 pub fn set_track_artists(conn: &Connection, track_id: i64, artist_ids: &[i64]) -> Result<()> {
     let existing: HashSet<i64> = conn
         .prepare_cached("SELECT artist_id FROM track_artist WHERE track_id = ?")
@@ -214,87 +255,6 @@ pub fn set_track_artists(conn: &Connection, track_id: i64, artist_ids: &[i64]) -
     Ok(())
 }
 
-pub fn update_artist_profile_image(conn: &Connection, artist_id: i64, path: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE artist SET profile_image = ? WHERE id = ?",
-        params![path, artist_id],
-    )
-    .map_err(Error::Db)?;
-    Ok(())
-}
-
-pub fn update_artist_banner_image(conn: &Connection, artist_id: i64, path: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE artist SET banner_image = ? WHERE id = ?",
-        params![path, artist_id],
-    )
-    .map_err(Error::Db)?;
-    Ok(())
-}
-
-pub fn clear_artist_profile_image(conn: &Connection, artist_id: i64) -> Result<()> {
-    conn.execute(
-        "UPDATE artist SET profile_image = NULL WHERE id = ?",
-        params![artist_id],
-    )
-    .map_err(Error::Db)?;
-    Ok(())
-}
-
-pub fn clear_artist_banner_image(conn: &Connection, artist_id: i64) -> Result<()> {
-    conn.execute(
-        "UPDATE artist SET banner_image = NULL WHERE id = ?",
-        params![artist_id],
-    )
-    .map_err(Error::Db)?;
-    Ok(())
-}
-
-pub fn artist_has_photo(conn: &Connection, artist_id: i64) -> Result<bool> {
-    let has: Option<i64> = conn
-        .query_row(
-            "SELECT 1 FROM artist WHERE id = ? AND profile_image IS NOT NULL",
-            params![artist_id],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(Error::Db)?;
-    Ok(has.is_some())
-}
-
-pub fn artist_has_banner(conn: &Connection, artist_id: i64) -> Result<bool> {
-    let has: Option<i64> = conn
-        .query_row(
-            "SELECT 1 FROM artist WHERE id = ? AND banner_image IS NOT NULL",
-            params![artist_id],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(Error::Db)?;
-    Ok(has.is_some())
-}
-
-pub fn report_fetch_success(conn: &Connection, artist_id: i64) -> Result<()> {
-    conn.prepare_cached(
-        "UPDATE artist SET fetch_attempts = 0, last_fetch_attempt = NULL WHERE id = ?",
-    )
-    .map_err(Error::Db)?
-    .execute(params![artist_id])
-    .map_err(Error::Db)?;
-    Ok(())
-}
-
-pub fn report_fetch_failure(conn: &Connection, artist_id: i64) -> Result<()> {
-    conn
-        .prepare_cached(
-            "UPDATE artist SET fetch_attempts = fetch_attempts + 1, last_fetch_attempt = datetime('now') WHERE id = ?",
-        )
-        .map_err(Error::Db)?
-        .execute(params![artist_id])
-        .map_err(Error::Db)?;
-    Ok(())
-}
-
 pub fn get_artists_needing_fetch(conn: &Connection) -> Result<Vec<(i64, String)>> {
     let mut stmt = conn
         .prepare_cached(
@@ -314,25 +274,6 @@ pub fn get_artists_needing_fetch(conn: &Connection) -> Result<Vec<(i64, String)>
         artists.push(row.map_err(Error::Db)?);
     }
     Ok(artists)
-}
-
-pub fn get_or_create_album(
-    conn: &Connection,
-    name: &str,
-    cover_art: Option<&str>,
-    year: Option<i32>,
-) -> Result<i64> {
-    conn.prepare_cached(
-        "INSERT INTO album (name, cover_art, year) VALUES (?1, ?2, ?3)
-             ON CONFLICT(name) DO UPDATE SET
-               name = excluded.name,
-               cover_art = COALESCE(excluded.cover_art, album.cover_art),
-               year = COALESCE(excluded.year, album.year)
-             RETURNING id",
-    )
-    .map_err(Error::Db)?
-    .query_row(params![name, cover_art, year], |row| row.get(0))
-    .map_err(Error::Db)
 }
 
 pub fn set_album_artist(conn: &Connection, name: &str, album_artist: &str) -> Result<()> {
@@ -470,16 +411,6 @@ pub fn bulk_insert_track_albums(conn: &Connection, entries: &[(i64, i64, i32)]) 
     Ok(())
 }
 
-pub fn get_track_mtime(conn: &Connection, path: &str) -> Result<Option<i64>> {
-    conn.query_row(
-        "SELECT mtime FROM track WHERE path = ?",
-        params![path],
-        |row| row.get(0),
-    )
-    .optional()
-    .map_err(Error::Db)
-}
-
 pub fn get_track_id_by_path(conn: &Connection, path: &str) -> Result<i64> {
     conn.query_row(
         "SELECT id FROM track WHERE path = ?",
@@ -497,9 +428,10 @@ pub fn get_track_by_id(conn: &Connection, id: i64) -> Result<Track> {
         LEFT JOIN album al ON alt.album_id = al.id
         WHERE t.id = ?";
     let tracks = prepare_tracks_list(conn, sql, params![id])?;
-    tracks.into_iter().next().ok_or_else(|| {
-        Error::Db(rusqlite::Error::QueryReturnedNoRows)
-    })
+    tracks
+        .into_iter()
+        .next()
+        .ok_or_else(|| Error::Db(rusqlite::Error::QueryReturnedNoRows))
 }
 
 pub fn get_track_path_by_id(conn: &Connection, id: i64) -> Result<String> {
@@ -516,21 +448,6 @@ pub fn toggle_favorite(conn: &Connection, track_id: i64) -> Result<Track> {
     )
     .map_err(Error::Db)?;
     get_track_by_id(conn, track_id)
-}
-
-pub fn record_playback(
-    conn: &Connection,
-    track_id: i64,
-    source_type: &str,
-    completion_percent: f64,
-) -> Result<()> {
-    let clamped = completion_percent.clamp(0.0, 100.0);
-    conn.execute(
-        "INSERT INTO playback_history (track_id, source_type, completion_percent) VALUES (?, ?, ?)",
-        params![track_id, source_type, clamped],
-    )
-    .map_err(Error::Db)?;
-    Ok(())
 }
 
 pub fn get_all_albums(conn: &Connection) -> Result<Vec<Album>> {
@@ -561,43 +478,6 @@ pub fn get_all_albums(conn: &Connection) -> Result<Vec<Album>> {
         albums.push(album);
     }
     Ok(albums)
-}
-
-pub fn get_artist(conn: &Connection, artist_id: i64) -> Result<Artist> {
-    conn.query_row(
-        "SELECT id, name, profile_image, banner_image FROM artist WHERE id = ?",
-        params![artist_id],
-        |row| {
-            Ok(Artist {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                profile_image: row.get(2)?,
-                banner_image: row.get(3)?,
-            })
-        },
-    )
-    .map_err(Error::Db)
-}
-
-pub fn get_album(conn: &Connection, album_id: i64) -> Result<Album> {
-    let (mut album, aa): (Album, Option<String>) = conn
-        .query_row(
-            "SELECT id, name, cover_art, album_artist, year FROM album WHERE id = ?",
-            params![album_id],
-            |row| {
-                let album = Album {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    cover_art: row.get(2)?,
-                    album_artist: None,
-                    year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
-                };
-                Ok((album, row.get::<_, Option<String>>(3)?))
-            },
-        )
-        .map_err(Error::Db)?;
-    album.album_artist = resolve_album_artist(conn, aa)?;
-    Ok(album)
 }
 
 pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
@@ -646,6 +526,18 @@ pub fn create_playlist(conn: &Connection, name: &str) -> Result<Playlist> {
     get_playlist(conn, id)
 }
 
+pub fn delete_playlist(conn: &Connection, playlist_id: i64) -> Result<()> {
+    conn.execute(
+        "DELETE FROM playlist_track WHERE playlist_id = ?",
+        params![playlist_id],
+    )
+    .map_err(Error::Db)?;
+
+    conn.execute("DELETE FROM playlist WHERE id = ?", params![playlist_id])
+        .map_err(Error::Db)?;
+    Ok(())
+}
+
 pub fn add_track_to_playlist(conn: &Connection, playlist_id: i64, track_id: i64) -> Result<()> {
     let position: i32 = conn
         .query_row(
@@ -663,20 +555,60 @@ pub fn add_track_to_playlist(conn: &Connection, playlist_id: i64, track_id: i64)
     Ok(())
 }
 
-pub fn get_tracks_in_playlist(
-    conn: &Connection,
-    playlist_id: i64,
-    sort_by: Option<SortBy>,
-) -> Result<Vec<Track>> {
-    let sql =
-            "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
-        FROM track t
-        JOIN playlist_track pt ON t.id = pt.track_id
-        LEFT JOIN album_track alt ON t.id = alt.track_id
-        LEFT JOIN album al ON alt.album_id = al.id
-        WHERE pt.playlist_id = ?";
+pub fn update_playlist(conn: &Connection, playlist: Playlist) -> Result<Playlist> {
+    conn.execute(
+        "UPDATE playlist SET name = ?, cover_art = ? WHERE id = ?",
+        params![playlist.name, playlist.cover_art, playlist.id],
+    )
+    .map_err(Error::Db)?;
+    get_playlist(conn, playlist.id)
+}
 
-    prepare_sorted_tracks_list(conn, sql, params![playlist_id], sort_by)
+pub fn update_artist(conn: &Connection, artist: Artist) -> Result<Artist> {
+    let _ = conn.execute(
+        "UPDATE artist SET name = ?, profile_image = ?, banner_image = ? WHERE id = ?",
+        params![
+            artist.name,
+            artist.profile_image,
+            artist.banner_image,
+            artist.id
+        ],
+    );
+    get_artist(conn, artist.id)
+}
+
+pub fn update_album(
+    conn: &Connection,
+    id: i64,
+    name: Option<&str>,
+    cover_art: Option<&str>,
+) -> Result<Album> {
+    if let Some(name) = name {
+        conn.execute("UPDATE album SET name = ? WHERE id = ?", params![name, id])
+            .map_err(Error::Db)?;
+    }
+    if let Some(cover_art) = cover_art {
+        conn.execute(
+            "UPDATE album SET cover_art = ? WHERE id = ?",
+            params![cover_art, id],
+        )
+        .map_err(Error::Db)?;
+    }
+    get_album(conn, id)
+}
+
+pub fn update_track_partial(
+    conn: &Connection,
+    id: i64,
+    title: String,
+    year: Option<i32>,
+) -> Result<TrackDetails> {
+    conn.execute(
+        "UPDATE track SET title = ?, year = ? WHERE id = ?",
+        params![title, year, id],
+    )
+    .map_err(Error::Db)?;
+    get_track_details(conn, id)
 }
 
 pub fn get_tracks_by_album(conn: &Connection, album_id: i64) -> Result<Vec<Track>> {
@@ -702,6 +634,74 @@ pub fn get_tracks_by_artist(conn: &Connection, artist_id: i64) -> Result<Vec<Tra
         ORDER BY al.name COLLATE NOCASE ASC, alt.track_number ASC";
 
     prepare_tracks_list(conn, sql, params![artist_id])
+}
+
+pub fn get_tracks_in_playlist(
+    conn: &Connection,
+    playlist_id: i64,
+    sort_by: Option<SortBy>,
+) -> Result<Vec<Track>> {
+    let sql =
+            "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        FROM track t
+        JOIN playlist_track pt ON t.id = pt.track_id
+        LEFT JOIN album_track alt ON t.id = alt.track_id
+        LEFT JOIN album al ON alt.album_id = al.id
+        WHERE pt.playlist_id = ?";
+
+    prepare_sorted_tracks_list(conn, sql, params![playlist_id], sort_by)
+}
+
+pub fn get_playlist(conn: &Connection, playlist_id: i64) -> Result<Playlist> {
+    conn.query_row(
+        "SELECT id, name, cover_art FROM playlist WHERE id = ?",
+        params![playlist_id],
+        |row| {
+            Ok(Playlist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                cover_art: row.get(2)?,
+            })
+        },
+    )
+    .map_err(Error::Db)
+}
+
+pub fn get_artist(conn: &Connection, artist_id: i64) -> Result<Artist> {
+    conn.query_row(
+        "SELECT id, name, profile_image, banner_image FROM artist WHERE id = ?",
+        params![artist_id],
+        |row| {
+            Ok(Artist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                profile_image: row.get(2)?,
+                banner_image: row.get(3)?,
+            })
+        },
+    )
+    .map_err(Error::Db)
+}
+
+pub fn get_album(conn: &Connection, album_id: i64) -> Result<Album> {
+    let (mut album, aa): (Album, Option<String>) = conn
+        .query_row(
+            "SELECT id, name, cover_art, album_artist, year FROM album WHERE id = ?",
+            params![album_id],
+            |row| {
+                let album = Album {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    cover_art: row.get(2)?,
+                    album_artist: None,
+                    year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+                };
+                Ok((album, row.get::<_, Option<String>>(3)?))
+            },
+        )
+        .map_err(Error::Db)?;
+    album.album_artist = resolve_album_artist(conn, aa)?;
+    Ok(album)
 }
 
 pub fn get_favorite_tracks(conn: &Connection) -> Result<Vec<Track>> {
@@ -843,18 +843,6 @@ pub fn get_all_tracks(conn: &Connection, sort_by: Option<SortBy>) -> Result<Vec<
     prepare_sorted_tracks_list(conn, sql, [], sort_by)
 }
 
-pub fn delete_playlist(conn: &Connection, playlist_id: i64) -> Result<()> {
-    conn.execute(
-        "DELETE FROM playlist_track WHERE playlist_id = ?",
-        params![playlist_id],
-    )
-    .map_err(Error::Db)?;
-
-    conn.execute("DELETE FROM playlist WHERE id = ?", params![playlist_id])
-        .map_err(Error::Db)?;
-    Ok(())
-}
-
 pub fn get_track_playlist_ids(conn: &Connection, track_id: i64) -> Result<Vec<i64>> {
     let mut stmt = conn
         .prepare("SELECT playlist_id FROM playlist_track WHERE track_id = ?")
@@ -882,105 +870,6 @@ pub fn remove_track_from_playlist(
     )
     .map_err(Error::Db)?;
     Ok(())
-}
-
-pub fn update_playlist(
-    conn: &Connection,
-    playlist_id: i64,
-    name: Option<&str>,
-    cover_art: Option<&str>,
-) -> Result<Playlist> {
-    if let Some(n) = name {
-        conn.execute(
-            "UPDATE playlist SET name = ? WHERE id = ?",
-            params![n, playlist_id],
-        )
-        .map_err(Error::Db)?;
-    }
-    if let Some(ca) = cover_art {
-        if ca.is_empty() {
-            conn.execute(
-                "UPDATE playlist SET cover_art = NULL WHERE id = ?",
-                params![playlist_id],
-            )
-            .map_err(Error::Db)?;
-        } else {
-            conn.execute(
-                "UPDATE playlist SET cover_art = ? WHERE id = ?",
-                params![ca, playlist_id],
-            )
-            .map_err(Error::Db)?;
-        }
-    }
-    get_playlist(conn, playlist_id)
-}
-
-pub fn rename_artist(conn: &Connection, artist_id: i64, new_name: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE artist SET name = ? WHERE id = ?",
-        params![new_name, artist_id],
-    )
-    .map_err(Error::Db)?;
-    Ok(())
-}
-
-pub fn rename_album(conn: &Connection, album_id: i64, new_name: &str) -> Result<()> {
-    conn.execute(
-        "UPDATE album SET name = ? WHERE id = ?",
-        params![new_name, album_id],
-    )
-    .map_err(Error::Db)?;
-    Ok(())
-}
-
-pub fn update_album_cover(conn: &Connection, album_id: i64, cover_art: Option<&str>) -> Result<()> {
-    match cover_art {
-        Some(path) => conn.execute(
-            "UPDATE album SET cover_art = ? WHERE id = ?",
-            params![path, album_id],
-        ),
-        None => conn.execute(
-            "UPDATE album SET cover_art = NULL WHERE id = ?",
-            params![album_id],
-        ),
-    }
-    .map_err(Error::Db)?;
-    Ok(())
-}
-
-pub fn update_artist_full(conn: &Connection, id: i64, name: Option<&str>, profile_image: Option<&str>, banner_image: Option<&str>) -> Result<Artist> {
-    if let Some(n) = name {
-        rename_artist(conn, id, n)?;
-    }
-    if let Some(pi) = profile_image {
-        if pi.is_empty() {
-            clear_artist_profile_image(conn, id)?;
-        } else {
-            update_artist_profile_image(conn, id, pi)?;
-        }
-    }
-    if let Some(bi) = banner_image {
-        if bi.is_empty() {
-            clear_artist_banner_image(conn, id)?;
-        } else {
-            update_artist_banner_image(conn, id, bi)?;
-        }
-    }
-    get_artist(conn, id)
-}
-
-pub fn update_album_full(conn: &Connection, id: i64, name: Option<&str>, cover_art: Option<&str>) -> Result<Album> {
-    if let Some(n) = name {
-        rename_album(conn, id, n)?;
-    }
-    if let Some(ca) = cover_art {
-        if ca.is_empty() {
-            update_album_cover(conn, id, None)?;
-        } else {
-            update_album_cover(conn, id, Some(ca))?;
-        }
-    }
-    get_album(conn, id)
 }
 
 // ---------------------------------------------------------------------------
@@ -1029,7 +918,8 @@ pub fn search_artists(conn: &Connection, query: &str, limit: usize) -> Result<Ve
             })
         })
         .map_err(Error::Db)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(Error::Db)
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Error::Db)
 }
 
 pub fn search_albums(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Album>> {
@@ -1121,88 +1011,14 @@ pub fn get_album_by_name(conn: &Connection, name: &str) -> Result<Album> {
     Ok(album)
 }
 
-// ---------------------------------------------------------------------------
-
-pub fn get_all_playlist_tracks(conn: &Connection) -> Result<Vec<(i64, Vec<i64>)>> {
-    let mut stmt = conn
-        .prepare("SELECT playlist_id, track_id FROM playlist_track ORDER BY playlist_id, position")
-        .map_err(Error::Db)?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
-        })
-        .map_err(Error::Db)?;
-
-    let mut map: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
-    for row in rows {
-        let (pid, tid) = row.map_err(Error::Db)?;
-        map.entry(pid).or_default().push(tid);
-    }
-    Ok(map.into_iter().collect())
-}
-
-use crate::models::PlaylistWithCovers;
-
-pub fn get_all_playlists_with_covers(conn: &Connection) -> Result<Vec<PlaylistWithCovers>> {
-    let playlists = get_all_playlists(conn)?;
-    let mut result = Vec::with_capacity(playlists.len());
-    for p in playlists {
-        let cover_arts = get_playlist_cover_arts(conn, p.id)?;
-        result.push(PlaylistWithCovers {
-            id: p.id,
-            name: p.name,
-            cover_art: p.cover_art,
-            cover_arts,
-        });
-    }
-    Ok(result)
-}
-
-pub fn get_playlist(conn: &Connection, playlist_id: i64) -> Result<Playlist> {
-    conn.query_row(
-        "SELECT id, name, cover_art FROM playlist WHERE id = ?",
-        params![playlist_id],
-        |row| {
-            Ok(Playlist {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                cover_art: row.get(2)?,
-            })
-        },
-    )
-    .map_err(Error::Db)
-}
-
-pub fn get_playlist_cover_arts(conn: &Connection, playlist_id: i64) -> Result<Vec<String>> {
-    let mut stmt = conn
-        .prepare(
-            r#"
-            SELECT DISTINCT t.cover_art
-            FROM track t
-            JOIN playlist_track pt ON t.id = pt.track_id
-            WHERE pt.playlist_id = ? AND t.cover_art IS NOT NULL
-            ORDER BY pt.position ASC
-            LIMIT 4
-            "#,
-        )
-        .map_err(Error::Db)?;
-
-    let art_iter = stmt
-        .query_map(params![playlist_id], |row| row.get(0))
-        .map_err(Error::Db)?;
-
-    art_iter
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::Db)
-}
-
 // Utils
 
-/// Build comma-separated `?` placeholders for SQL IN clauses, e.g. `?,?,?`
 fn sql_placeholders(count: usize) -> String {
     let mut s = String::with_capacity(count.saturating_sub(1) * 2 + 1);
     for i in 0..count {
-        if i > 0 { s.push(','); }
+        if i > 0 {
+            s.push(',');
+        }
         s.push('?');
     }
     s
@@ -1434,7 +1250,9 @@ fn get_playlist_ids_for_tracks(
 
         for row in rows {
             let (track_id, playlist_id) = row.map_err(Error::Db)?;
-            map.entry(track_id).or_insert_with(Vec::new).push(playlist_id);
+            map.entry(track_id)
+                .or_insert_with(Vec::new)
+                .push(playlist_id);
         }
     }
 
@@ -1640,10 +1458,22 @@ pub fn get_stats_overview(conn: &Connection, timeframe: Timeframe) -> Result<Sta
 
     let total_time_sec = total_time as i64;
     let days = days_span.max(1.0);
-    let avg_daily = if total_time > 0.0 { total_time / 60.0 / days } else { 0.0 };
+    let avg_daily = if total_time > 0.0 {
+        total_time / 60.0 / days
+    } else {
+        0.0
+    };
     let largest_file_mb = largest_file_size as f64 / 1048576.0;
-    let avg_file_size_mb = if total_tracks > 0 { total_file_size as f64 / total_tracks as f64 / 1048576.0 } else { 0.0 };
-    let pct_library_played = if total_tracks > 0 { played_tracks as f64 / total_tracks as f64 * 100.0 } else { 0.0 };
+    let avg_file_size_mb = if total_tracks > 0 {
+        total_file_size as f64 / total_tracks as f64 / 1048576.0
+    } else {
+        0.0
+    };
+    let pct_library_played = if total_tracks > 0 {
+        played_tracks as f64 / total_tracks as f64 * 100.0
+    } else {
+        0.0
+    };
 
     let format_dist = get_format_distribution(conn)?;
 
@@ -2546,7 +2376,6 @@ pub fn get_data_age(conn: &Connection) -> Result<DataAge> {
     })
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2618,7 +2447,10 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA foreign_keys=ON").unwrap();
         init_db(&mut conn).unwrap();
-        assert!(conn.query_row("SELECT COUNT(*) FROM track", [], |r| r.get::<_, i64>(0)).is_ok());
+        assert!(
+            conn.query_row("SELECT COUNT(*) FROM track", [], |r| r.get::<_, i64>(0))
+                .is_ok()
+        );
     }
 
     #[test]
@@ -2680,7 +2512,17 @@ mod tests {
     #[test]
     fn test_update_and_get_track() {
         let conn = setup_memory_db();
-        let track_id = update_track(&conn, "/music/test.mp3", "Test Song", 200, Some(2024), 1000, 5000, None).unwrap();
+        let track_id = update_track(
+            &conn,
+            "/music/test.mp3",
+            "Test Song",
+            200,
+            Some(2024),
+            1000,
+            5000,
+            None,
+        )
+        .unwrap();
         assert!(track_id > 0);
 
         let artist_id = get_or_create_artist(&conn, "Test Artist").unwrap();
@@ -2698,7 +2540,8 @@ mod tests {
     #[test]
     fn test_toggle_favorite() {
         let conn = setup_memory_db();
-        let track_id = update_track(&conn, "/music/test.mp3", "Test", 100, None, 0, 100, None).unwrap();
+        let track_id =
+            update_track(&conn, "/music/test.mp3", "Test", 100, None, 0, 100, None).unwrap();
         let artist_id = get_or_create_artist(&conn, "Artist").unwrap();
         set_track_artists(&conn, track_id, &[artist_id]).unwrap();
         let album_id = get_or_create_album(&conn, "Album", None, None).unwrap();
@@ -2774,7 +2617,17 @@ mod tests {
         let conn = setup_memory_db();
         insert_basic_track(&conn);
         // Second track with different artist/album so it doesn't match "Test"
-        let track_id = update_track(&conn, "/music/other.mp3", "Other Song", 200, Some(2024), 2000, 6000, None).unwrap();
+        let track_id = update_track(
+            &conn,
+            "/music/other.mp3",
+            "Other Song",
+            200,
+            Some(2024),
+            2000,
+            6000,
+            None,
+        )
+        .unwrap();
         let artist_id = get_or_create_artist(&conn, "Other Artist").unwrap();
         set_track_artists(&conn, track_id, &[artist_id]).unwrap();
         let album_id = get_or_create_album(&conn, "Other Album", None, None).unwrap();
@@ -2785,14 +2638,6 @@ mod tests {
         assert_eq!(results[0].title, "Test Song");
     }
 
-    #[test]
-    fn test_record_playback() {
-        let conn = setup_memory_db();
-        let track_id = insert_basic_track(&conn);
-
-        record_playback(&conn, track_id, "DIRECT", 100.0).unwrap();
-        record_playback(&conn, track_id, "ALBUM", 50.5).unwrap();
-    }
 
     #[test]
     fn test_get_track_path_by_id() {
@@ -2802,38 +2647,6 @@ mod tests {
         assert_eq!(path, "/music/test.mp3");
     }
 
-    #[test]
-    fn test_artist_crud() {
-        let conn = setup_memory_db();
-
-        let id = get_or_create_artist(&conn, "Artist Name").unwrap();
-        update_artist_profile_image(&conn, id, "profile.webp").unwrap();
-        update_artist_banner_image(&conn, id, "banner.webp").unwrap();
-
-        assert!(artist_has_photo(&conn, id).unwrap());
-        assert!(artist_has_banner(&conn, id).unwrap());
-
-        clear_artist_profile_image(&conn, id).unwrap();
-        clear_artist_banner_image(&conn, id).unwrap();
-
-        assert!(!artist_has_photo(&conn, id).unwrap());
-        assert!(!artist_has_banner(&conn, id).unwrap());
-    }
-
-    #[test]
-    fn test_rename_artist_and_album() {
-        let conn = setup_memory_db();
-
-        let artist_id = get_or_create_artist(&conn, "Old Name").unwrap();
-        rename_artist(&conn, artist_id, "New Name").unwrap();
-        let artist = get_artist(&conn, artist_id).unwrap();
-        assert_eq!(artist.name, "New Name");
-
-        let album_id = get_or_create_album(&conn, "Old Album", None, None).unwrap();
-        rename_album(&conn, album_id, "New Album").unwrap();
-        let album = get_album(&conn, album_id).unwrap();
-        assert_eq!(album.name, "New Album");
-    }
 
     #[test]
     fn test_remove_source_dir() {
@@ -2841,7 +2654,17 @@ mod tests {
         add_source_dir(&conn, "/music/rock").unwrap();
         add_source_dir(&conn, "/music/jazz").unwrap();
 
-        let track_id = update_track(&conn, "/music/rock/song.mp3", "Song", 100, None, 0, 100, None).unwrap();
+        let track_id = update_track(
+            &conn,
+            "/music/rock/song.mp3",
+            "Song",
+            100,
+            None,
+            0,
+            100,
+            None,
+        )
+        .unwrap();
         let artist_id = get_or_create_artist(&conn, "Artist").unwrap();
         set_track_artists(&conn, track_id, &[artist_id]).unwrap();
 
@@ -2930,7 +2753,17 @@ mod tests {
     }
 
     fn insert_basic_track_with_path(conn: &Connection, path: &str, id_suffix: i64) -> i64 {
-        let track_id = update_track(conn, path, &format!("{} Song", if id_suffix == 1 { "Test" } else { "Other" }), 200, Some(2024), 1000, 5000, None).unwrap();
+        let track_id = update_track(
+            conn,
+            path,
+            &format!("{} Song", if id_suffix == 1 { "Test" } else { "Other" }),
+            200,
+            Some(2024),
+            1000,
+            5000,
+            None,
+        )
+        .unwrap();
         let artist_id = get_or_create_artist(conn, "Test Artist").unwrap();
         set_track_artists(conn, track_id, &[artist_id]).unwrap();
         let album_id = get_or_create_album(conn, "Test Album", None, None).unwrap();
@@ -2942,7 +2775,13 @@ mod tests {
     // Stats helpers
     // -----------------------------------------------------------------------
 
-    fn insert_play_at(conn: &Connection, track_id: i64, played_at: &str, source_type: &str, completion_percent: f64) {
+    fn insert_play_at(
+        conn: &Connection,
+        track_id: i64,
+        played_at: &str,
+        source_type: &str,
+        completion_percent: f64,
+    ) {
         conn.execute(
             "INSERT INTO playback_history (track_id, played_at, source_type, completion_percent) VALUES (?1, ?2, ?3, ?4)",
             params![track_id, played_at, source_type, completion_percent],
@@ -3013,8 +2852,28 @@ mod tests {
     #[test]
     fn test_stats_overview_file_size() {
         let conn = setup_memory_db();
-        update_track(&conn, "/music/small.mp3", "Small", 100, None, 0, 1048576, None).unwrap();
-        update_track(&conn, "/music/large.flac", "Large", 200, None, 0, 5242880, None).unwrap();
+        update_track(
+            &conn,
+            "/music/small.mp3",
+            "Small",
+            100,
+            None,
+            0,
+            1048576,
+            None,
+        )
+        .unwrap();
+        update_track(
+            &conn,
+            "/music/large.flac",
+            "Large",
+            200,
+            None,
+            0,
+            5242880,
+            None,
+        )
+        .unwrap();
         let overview = get_stats_overview(&conn, Timeframe::AllTime).unwrap();
         assert_eq!(overview.total_tracks, 2);
         assert_eq!(overview.total_file_size_bytes, 6291456);
@@ -3113,7 +2972,17 @@ mod tests {
         let t1 = insert_basic_track(&conn);
         // Track 2 with a different artist
         let t2_path = "/music/other.mp3";
-        let t2 = update_track(&conn, t2_path, "Other Song", 200, Some(2024), 2000, 6000, None).unwrap();
+        let t2 = update_track(
+            &conn,
+            t2_path,
+            "Other Song",
+            200,
+            Some(2024),
+            2000,
+            6000,
+            None,
+        )
+        .unwrap();
         let artist2_id = get_or_create_artist(&conn, "Second Artist").unwrap();
         set_track_artists(&conn, t2, &[artist2_id]).unwrap();
         let album_id = get_or_create_album(&conn, "Other Album", None, None).unwrap();
@@ -3156,7 +3025,17 @@ mod tests {
         let conn = setup_memory_db();
         let t1 = insert_basic_track(&conn); // "Test Album"
         let t2_path = "/music/other.mp3";
-        let t2 = update_track(&conn, t2_path, "Other Song", 200, Some(2024), 2000, 6000, None).unwrap();
+        let t2 = update_track(
+            &conn,
+            t2_path,
+            "Other Song",
+            200,
+            Some(2024),
+            2000,
+            6000,
+            None,
+        )
+        .unwrap();
         let artist_id = get_or_create_artist(&conn, "Artist").unwrap();
         set_track_artists(&conn, t2, &[artist_id]).unwrap();
         let album2_id = get_or_create_album(&conn, "Other Album", None, None).unwrap();
@@ -3287,9 +3166,17 @@ mod tests {
     fn test_library_growth_multiple_tracks() {
         let conn = setup_memory_db();
         let t1 = insert_basic_track(&conn);
-        conn.execute("UPDATE track SET added_at = '2024-01-01 10:00:00' WHERE id = ?", params![t1]).unwrap();
+        conn.execute(
+            "UPDATE track SET added_at = '2024-01-01 10:00:00' WHERE id = ?",
+            params![t1],
+        )
+        .unwrap();
         let t2 = insert_basic_track_with_path(&conn, "/music/other.mp3", 2);
-        conn.execute("UPDATE track SET added_at = '2024-01-15 10:00:00' WHERE id = ?", params![t2]).unwrap();
+        conn.execute(
+            "UPDATE track SET added_at = '2024-01-15 10:00:00' WHERE id = ?",
+            params![t2],
+        )
+        .unwrap();
         let result = get_library_growth(&conn, Timeframe::AllTime).unwrap();
         assert!(!result.is_empty());
         // The last entry should have cumulative tracks >= 2
@@ -3455,8 +3342,28 @@ mod tests {
     #[test]
     fn test_format_distribution_single_format() {
         let conn = setup_memory_db();
-        update_track(&conn, "/music/song1.mp3", "Song 1", 100, None, 0, 1000, None).unwrap();
-        update_track(&conn, "/music/song2.mp3", "Song 2", 200, None, 0, 2000, None).unwrap();
+        update_track(
+            &conn,
+            "/music/song1.mp3",
+            "Song 1",
+            100,
+            None,
+            0,
+            1000,
+            None,
+        )
+        .unwrap();
+        update_track(
+            &conn,
+            "/music/song2.mp3",
+            "Song 2",
+            200,
+            None,
+            0,
+            2000,
+            None,
+        )
+        .unwrap();
         let result = get_format_distribution(&conn).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].format, "mp3");
@@ -3468,8 +3375,28 @@ mod tests {
     #[test]
     fn test_format_distribution_multiple_formats() {
         let conn = setup_memory_db();
-        update_track(&conn, "/music/song1.mp3", "Song 1", 100, None, 0, 1000, None).unwrap();
-        update_track(&conn, "/music/song2.flac", "Song 2", 200, None, 0, 2000, None).unwrap();
+        update_track(
+            &conn,
+            "/music/song1.mp3",
+            "Song 1",
+            100,
+            None,
+            0,
+            1000,
+            None,
+        )
+        .unwrap();
+        update_track(
+            &conn,
+            "/music/song2.flac",
+            "Song 2",
+            200,
+            None,
+            0,
+            2000,
+            None,
+        )
+        .unwrap();
         let result = get_format_distribution(&conn).unwrap();
         assert_eq!(result.len(), 2);
         for stat in &result {
