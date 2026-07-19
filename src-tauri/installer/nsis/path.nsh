@@ -8,14 +8,14 @@
   ReadRegStr $0 HKCU "Environment" "PATH"
   Push $0
   Push "$INSTDIR;"
-  Call StrStr
+  Call un.StrStr
   Pop $1
   StrCmp $1 "" +3
     StrCpy $0 $0 ""
     StrCpy $0 $0 $1 0
   Push "$INSTDIR"
   Push $0
-  Call StrStr
+  Call un.StrStr
   Pop $1
   StrCmp $1 "" +3
     StrCpy $0 $0 ""
@@ -24,7 +24,8 @@
   SendMessage ${HWND_BROADCAST} ${WM_SETTINGCHANGE} 0 "STR:Environment" /TIMEOUT=5000
 !macroend
 
-Function StrStr
+!macro Func_StrStr un
+Function ${un}StrStr
   Exch $R0
   Exch
   Exch $R1
@@ -52,6 +53,9 @@ Function StrStr
     Pop $R1
     Exch $R0
 FunctionEnd
+!macroend
+!insertmacro Func_StrStr ""
+!insertmacro Func_StrStr "un."
 
 Section "-AddAmusToPath"
   !insertmacro AddToUserPath
