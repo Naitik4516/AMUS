@@ -1,5 +1,4 @@
 use crate::MiniPlayerPinned;
-use crate::artist_pic_fetcher;
 use crate::db::{self, DataAge, DbPool, SortBy, Timeframe};
 use crate::error::{Error, Result};
 use crate::models::*;
@@ -71,9 +70,13 @@ pub async fn has_music(pool: State<'_, DbPool>) -> Result<bool> {
 
 #[tauri::command]
 pub async fn scan_library(app_handle: tauri::AppHandle, pool: State<'_, DbPool>) -> Result<()> {
-    let mut conn = pool.get().map_err(Error::Pool)?;
-    tokio::task::block_in_place(|| scanner::scan_directories(&mut conn, &app_handle))?;
-    Ok(())
+    let pool = pool.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        let mut conn = pool.get().map_err(Error::Pool)?;
+        scanner::scan_directories(&mut conn, &app_handle)
+    })
+    .await
+    .map_err(|e| Error::Unknown(e.to_string()))?
 }
 
 #[tauri::command]
@@ -84,7 +87,6 @@ pub async fn get_all_tracks(
     let conn = pool.get().map_err(Error::Pool)?;
     db::get_all_tracks(&conn, sort_by)
 }
-
 
 #[tauri::command]
 pub async fn get_recently_played(limit: usize, pool: State<'_, DbPool>) -> Result<Vec<Track>> {
@@ -108,7 +110,6 @@ pub async fn get_track_details(id: i64, pool: State<'_, DbPool>) -> Result<Track
     db::get_track_details(&conn, id)
 }
 
-
 #[tauri::command]
 pub async fn get_artists(pool: State<'_, DbPool>) -> Result<Vec<Artist>> {
     let conn = pool.get().map_err(Error::Pool)?;
@@ -122,9 +123,9 @@ pub async fn get_all_albums(pool: State<'_, DbPool>) -> Result<Vec<Album>> {
 }
 
 #[tauri::command]
-pub async fn get_playlists(pool: State<'_, DbPool>) -> Result<Vec<PlaylistWithCovers>> {
+pub async fn get_playlists(pool: State<'_, DbPool>) -> Result<Vec<Playlist>> {
     let conn = pool.get().map_err(Error::Pool)?;
-    db::get_all_playlists_with_covers(&conn)
+    db::get_all_playlists(&conn)
 }
 
 #[tauri::command]
@@ -178,7 +179,6 @@ pub async fn delete_playlist(playlist_id: i64, pool: State<'_, DbPool>) -> Resul
     Ok(())
 }
 
-
 #[tauri::command]
 pub async fn toggle_favorite(id: i64, pool: State<'_, DbPool>) -> Result<Track> {
     let conn = pool.get().map_err(Error::Pool)?;
@@ -186,18 +186,9 @@ pub async fn toggle_favorite(id: i64, pool: State<'_, DbPool>) -> Result<Track> 
 }
 
 #[tauri::command]
-pub async fn get_playlist(
-    playlist_id: i64,
-    pool: State<'_, DbPool>,
-) -> Result<Playlist> {
+pub async fn get_playlist(playlist_id: i64, pool: State<'_, DbPool>) -> Result<Playlist> {
     let conn = pool.get().map_err(Error::Pool)?;
     db::get_playlist(&conn, playlist_id)
-}
-
-#[tauri::command]
-pub async fn get_all_playlist_tracks(pool: State<'_, DbPool>) -> Result<Vec<(i64, Vec<i64>)>> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    db::get_all_playlist_tracks(&conn)
 }
 
 #[tauri::command]
@@ -253,7 +244,7 @@ pub fn play_pause(handle: State<PlayerHandle>) -> Result<()> {
 }
 
 #[tauri::command]
-pub fn stop(handle: State<PlayerHandle>) -> Result<()> {
+pub fn close_player(handle: State<PlayerHandle>) -> Result<()> {
     send(&handle, PlayerCommand::Stop)
 }
 
@@ -288,6 +279,11 @@ pub fn set_repeat(handle: State<PlayerHandle>, mode: String) -> Result<()> {
 #[tauri::command]
 pub fn toggle_shuffle(handle: State<PlayerHandle>) -> Result<()> {
     send(&handle, PlayerCommand::ToggleShuffle)
+}
+
+#[tauri::command]
+pub fn toggle_mute(handle: State<PlayerHandle>) -> Result<()> {
+    send(&handle, PlayerCommand::ToggleMute)
 }
 
 #[tauri::command]
@@ -525,39 +521,6 @@ pub async fn get_playback_history_timeline(
 }
 
 #[tauri::command]
-pub async fn fetch_artist_images(
-    artist_id: i64,
-    app_handle: tauri::AppHandle,
-    pool: State<'_, DbPool>,
-) -> Result<()> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    let artist = db::get_artist(&conn, artist_id)?;
-
-    let app_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| Error::Unknown(e.to_string()))?;
-
-    let has_photo = db::artist_has_photo(&conn, artist_id).unwrap_or(false);
-    let has_banner = db::artist_has_banner(&conn, artist_id).unwrap_or(false);
-
-    if !has_photo || !has_banner {
-        artist_pic_fetcher::fetch_single_artist_images(
-            artist_id,
-            &artist.name,
-            &app_dir,
-            pool.inner().clone(),
-            true,
-            true,
-        )
-        .await
-        .map_err(|e| Error::Unknown(e.to_string()))?;
-    }
-
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn save_image(
     source_path: String,
     image_type: String,
@@ -579,15 +542,9 @@ pub async fn save_image(
 }
 
 #[tauri::command]
-pub async fn update_artist(
-    id: i64,
-    name: Option<String>,
-    profile_image: Option<String>,
-    banner_image: Option<String>,
-    pool: State<'_, DbPool>,
-) -> Result<Artist> {
+pub async fn update_artist(artist: Artist, pool: State<'_, DbPool>) -> Result<Artist> {
     let conn = pool.get().map_err(Error::Pool)?;
-    db::update_artist_full(&conn, id, name.as_deref(), profile_image.as_deref(), banner_image.as_deref())
+    db::update_artist(&conn, artist)
 }
 
 #[tauri::command]
@@ -598,19 +555,24 @@ pub async fn update_album(
     pool: State<'_, DbPool>,
 ) -> Result<Album> {
     let conn = pool.get().map_err(Error::Pool)?;
-    db::update_album_full(&conn, id, name.as_deref(), cover_art.as_deref())
+    db::update_album(&conn, id, name.as_deref(), cover_art.as_deref())
 }
 
 #[tauri::command]
-pub async fn update_playlist(
-    id: i64,
-    name: Option<String>,
-    cover_art: Option<String>,
-    pool: State<'_, DbPool>,
-) -> Result<Playlist> {
+pub async fn update_playlist(playlist: Playlist, pool: State<'_, DbPool>) -> Result<Playlist> {
     let conn = pool.get().map_err(Error::Pool)?;
-    let ca = cover_art.as_deref();
-    db::update_playlist(&conn, id, name.as_deref(), ca)
+    db::update_playlist(&conn, playlist)
+}
+
+#[tauri::command]
+pub async fn update_track_metadata(
+    id: i64,
+    title: String,
+    year: Option<i32>,
+    pool: State<'_, DbPool>,
+) -> Result<TrackDetails> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::update_track_partial(&conn, id, title, year)
 }
 
 #[tauri::command]

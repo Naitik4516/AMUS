@@ -179,7 +179,7 @@ impl PlayerActor {
                 PlayerCommand::PlayPause => self.toggle_play_pause(),
                 PlayerCommand::Play => self.handle_play(),
                 PlayerCommand::Pause => self.handle_pause(),
-                PlayerCommand::Stop => self.stop_playback(),
+                PlayerCommand::Stop => self.close_player(),
                 PlayerCommand::Next => self.handle_next(),
                 PlayerCommand::Previous => self.handle_previous(),
                 PlayerCommand::Seek(pos) => self.handle_seek(pos),
@@ -278,7 +278,9 @@ impl PlayerActor {
                     self.load_current_into_engine(false);
                     if !user_queue_tracks.is_empty() {
                         if let Some(mut conn) = self.conn() {
-                            if let Ok(db_ids) = playback::queue_insert_back_many(&mut conn, &user_queue_tracks) {
+                            if let Ok(db_ids) =
+                                playback::queue_insert_back_many(&mut conn, &user_queue_tracks)
+                            {
                                 for (db_id, track) in db_ids.into_iter().zip(user_queue_tracks) {
                                     self.queue.enqueue_end(db_id, track);
                                 }
@@ -290,9 +292,16 @@ impl PlayerActor {
                     self.emit_repeat_shuffle();
                     self.volume = volume.clamp(0.0, 1.0);
                     self.engine.set_volume(self.volume);
-                    emit(&self.app, PlayerEvent::VolumeChanged { volume: self.volume });
+                    emit(
+                        &self.app,
+                        PlayerEvent::VolumeChanged {
+                            volume: self.volume,
+                        },
+                    );
                     self.emit_queue_changed();
-                    let _ = self.engine.seek(Duration::from_secs_f64(position_sec.max(0.0)));
+                    let _ = self
+                        .engine
+                        .seek(Duration::from_secs_f64(position_sec.max(0.0)));
                     if let Some(np) = &mut self.now_playing {
                         np.max_position_reached = np.max_position_reached.max(position_sec);
                     }
@@ -301,7 +310,13 @@ impl PlayerActor {
                         self.engine.play();
                         emit(&self.app, PlayerEvent::StateChanged { is_playing: true });
                     }
-                    emit(&self.app, PlayerEvent::Position { pos_sec: position_sec, at_epoch_ms: now_epoch_ms() });
+                    emit(
+                        &self.app,
+                        PlayerEvent::Position {
+                            pos_sec: position_sec,
+                            at_epoch_ms: now_epoch_ms(),
+                        },
+                    );
                 }
                 PlayerCommand::GetState(reply) => {
                     let _ = reply.send(self.snapshot());
@@ -316,7 +331,6 @@ impl PlayerActor {
             }
         }
     }
-
 
     fn load_current_into_engine(&mut self, autoplay: bool) {
         let Some((track, source)) = self.queue.current().cloned() else {
@@ -471,7 +485,7 @@ impl PlayerActor {
             NextOutcome::End => {
                 self.has_track_loaded = false;
                 self.engine.stop();
-                emit(&self.app, PlayerEvent::StateChanged { is_playing: false }); 
+                emit(&self.app, PlayerEvent::StateChanged { is_playing: false });
                 emit(&self.app, PlayerEvent::PlaybackEnded);
             }
         }
@@ -499,7 +513,9 @@ impl PlayerActor {
                 self.load_current_into_engine(true);
             }
             Ok(_) => {
-                eprintln!("autoplay: get_similar_tracks returned 0 recommendations for track {last_id}");
+                eprintln!(
+                    "autoplay: get_similar_tracks returned 0 recommendations for track {last_id}"
+                );
                 self.stop_playback();
             }
             Err(e) => {
@@ -508,12 +524,18 @@ impl PlayerActor {
             }
         }
     }
-    
+
     fn stop_playback(&mut self) {
         self.has_track_loaded = false;
         self.engine.stop();
         emit(&self.app, PlayerEvent::StateChanged { is_playing: false });
         emit(&self.app, PlayerEvent::PlaybackEnded);
+    }
+
+    fn close_player(&mut self) {
+        self.finalize_now_playing();
+        self.now_playing = None;
+        self.stop_playback();
     }
 
     fn handle_previous(&mut self) {
@@ -583,18 +605,17 @@ impl PlayerActor {
         }
     }
 
-
     fn finalize_now_playing(&mut self) {
         if let Some(np) = self.now_playing.take() {
             if np.duration_sec > 0.0 {
                 let pct = (np.max_position_reached / np.duration_sec * 100.0).clamp(0.0, 100.0);
                 if let Some(conn) = self.conn() {
-                    let _ = playback::record_playback(&conn, np.track_id, np.source.type_str(), pct);
+                    let _ =
+                        playback::record_playback(&conn, np.track_id, np.source.type_str(), pct);
                 }
             }
         }
     }
-
 
     fn snapshot(&self) -> PlayerStateSnapshot {
         let (track, duration) = match self.queue.current() {

@@ -37,13 +37,6 @@ pub struct Track {
     pub playlist_ids: Vec<i64>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PlaybackState {
-    pub current_track_id: Option<i64>,
-    pub position_ms: u32,
-    pub shuffle_enabled: bool,
-    pub repeat_mode: u8,
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Playlist {
@@ -52,13 +45,6 @@ pub struct Playlist {
     pub cover_art: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PlaylistWithCovers {
-    pub id: i64,
-    pub name: String,
-    pub cover_art: Option<String>,
-    pub cover_arts: Vec<String>,
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Artist {
