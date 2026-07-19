@@ -2,6 +2,8 @@
 -- so SQLite doesn't complain about a dangling view reference, then recreate it.
 DROP VIEW IF EXISTS track_stats;
 
+DROP TABLE IF EXISTS playback_history_new;
+
 CREATE TABLE playback_history_new (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     track_id INTEGER NOT NULL,

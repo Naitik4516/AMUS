@@ -1,7 +1,7 @@
 /*---break---*/
 
 :root {
-  --background: rgb(21, 19, 51);
+  --background: rgb(5, 6, 36);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.212 0.019 322.12);
   --card-foreground: oklch(0.985 0 0);
@@ -13,7 +13,7 @@
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.263 0.024 320.12);
   --muted-foreground: oklch(0.711 0.019 323.02);
-  --accent: #F5F5F5;
+  --accent: #f5f5f5;
   --accent-foreground: rgb(0, 0, 0);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 5%);
