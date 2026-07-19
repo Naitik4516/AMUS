@@ -24,8 +24,10 @@
 {#if startup.checked && startup.error}
     <StartupError error={startup.error} />
 {:else if !startup.checked}
-    <div class="fixed inset-0 flex items-center justify-center bg-background">
-        <div class="w-8 h-8 border-2 border-muted-foreground/30 border-t-foreground rounded-full animate-spin" />
+    <div class="fixed inset-0 flex items-center justify-center bg-black">
+        <div
+            class="w-8 h-8 border-2 border-muted-foreground/30 border-t-foreground rounded-full animate-spin"
+        ></div>
     </div>
 {:else}
     {@render children()}

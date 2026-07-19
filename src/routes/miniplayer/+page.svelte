@@ -38,7 +38,7 @@
 
 {#if player.currentTrack}
     <div
-        class="relative bg-gray-900 h-screen w-screen rounded-4xl overflow-hidden"
+        class="relative bg-zinc-900 h-screen w-screen rounded-4xl overflow-hidden"
     >
         <img
             src={store.getImageSrc(player.currentTrack?.cover_art)}
@@ -49,7 +49,7 @@
         <div class="absolute top-3 right-3 z-20">
             <button
                 onclick={togglePin}
-                class="text-muted-foreground hover:text-white transition-colors"
+                class="text-gray-300 hover:text-white transition-colors"
                 title={isPinned ? "Unpin Mini Player" : "Pin Mini Player"}
             >
                 {#if isPinned}
@@ -80,7 +80,7 @@
                         </div>
                     </Marquee>
                     <Marquee>
-                        <span class="text-gray-300 font-medium" id="text"
+                        <span class="text-zinc-300 font-medium -ml-0.5" id="text"
                             >{player.currentTrack?.artists?.[0]?.name ??
                                 ""}</span
                         >
@@ -88,7 +88,7 @@
                 </div>
                 <div class="flex items-center gap-6">
                     <button
-                        class="text-muted-foreground hover:text-white transition-colors"
+                        class="text-gray-300 hover:text-white transition-colors"
                         onclick={() => player.previous()}
                     >
                         <SkipBack size={26} fill="currentColor" />
@@ -104,7 +104,7 @@
                         {/if}
                     </button>
                     <button
-                        class="text-muted-foreground hover:text-white transition-colors"
+                        class="text-gray-300 hover:text-white transition-colors"
                         onclick={() => player.next()}
                     >
                         <SkipForward size={26} fill="currentColor" />
@@ -112,7 +112,7 @@
                 </div>
                 <div class="flex items-center gap-4 w-full">
                     <span
-                        class="text-[10px] font-medium text-gray-400 w-10 text-right"
+                        class="text-[10px] font-medium text-zinc-300 w-10 text-right"
                     >
                         {formatDurationColon(player.position)}
                     </span>
@@ -126,7 +126,7 @@
                             }
                         }}
                     />
-                    <span class="text-[10px] font-medium text-gray-400 w-10">
+                    <span class="text-[10px] font-medium text-zinc-300 w-10">
                         {formatDurationColon(
                             player.currentTrack.duration_seconds,
                         )}
@@ -136,7 +136,7 @@
                     <button
                         class="hover:text-white transition-colors"
                         class:text-white={player.shuffleEnabled}
-                        class:text-muted-foreground={!player.shuffleEnabled}
+                        class:text-gray-300={!player.shuffleEnabled}
                         onclick={() => player.toggleShuffle()}
                     >
                         <Shuffle size={18} />
@@ -145,21 +145,20 @@
                         onclick={toggleFavorite}
                         class="ml-2 {player.currentTrack?.is_favorite
                             ? 'text-rose-600 fill-rose-600'
-                            : 'text-muted-foreground'}  hover:text-secondary transition-colors"
+                            : 'text-gray-300'}  hover:text-secondary transition-colors"
                     >
                         <Heart
                             size={24}
                             class={player.currentTrack?.is_favorite
                                 ? "text-rose-600 fill-rose-600"
-                                : "text-muted-foreground"}
+                                : "text-gray-300"}
                             strokeWidth={2.5}
                         ></Heart>
                     </button>
                     <button
                         class="hover:text-white transition-colors"
                         class:text-white={player.repeatMode !== "OFF"}
-                        class:text-muted-foreground={player.repeatMode ===
-                            "OFF"}
+                        class:text-gray-300={player.repeatMode === "OFF"}
                         onclick={() => player.cycleRepeat()}
                     >
                         {#if player.repeatMode === "ONE"}

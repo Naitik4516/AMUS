@@ -11,27 +11,31 @@
     import { flip } from "svelte/animate";
     import { formatDuration } from "$lib/utils";
     import { onMount } from "svelte";
+    import type { Playlist } from "$lib/types";
+    import PlaylistCoverArt from "$components/ui/PlaylistCoverArt.svelte";
+    import EditPlaylistDialog from "$components/ui/Dialog/EditPlaylistDialog.svelte";
 
     let playlistId = $derived(Number(page.params.id));
+    let playlist: Playlist = $derived(
+        playlistId === -1
+            ? {
+                  id: -1,
+                  name: "All Tracks",
+              }
+            : (store.playlists.find((p) => p.id === playlistId) ?? {
+                  id: playlistId,
+                  name: "Unknown Playlist",
+              }),
+    );
+
     let searchResults = $state<Track[]>([]);
     let searchQuery = $state("");
     let showAddMore = $state(false);
     let fuse: Fuse<Track>;
+    let editOpen = $state(false);
 
     let tracks = $derived(
         playlistId === -1 ? store.tracks : store.tracksByPlaylist(playlistId),
-    );
-
-    let playlistName = $derived(
-        playlistId === -1
-            ? "All Tracks"
-            : (store.playlistsById.get(playlistId)?.name ?? "Unknown Playlist"),
-    );
-
-    let playlistCoverArt = $derived(
-        playlistId === -1
-            ? null
-            : (store.playlistsById.get(playlistId)?.coverArt ?? null),
     );
 
     function loadFuse() {
@@ -74,50 +78,29 @@
                     .map((result) => result.item) ?? [];
         }
     });
+
 </script>
 
-{#snippet coverArt()}
-    {#if playlistCoverArt}
-        <img
-            src={store.getImageSrc(playlistCoverArt)}
-            alt={playlistName}
-            class="w-full h-full object-cover"
-        />
-    {:else if tracks.length >= 4}
-        <div class="grid grid-cols-2 grid-rows-2 w-full h-full">
-            {#each tracks.slice(0, 4) as track (track.id)}
-                <img
-                    src={store.getImageSrc(track.cover_art)}
-                    alt={track.title}
-                    class="w-full h-full object-cover"
-                />
-            {/each}
-        </div>
-    {:else}
-        <div class="w-full h-full bg-white/5 flex items-center justify-center">
-            <Music size={100} class="text-slate-400" />
-        </div>
-    {/if}
-{/snippet}
-
 <div
-    class="fixed inset-0 h-screen w-screen blur-[180px] brightness-90 px-30 py-10 "
+    class="fixed inset-0 h-screen w-screen blur-[180px] brightness-90 px-30 py-10"
 >
-    {@render coverArt()}
+    <PlaylistCoverArt {playlist} playlistTracks={tracks} />
 </div>
 
 <div class="flex flex-col p-5 z-1 isolate">
     <div class="flex gap-4 mb-4">
-        <div
+        <button
             class="w-42 lg:w-58 h-42 lg:h-58 rounded-2xl shadow-xl shadow-black/40 overflow-clip"
+            onclick={() => editOpen = true}
         >
-            {@render coverArt()}
-        </div>
+            <PlaylistCoverArt {playlist} playlistTracks={tracks} />
+        </button>
         <div class="flex flex-col justify-end ml-4 py-1">
             <h1
-                class="text-3xl md:text-5xl lg:text-7xl xl:text-8xl drop-shadow-lg drop-shadow-black/60 font-black font-switzer line-clamp-2"
+                class="text-3xl md:text-5xl lg:text-7xl xl:text-8xl drop-shadow-lg font-black font-switzer line-clamp-2"
+                onclick={() => editOpen = true}
             >
-                {playlistName}
+                {playlist.name}
             </h1>
             <div class="flex font-mono text-gray-300 gap-2 items-center">
                 <span class="">
@@ -143,8 +126,8 @@
             context={{
                 type: "Playlist",
                 id: playlistId,
-                name: playlistName,
-                coverArt: playlistCoverArt,
+                name: playlist.name,
+                coverArt: playlist.cover_art,
             }}
         />
     {:else}
@@ -191,6 +174,7 @@
             <button
                 onclick={() => {
                     showAddMore = false;
+                    searchResults = [];
                 }}><X size={32} class="text-gray-300" /></button
             >
         </div>
@@ -221,3 +205,9 @@
         </div>
     {/if}
 </div>
+<EditPlaylistDialog
+    bind:open={editOpen}
+    playlistId={playlistId}
+    name={playlist.name}
+    coverArt={playlist.cover_art}
+/>

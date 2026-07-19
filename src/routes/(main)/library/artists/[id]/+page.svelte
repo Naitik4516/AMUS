@@ -4,18 +4,29 @@
     import AlbumRow from "$components/ui/AlbumRow.svelte";
     import { User } from "@lucide/svelte";
     import { formatDuration } from "$lib/utils";
-    import { fetchArtistImages } from "$lib/data.svelte";
     import { store } from "$lib/stores.svelte";
     import { onMount } from "svelte";
     import type { Artist } from "$lib/types";
+    import { gsap } from "gsap";
+    import { ScrollTrigger } from "gsap/ScrollTrigger";
+    import {
+        getSwatchesSync,
+        type HSL,
+        type Color,
+        getColorSync,
+    } from "colorthief";
+    import type { Attachment } from "svelte/attachments";
 
     let artistId = $derived(Number(page.params.id));
-    let artist = $derived(store.artists.find(a => a.id === artistId) ?? {
-        id: artistId,
-        name: "Unknown Artist",
-        profile_image: undefined,
-        banner_image: undefined,
-    } as Artist);
+    let artist = $derived(
+        store.artists.find((a) => a.id === artistId) ??
+            ({
+                id: artistId,
+                name: "Unknown Artist",
+                profile_image: undefined,
+                banner_image: undefined,
+            } as Artist),
+    );
     let tracks = $derived(store.tracksByArtist(artistId));
     let albums = $derived(store.albumsByArtist(artistId));
 
@@ -23,73 +34,96 @@
         tracks.reduce((acc, track) => acc + track.duration_seconds, 0),
     );
 
-    let profileUrl = $derived(store.getImageSrc(artist.profile_image, "artist"));
-    let bgUrl = $derived(store.getImageSrc(artist.banner_image, "banner"));
-    let isBanner = $derived(!!artist.banner_image);
+    let gColor = $state<Color>();
 
-    onMount(async () => {
-        if (!artist.banner_image) {
-            await fetchArtistImages(artistId);
-            await store.reloadArtists();
-        }
+    let bgUrl = $derived(store.getImageSrc(artist.banner_image, "artist"));
+
+    onMount(() => {
+        gsap.registerPlugin(ScrollTrigger);
+
+        const tl = gsap.timeline({
+            scrollTrigger: {
+                trigger: ".artist-image",
+                scroller: ".main-scroller",
+                start: "top top",
+                end: "+=400",
+                pin: true,
+                pinSpacing: false,
+                scrub: true,
+            },
+        });
+
+        tl.to(".banner", {
+            opacity: 0,
+            scale: 1.15,
+            ease: "none",
+        });
+
+        return () => tl.scrollTrigger?.kill();
     });
+
+    const ArtistImage: Attachment = (e) => {
+        e.addEventListener("load", () => {
+            try {
+                const swatches = getSwatchesSync(
+                    e as unknown as HTMLImageElement,
+                );
+                // gColor = swatches.DarkVibrant?.color;
+                gColor = swatches.DarkMuted?.color;
+            } catch (error) {
+                console.error(
+                    "Failed to extract color palette from cover art",
+                    error,
+                );
+            }
+        });
+    };
+
+    $inspect(gColor?.hex());
 </script>
 
-<div class="relative flex flex-col h-full w-full overflow-y-scroll pb-10 pr-5">
+<div
+    id="smooth-content"
+    class="relative flex flex-col h-full w-full pb-10 overflow-hidden"
+>
     <div
-        class="banner-wrapper relative max-h-80 w-full aspect-video overflow-hidden rounded-t-2xl"
+        class="sticky artist-image z-0 top-0 flex justify-between px-2 mask-b-from-70% mask-r-from-90% mask-t-from-95%"
     >
-        {#if bgUrl}
-            <img
-                src={bgUrl}
-                alt=""
-                class="w-full h-full object-cover banner"
-                class:blur-2xl={!isBanner}
-                class:scale-110={!isBanner}
-            />
-        {:else}
-            <div class="w-full h-full bg-surface/50"></div>
-        {/if}
+        <div class="flex-1 min-w-0"></div>
+
+        <img
+            src={bgUrl}
+            {@attach ArtistImage}
+            alt={artist.name}
+            class="banner h-170 aspect-auto z-1 mask-l-from-70%"
+            crossorigin="anonymous"
+        />
+
+        <div
+            class="absolute left-1/3 bottom-0 h-100 w-100 blur-[150px] banner"
+            style:background={gColor?.css()}
+        ></div>
     </div>
 
-    <div class="flex items-end gap-6 px-6 -mt-32 relative z-10">
-        <div
-            class="w-48 h-48 rounded-full overflow-hidden ring-3 ring-black shadow-xl shrink-0"
+    <div class="flex flex-col gap-2 pb-2 min-w-0 px-8 -mt-90 z-10 pr-5">
+        <h1
+            class="text-3xl md:text-5xl lg:text-[6cqw] xl:[7cqw] max-text-[7rem] font-black font-clash bg-linear-to-b from-white from-50% to-gray-400 bg-clip-text text-transparent truncate drop-shadow-lg  py-4.5 -mb-4"
         >
-            {#if profileUrl}
-                <img
-                    src={profileUrl}
-                    alt={artist.name}
-                    class="w-full h-full object-cover"
-                />
-            {:else}
-                <div
-                    class="w-full h-full flex items-center justify-center bg-surface"
-                >
-                    <User size={48} />
-                </div>
-            {/if}
-        </div>
-        <div class="flex flex-col gap-2 pb-2 min-w-0">
-            <h1
-                class="text-3xl md:text-5xl lg:text-[6cqw] max-text-[6rem] font-black font-clash bg-linear-to-b from-white from-50% to-neutral-600 bg-clip-text text-transparent truncate drop-shadow-lg drop-shadow-black py-4.5 -mb-4"
-            >
-                {artist.name}
-            </h1>
-            <span class="text-gray-300">
-                {tracks.length} songs, {formatDuration(totalDuration)}
-            </span>
-        </div>
+            {artist.name}
+        </h1>
+        <span class="text-gray-300 ml-5 font-satoshi font-semibold">
+            {tracks.length} songs, {formatDuration(totalDuration)}
+        </span>
     </div>
 
     {#if tracks.length > 0}
-        <div class="mt-4 px-4">
+        <div class="mt-10 px-4 pr-8">
             <TrackList
                 context={{
                     type: "Artist",
                     id: artist.id,
                     name: artist.name,
-                    profileImage: profileUrl,
+                    profileImage: bgUrl,
                     bannerImage: bgUrl,
                 }}
                 {tracks}
@@ -110,15 +144,16 @@
         </div>
     {/if}
 </div>
+<!-- <div
+    class="fixed w-100 h-100 blur-[180px] -bottom-40 left-30 rounded-full -z-10"
+    style:background="{color1?.hex()}4D"
+></div>
+<div
+    class="absolute w-90 h-90 blur-[150px] bottom-10 right-20 rounded-full"
+    style:background="{color2?.hex()}99"
+></div>
 
-<style>
-    .banner-wrapper {
-        position: relative;
-        mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
-        -webkit-mask-image: linear-gradient(
-            to bottom,
-            black 60%,
-            transparent 100%
-        );
-    }
-</style>
+<div
+    class="fixed w-[80vw] h-50 top-30 right-5 blur-[150px]"
+    style:background={dominantColor?.css()}
+></div> -->

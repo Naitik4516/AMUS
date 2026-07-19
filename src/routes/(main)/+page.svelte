@@ -35,7 +35,7 @@
         <HeroSection hasMusic={data.hasMusic} />
     </div>
 
-    <div class="flex flex-col gap-10 py-10">
+    <div class="flex flex-col gap-10 pb-10">
         {#each trackSections as section}
             <div>
                 <TracksSection

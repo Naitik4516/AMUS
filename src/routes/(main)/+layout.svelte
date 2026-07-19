@@ -1,40 +1,129 @@
 <script lang="ts">
-    import "../../app.css";
-    import "../../styles/main.css";
     import Header from "$components/Header.svelte";
     import Player from "$components/Player.svelte";
-    import Sidebar from "$components/Sidebar.svelte";
     import ScanProgress from "$components/ScanProgress.svelte";
+    import Sidebar from "$components/Sidebar.svelte";
     import { Toaster } from "$components/ui/sonner/index.js";
-    import type { LayoutProps } from "./$types";
     import { player } from "$lib/player.svelte";
+    import { flags, initSettings, settings } from "$lib/settings.svelte";
+    import { installHandlers } from "$lib/shortcut-handler.svelte";
     import {
-        getCurrentWindow,
-        type ResizeDirection,
-    } from "@tauri-apps/api/window";
-    import { onMount } from "svelte";
-    import { settings, flags, initSettings } from "$lib/settings.svelte";
-    import { store } from "$lib/stores.svelte";
-    import { updater } from "$lib/update.svelte";
-    import { toast } from "svelte-sonner";
-    import { listen } from "@tauri-apps/api/event";
-    import {
-        initShortcuts,
         findAction,
         getHandler,
         globalShortcutFlags,
+        initShortcuts,
     } from "$lib/shortcuts.svelte";
-    import { installHandlers } from "$lib/shortcut-handler.svelte";
+    import { store } from "$lib/stores.svelte";
+    import { updater } from "$lib/update.svelte";
+    import { listen } from "@tauri-apps/api/event";
+    import { getCurrentWindow } from "@tauri-apps/api/window";
+    import { onMount } from "svelte";
+    import { toast } from "svelte-sonner";
+    import "../../app.css";
+    import "../../styles/main.css";
+    import type { LayoutProps } from "./$types";
+    import { afterNavigate } from "$app/navigation";
+    import { gsap } from "gsap";
+    import { ScrollTrigger } from "gsap/ScrollTrigger";
+    import Lenis from "lenis";
+    import "lenis/dist/lenis.css";
+    import type { Action } from "svelte/action";
+    import Button from "$components/ui/button/button.svelte";
+    import { MoveUp } from "@lucide/svelte";
+    import { slide } from "svelte/transition";
+
+    type ResizeDirection =
+        | "East"
+        | "North"
+        | "NorthEast"
+        | "NorthWest"
+        | "South"
+        | "SouthEast"
+        | "SouthWest"
+        | "West";
+
+    const SCROLL_THRESHOLD = 400;
 
     let { children }: LayoutProps = $props();
 
     let isMaximized = $state(false);
+    let showFAB = $state(false);
+
+    let scrollContainer: Element | undefined = $state();
+    let lenis: Lenis;
 
     $effect(() => {
         if (flags.ready && player.isReady) {
             player.setAutoplay(settings.autoplayEnabled);
         }
     });
+
+    const setupSmoothScroll: Action = (node) => {
+        $effect(() => {
+            if (!scrollContainer) {
+                console.warn("Scroll container not found for smooth scrolling");
+                return;
+            }
+            lenis = new Lenis({
+                wrapper: scrollContainer,
+                content: node,
+                lerp: 0.1,
+                duration: 1.2,
+                prevent: (node) => {
+                    return node.classList.contains("vlist");
+                },
+            });
+
+            lenis.on("scroll", (e) => {
+                ScrollTrigger.update();
+                showFAB = e.scroll > SCROLL_THRESHOLD;
+            });
+
+            const updateTick = (time: number) => {
+                lenis.raf(time * 1000);
+            };
+            gsap.ticker.add(updateTick);
+            gsap.ticker.lagSmoothing(0);
+
+            ScrollTrigger.scrollerProxy(scrollContainer, {
+                scrollTop(value) {
+                    if (arguments.length) {
+                        lenis.scrollTo(value!, { immediate: true });
+                    }
+                    return lenis.scroll;
+                },
+
+                getBoundingClientRect() {
+                    return {
+                        top: 0,
+                        left: 0,
+                        width: window.innerWidth,
+                        height: window.innerHeight,
+                    };
+                },
+            });
+
+            ScrollTrigger.addEventListener("refresh", () => lenis.resize());
+            ScrollTrigger.refresh();
+
+            return () => {
+                lenis.destroy();
+                gsap.ticker.remove(updateTick);
+            };
+        });
+    };
+
+    const scrollToTop = () => {
+        if (scrollContainer && lenis) {
+            lenis.scrollTo(0);
+        }
+    };
+
+    function startResize(direction: ResizeDirection, e: MouseEvent) {
+        e.preventDefault();
+        e.stopPropagation();
+        getCurrentWindow().startResizeDragging(direction);
+    }
 
     $effect(() => {
         let active = true;
@@ -93,6 +182,8 @@
     });
 
     onMount(() => {
+        gsap.registerPlugin(ScrollTrigger);
+
         window.onunhandledrejection = (e) => {
             console.error("Unhandled rejection:", e.reason);
             toast.error("An unexpected error occurred");
@@ -129,11 +220,11 @@
         }
     });
 
-    function startResize(direction: ResizeDirection, e: MouseEvent) {
-        e.preventDefault();
-        e.stopPropagation();
-        getCurrentWindow().startResizeDragging(direction);
-    }
+    afterNavigate(() => {
+        if (scrollContainer) {
+            lenis.scrollTo(0, { immediate: true });
+        }
+    });
 </script>
 
 <Sidebar />
@@ -159,13 +250,32 @@
         : 'rounded-3xl'}"
 >
     <div
-        class="h-full overflow-y-auto {isMaximized ? 'mr-1' : 'mb-1.5 mr-1.5'}"
+        bind:this={scrollContainer}
+        class="main-scroller h-full overflow-y-auto {isMaximized
+            ? 'mr-1'
+            : 'mb-1.5 mr-1.5'}"
     >
-        <div class="pt-18 pl-30 {player.currentTrack ? 'pb-32' : ''}">
+        <div
+            use:setupSmoothScroll
+            class="pt-18 pl-30 {player.currentTrack ? 'pb-32' : ''}"
+        >
             {@render children()}
         </div>
     </div>
 </div>
+
+{#if showFAB}
+    <div
+        class="fixed {player.currentTrack
+            ? 'bottom-30'
+            : 'bottom-5'} right-6 z-50"
+        transition:slide
+    >
+        <Button variant="outline" onclick={scrollToTop} size="icon-xl">
+            <MoveUp />
+        </Button>
+    </div>
+{/if}
 
 {#if !isMaximized}
     <div

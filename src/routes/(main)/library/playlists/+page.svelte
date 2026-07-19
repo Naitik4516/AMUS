@@ -6,7 +6,6 @@
     import { Input } from "$components/ui/input/index.js";
     import { store } from "$lib/stores.svelte";
 
-
     let showCreateModal = $state(false);
     let newPlaylistName = $state("");
 
@@ -35,12 +34,10 @@
         </Button>
     </div>
 
-    <div
-        class="flex flex-wrap w-full"
-    >
+    <div class="flex flex-wrap w-full">
         {#each store.playlists as playlist}
             <div class="mx-5 my-4">
-            <PlaylistCard data={playlist} />
+                <PlaylistCard data={playlist} />
             </div>
         {/each}
     </div>
