@@ -3,10 +3,7 @@
     import { store } from "$lib/stores.svelte";
     import type { Track, Playlist } from "$lib/types";
 
-    let {
-        playlist,
-        playlistTracks,
-    }: { playlist: Playlist; playlistTracks?: Track[] } = $props();
+    let { playlist, playlistTracks, ...props } = $props();
 
     let tracks = $derived(
         playlistTracks ?? store.tracksByPlaylist(playlist.id),
@@ -44,6 +41,7 @@
             src={store.getImageSrc(coverArts)}
             alt={playlist.name}
             class="w-full h-full object-cover"
+            {...props}
         />
     {:else if Array.isArray(coverArts)}
         <div class="grid grid-cols-2 grid-rows-2 w-full h-full">
@@ -52,6 +50,7 @@
                     src={store.getImageSrc(cover)}
                     alt={playlist.name}
                     class="w-full h-full object-cover"
+                    {...props}
                 />
             {/each}
         </div>

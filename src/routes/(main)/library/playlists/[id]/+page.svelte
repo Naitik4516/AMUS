@@ -14,6 +14,8 @@
     import type { Playlist } from "$lib/types";
     import PlaylistCoverArt from "$components/ui/PlaylistCoverArt.svelte";
     import EditPlaylistDialog from "$components/ui/Dialog/EditPlaylistDialog.svelte";
+    import { getPalette, getSwatches } from "colorthief";
+    import type { Attachment } from "svelte/attachments";
 
     let playlistId = $derived(Number(page.params.id));
     let playlist: Playlist = $derived(
@@ -33,6 +35,12 @@
     let showAddMore = $state(false);
     let fuse: Fuse<Track>;
     let editOpen = $state(false);
+
+    let colorPalette = $state<string[]>([
+        "oklch(0.2 0.02 240 / 0.55)",
+        "oklch(0.25 0.02 240 / 0.55)",
+        "oklch(0.18 0.02 240 / 0.55)",
+    ]);
 
     let tracks = $derived(
         playlistId === -1 ? store.tracks : store.tracksByPlaylist(playlistId),
@@ -79,26 +87,65 @@
         }
     });
 
+    const CoverImage: Attachment = (e) => {
+        e.addEventListener("load", async () => {
+            try {
+                const palette = await getSwatches(
+                    e as unknown as HTMLImageElement,
+                );
+
+                const vibrant = palette.Vibrant?.color.oklch();
+                const muted = palette.Muted?.color.oklch();
+                const darkVibrant = palette.DarkVibrant?.color.oklch();
+
+                colorPalette = [
+                    vibrant
+                        ? `oklch(${vibrant.l} ${vibrant.c} ${vibrant.h} / 0.55)`
+                        : "oklch(0.2 0.02 240 / 0.55)",
+                    muted
+                        ? `oklch(${muted.l} ${muted.c} ${muted.h} / 0.55)`
+                        : "oklch(0.25 0.02 240 / 0.55)",
+                    darkVibrant
+                        ? `oklch(${darkVibrant.l} ${darkVibrant.c} ${darkVibrant.h} / 0.55)`
+                        : "oklch(0.18 0.02 240 / 0.55)",
+                ];
+            } catch (err) {
+                console.error("Failed to extract ambient colors:", err);
+            }
+        });
+    };
+
+    $inspect("Color Palette", colorPalette);
 </script>
 
 <div
-    class="fixed inset-0 h-screen w-screen blur-[180px] brightness-90 px-30 py-10"
->
-    <PlaylistCoverArt {playlist} playlistTracks={tracks} />
-</div>
+    class="fixed w-60 h-60 blur-[180px] -bottom-20 left-1/4 rounded-full"
+    style:background={colorPalette[1]}
+></div>
+
+<div
+    class="fixed w-[90vw] h-80 top-30 px-100 pt-50 right-20  blur-[150px]"
+    style:background={colorPalette[2]}
+></div>
+
 
 <div class="flex flex-col p-5 z-1 isolate">
     <div class="flex gap-4 mb-4">
         <button
             class="w-42 lg:w-58 h-42 lg:h-58 rounded-2xl shadow-xl shadow-black/40 overflow-clip"
-            onclick={() => editOpen = true}
+            onclick={() => (editOpen = true)}
         >
-            <PlaylistCoverArt {playlist} playlistTracks={tracks} />
+            <PlaylistCoverArt
+                {playlist}
+                playlistTracks={tracks}
+                crossorigin="anonymous"
+                {@attach CoverImage}
+            />
         </button>
         <div class="flex flex-col justify-end ml-4 py-1">
             <h1
                 class="text-3xl md:text-5xl lg:text-7xl xl:text-8xl drop-shadow-lg font-black font-switzer line-clamp-2"
-                onclick={() => editOpen = true}
+                onclick={() => (editOpen = true)}
             >
                 {playlist.name}
             </h1>
@@ -207,7 +254,7 @@
 </div>
 <EditPlaylistDialog
     bind:open={editOpen}
-    playlistId={playlistId}
+    {playlistId}
     name={playlist.name}
     coverArt={playlist.cover_art}
 />
