@@ -114,7 +114,7 @@ jobs:
         uses: KSXGitHub/github-actions-deploy-aur@v3
         with:
           pkgname: amus
-          pkgbuild: ./aur/PKGBUILD
+          pkgbuild: ./.github/aur/PKGBUILD
           commit_username: ${{ github.actor }}
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
