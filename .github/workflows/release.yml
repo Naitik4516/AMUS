@@ -88,34 +88,3 @@ jobs:
             See the release notes for details.
           releaseDraft: true
           args: ${{ matrix.target != '' && format('--target {0}', matrix.target) || '' }}
-
-  aur-publish:
-    name: Publish AUR
-    needs: publish-tauri
-    runs-on: ubuntu-latest
-    container:
-      image: archlinux:latest
-  
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-  
-    steps:
-      - name: Install Arch tooling
-        run: |
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm git openssh base-devel pacman-contrib
-  
-      - name: Checkout release tag
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ env.RELEASE_TAG }}
-  
-      - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v3
-        with:
-          pkgname: amus
-          pkgbuild: ./.github/aur/PKGBUILD
-          commit_username: ${{ github.actor }}
-          commit_email: ${{ secrets.AUR_EMAIL }}
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          updpkgsums: true
