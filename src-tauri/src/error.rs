@@ -54,7 +54,10 @@ mod tests {
 
     #[test]
     fn test_error_display_io() {
-        let err = Error::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"));
+        let err = Error::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "file not found",
+        ));
         assert!(err.to_string().contains("IO error"));
         assert!(err.to_string().contains("file not found"));
     }

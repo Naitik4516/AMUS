@@ -4,7 +4,7 @@ use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct QueueViewPayload {
-    pub context_source_type: String, 
+    pub context_source_type: String,
     pub context_label: Option<String>,
     pub upcoming_context: Vec<Track>,
 }
@@ -37,7 +37,7 @@ pub enum PlayerEvent {
     VolumeChanged {
         volume: f32,
     },
-    PlaybackEnded, 
+    PlaybackEnded,
     Error {
         message: String,
         track_id: Option<i64>,

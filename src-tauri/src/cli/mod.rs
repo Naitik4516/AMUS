@@ -15,8 +15,8 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use args::{
-    parse_search_query, parse_signed_number, search_kind_from_scope, Cli, Commands, LibraryCmd,
-    PlaylistCmd, QueueCmd,
+    Cli, Commands, LibraryCmd, PlaylistCmd, QueueCmd, parse_search_query, parse_signed_number,
+    search_kind_from_scope,
 };
 use protocol::{CliCommand, SearchKind};
 
@@ -170,16 +170,11 @@ fn command_to_protocol(command: Commands, cwd: &std::path::Path) -> Result<CliCo
             if let Some(q) = query {
                 let kind = search_kind_from_scope(&scope_or_query)
                     .ok_or_else(|| format!("unknown search scope: {scope_or_query}"))?;
-                CliCommand::Search {
-                    query: q,
-                    kind,
-                }
+                CliCommand::Search { query: q, kind }
             } else {
                 let (q, kind) = parse_search_query(&scope_or_query);
 
-                let kind = if kind == SearchKind::Track
-                    && !scope_or_query.contains(':')
-                {
+                let kind = if kind == SearchKind::Track && !scope_or_query.contains(':') {
                     SearchKind::All
                 } else {
                     kind
@@ -265,5 +260,3 @@ fn attach_console() {
 
 #[cfg(not(windows))]
 fn attach_console() {}
-
-

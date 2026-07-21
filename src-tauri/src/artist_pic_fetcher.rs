@@ -1,15 +1,15 @@
 use crate::db;
 use crate::scanner::ScanProgress;
 use futures::stream::{self, StreamExt};
+use primp::{Client, Impersonate};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
-use primp::{Client, Impersonate};
 use scraper::{Html, Selector};
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
@@ -76,22 +76,23 @@ async fn process_artist_image(
     let artist = artist.to_string();
     let images_dir = images_dir.to_path_buf();
 
-    let result = tokio::task::spawn_blocking(move || -> Result<String, Box<dyn Error + Send + Sync>> {
-        let img = image::load_from_memory(&image_bytes)?;
+    let result =
+        tokio::task::spawn_blocking(move || -> Result<String, Box<dyn Error + Send + Sync>> {
+            let img = image::load_from_memory(&image_bytes)?;
 
-        let encoder = webp::Encoder::from_image(&img)
-            .map_err(|e| format!("Failed to create WebP encoder: {e}"))?;
-        let webp_data = encoder.encode(80.0).to_vec();
+            let encoder = webp::Encoder::from_image(&img)
+                .map_err(|e| format!("Failed to create WebP encoder: {e}"))?;
+            let webp_data = encoder.encode(80.0).to_vec();
 
-        let filename = format!("{}.webp", sanitize_filename(&artist));
-        let output_path = images_dir.join(&filename);
-        std::fs::write(&output_path, &webp_data)?;
+            let filename = format!("{}.webp", sanitize_filename(&artist));
+            let output_path = images_dir.join(&filename);
+            std::fs::write(&output_path, &webp_data)?;
 
-        println!("✅ Successfully saved: {} -> {:?}", artist, output_path);
-        Ok(filename)
-    })
-    .await
-    .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)??;
+            println!("✅ Successfully saved: {} -> {:?}", artist, output_path);
+            Ok(filename)
+        })
+        .await
+        .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)??;
 
     Ok(result)
 }
@@ -105,9 +106,7 @@ pub async fn fetch_artist_images(
     let images_dir = app_dir.join("artists");
     tokio::fs::create_dir_all(&images_dir).await?;
 
-    let client = Client::builder()
-            .impersonate(Impersonate::Random)
-            .build()?;
+    let client = Client::builder().impersonate(Impersonate::Random).build()?;
 
     let max_concurrent_downloads = 15;
     let total = artists.len();

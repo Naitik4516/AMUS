@@ -17,7 +17,6 @@ use crate::player::source::PlaybackSource;
 use crate::scanner;
 use crate::sync::SyncManager;
 
-
 pub fn play_paths(app: &AppHandle, paths: &[String]) -> Result<(), String> {
     let tracks = resolve_paths_to_tracks(app, paths, true)?;
     if tracks.is_empty() {
@@ -164,14 +163,13 @@ fn dispatch(app: &AppHandle, cmd: CliCommand) -> Result<CliData, String> {
             let conn = pool.get().map_err(|e| e.to_string())?;
             let pl = db::create_playlist(&conn, &name).map_err(|e| e.to_string())?;
             let _ = app.emit("library-updated", ());
-            Ok(msg(format!("Created playlist \"{}\" (id {})", pl.name, pl.id)))
+            Ok(msg(format!(
+                "Created playlist \"{}\" (id {})",
+                pl.name, pl.id
+            )))
         }
-        CliCommand::PlaylistAdd { playlist, path } => {
-            playlist_add(app, &playlist, &path)
-        }
-        CliCommand::PlaylistRemove { playlist, path } => {
-            playlist_remove(app, &playlist, &path)
-        }
+        CliCommand::PlaylistAdd { playlist, path } => playlist_add(app, &playlist, &path),
+        CliCommand::PlaylistRemove { playlist, path } => playlist_remove(app, &playlist, &path),
         CliCommand::PlaylistPlay { playlist } => playlist_play(app, &playlist),
         CliCommand::PlaylistDelete { playlist } => {
             let pool = pool(app)?;
@@ -272,9 +270,7 @@ fn send_player(app: &AppHandle, cmd: PlayerCommand) -> Result<(), String> {
         .map_err(|e| format!("player: {e}"))
 }
 
-fn get_state(
-    app: &AppHandle,
-) -> Result<crate::player::actor::PlayerStateSnapshot, String> {
+fn get_state(app: &AppHandle) -> Result<crate::player::actor::PlayerStateSnapshot, String> {
     let (tx, rx) = oneshot::channel();
     send_player(app, PlayerCommand::GetState(tx))?;
     // Block with timeout via recv on blocking context (we're on a worker thread)
@@ -357,10 +353,7 @@ fn resolve_paths_to_tracks(
 ) -> Result<Vec<Track>, String> {
     let pool = pool(app)?;
     let conn = pool.get().map_err(|e| e.to_string())?;
-    let app_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?;
+    let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
 
     let mut tracks = Vec::new();
     for p in paths {
@@ -410,13 +403,8 @@ fn resolve_search_to_context(
                 .into_iter()
                 .next()
                 .ok_or_else(|| format!("no artist matching \"{query}\""))?;
-            let tracks =
-                db::get_tracks_by_artist(&conn, a.id).map_err(|e| e.to_string())?;
-            Ok((
-                tracks,
-                PlaybackSource::Artist(a.id),
-                a.name,
-            ))
+            let tracks = db::get_tracks_by_artist(&conn, a.id).map_err(|e| e.to_string())?;
+            Ok((tracks, PlaybackSource::Artist(a.id), a.name))
         }
         SearchKind::Album => {
             let albums = db::search_albums(&conn, query, 1).map_err(|e| e.to_string())?;
@@ -493,9 +481,8 @@ fn resolve_playlist(
             return Ok(p);
         }
     }
-    db::get_playlist_by_name(conn, id_or_name).map_err(|_| {
-        format!("playlist not found: {id_or_name}")
-    })
+    db::get_playlist_by_name(conn, id_or_name)
+        .map_err(|_| format!("playlist not found: {id_or_name}"))
 }
 
 fn playlist_add(app: &AppHandle, playlist: &str, path: &str) -> Result<CliData, String> {
@@ -536,8 +523,7 @@ fn playlist_play(app: &AppHandle, playlist: &str) -> Result<CliData, String> {
     let pool = pool(app)?;
     let conn = pool.get().map_err(|e| e.to_string())?;
     let pl = resolve_playlist(&conn, playlist)?;
-    let tracks =
-        db::get_tracks_in_playlist(&conn, pl.id, None).map_err(|e| e.to_string())?;
+    let tracks = db::get_tracks_in_playlist(&conn, pl.id, None).map_err(|e| e.to_string())?;
     if tracks.is_empty() {
         return Err(format!("playlist \"{}\" is empty", pl.name));
     }
@@ -558,8 +544,7 @@ fn show_playlist(app: &AppHandle, name: &str) -> Result<CliData, String> {
     let pool = pool(app)?;
     let conn = pool.get().map_err(|e| e.to_string())?;
     let pl = resolve_playlist(&conn, name)?;
-    let tracks =
-        db::get_tracks_in_playlist(&conn, pl.id, None).map_err(|e| e.to_string())?;
+    let tracks = db::get_tracks_in_playlist(&conn, pl.id, None).map_err(|e| e.to_string())?;
     Ok(CliData::TrackList {
         label: format!("Playlist: {} (id {})", pl.name, pl.id),
         tracks: tracks.iter().map(track_line).collect(),

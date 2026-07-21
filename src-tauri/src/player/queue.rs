@@ -32,12 +32,12 @@ pub enum PreviousOutcome {
 pub struct PlaybackQueue {
     context: Vec<Track>,
     context_source: PlaybackSource,
-    context_position: Option<usize>, 
+    context_position: Option<usize>,
     context_label: Option<String>,
 
     shuffle_enabled: bool,
     shuffle_order: Option<Vec<usize>>,
-    shuffle_cursor: usize,            
+    shuffle_cursor: usize,
 
     user_queue: VecDeque<QueueItem>,
 
@@ -258,7 +258,6 @@ impl PlaybackQueue {
         }
     }
 
-
     pub fn advance_next(&mut self) -> NextOutcome {
         if let Some((track, source)) = self.current.take() {
             self.history.push_back(HistoryEntry { track, source });
@@ -354,12 +353,13 @@ impl PlaybackQueue {
         if elapsed_sec > RESTART_THRESHOLD_SEC {
             return PreviousOutcome::RestartCurrent;
         }
-    
+
         if self.shuffle_enabled {
             return match self.history.pop_back() {
                 Some(entry) => {
                     if entry.source == self.context_source {
-                        if let Some(idx) = self.context.iter().position(|t| t.id == entry.track.id) {
+                        if let Some(idx) = self.context.iter().position(|t| t.id == entry.track.id)
+                        {
                             self.context_position = Some(idx);
                             if let Some(order) = &self.shuffle_order {
                                 if let Some(cursor) = order.iter().position(|&i| i == idx) {
@@ -374,13 +374,13 @@ impl PlaybackQueue {
                 None => PreviousOutcome::RestartCurrent,
             };
         }
-    
+
         let currently_from_context = self
             .current
             .as_ref()
             .map(|(_, src)| *src == self.context_source)
             .unwrap_or(false);
-    
+
         if currently_from_context {
             if let Some(pos) = self.context_position {
                 if pos > 0 {
@@ -392,7 +392,7 @@ impl PlaybackQueue {
                 }
             }
         }
-    
+
         PreviousOutcome::RestartCurrent
     }
 }
@@ -602,19 +602,29 @@ mod tests {
     #[test]
     fn test_peek_preview_user_queue_first() {
         let mut q = PlaybackQueue::new();
-        q.load_context(vec![make_track(1), make_track(2)], PlaybackSource::Album(1), 0, None);
+        q.load_context(
+            vec![make_track(1), make_track(2)],
+            PlaybackSource::Album(1),
+            0,
+            None,
+        );
         q.enqueue_next(100, make_track(99));
 
         let preview = q.peek_preview(2);
         assert_eq!(preview.len(), 2);
         assert_eq!(preview[0].id, 99); // user queue first
-        assert_eq!(preview[1].id, 2);  // then upcoming context (skips current track at index 0)
+        assert_eq!(preview[1].id, 2); // then upcoming context (skips current track at index 0)
     }
 
     #[test]
     fn test_set_shuffle_enables_shuffle_order() {
         let mut q = PlaybackQueue::new();
-        q.load_context(vec![make_track(1), make_track(2), make_track(3)], PlaybackSource::Album(1), 0, None);
+        q.load_context(
+            vec![make_track(1), make_track(2), make_track(3)],
+            PlaybackSource::Album(1),
+            0,
+            None,
+        );
         assert!(!q.shuffle_enabled());
 
         q.set_shuffle(true);
@@ -624,7 +634,12 @@ mod tests {
     #[test]
     fn test_set_shuffle_disabled_clears_shuffle_order() {
         let mut q = PlaybackQueue::new();
-        q.load_context(vec![make_track(1), make_track(2)], PlaybackSource::Album(1), 0, None);
+        q.load_context(
+            vec![make_track(1), make_track(2)],
+            PlaybackSource::Album(1),
+            0,
+            None,
+        );
         q.set_shuffle(true);
         q.set_shuffle(false);
         assert!(!q.shuffle_enabled());

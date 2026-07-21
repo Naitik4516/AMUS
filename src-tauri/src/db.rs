@@ -2638,7 +2638,6 @@ mod tests {
         assert_eq!(results[0].title, "Test Song");
     }
 
-
     #[test]
     fn test_get_track_path_by_id() {
         let conn = setup_memory_db();
@@ -2646,7 +2645,6 @@ mod tests {
         let path = get_track_path_by_id(&conn, track_id).unwrap();
         assert_eq!(path, "/music/test.mp3");
     }
-
 
     #[test]
     fn test_remove_source_dir() {

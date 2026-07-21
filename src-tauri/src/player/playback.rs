@@ -21,7 +21,6 @@ pub fn record_playback(
     Ok(())
 }
 
-
 pub fn queue_insert_front(conn: &Conn, track_id: i64) -> rusqlite::Result<i64> {
     let min_pos: Option<f64> = conn
         .query_row("SELECT MIN(position) FROM user_queue", [], |r| r.get(0))
@@ -48,15 +47,12 @@ pub fn queue_insert_back(conn: &Conn, track_id: i64) -> rusqlite::Result<i64> {
     Ok(conn.last_insert_rowid())
 }
 
-pub fn queue_insert_back_many(
-    conn: &mut Conn,
-    tracks: &[Track],
-) -> rusqlite::Result<Vec<i64>> {
+pub fn queue_insert_back_many(conn: &mut Conn, tracks: &[Track]) -> rusqlite::Result<Vec<i64>> {
     let max_pos: Option<f64> = conn
         .query_row("SELECT MAX(position) FROM user_queue", [], |r| r.get(0))
         .optional()?
         .flatten();
-    
+
     // Start at max_pos + 1.0 so the first new row does not collide with the  existing last row and produce a non-deterministic ORDER BY result.
     let mut start = max_pos.map(|p| p + 1.0).unwrap_or(1.0);
 

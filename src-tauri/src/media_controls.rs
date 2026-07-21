@@ -3,14 +3,15 @@
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
-use souvlaki::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig};
+use souvlaki::{
+    MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig,
+};
 use tauri::{AppHandle, Listener, Manager};
 
 use crate::commands::PlayerHandle;
 use crate::player::actor::PlayerCommand;
 
-static INSTANCE: LazyLock<Mutex<Option<MediaControlsManager>>> =
-    LazyLock::new(|| Mutex::new(None));
+static INSTANCE: LazyLock<Mutex<Option<MediaControlsManager>>> = LazyLock::new(|| Mutex::new(None));
 
 struct MediaControlsManager {
     controls: MediaControls,
@@ -125,7 +126,10 @@ fn update_controls(payload: &serde_json::Value, _app: &AppHandle) {
                     .and_then(|arr| arr.first())
                     .and_then(|a| a.get("name"))
                     .and_then(|v| v.as_str());
-                let album = track.get("album").and_then(|a| a.get("name")).and_then(|v| v.as_str());
+                let album = track
+                    .get("album")
+                    .and_then(|a| a.get("name"))
+                    .and_then(|v| v.as_str());
                 let duration = data
                     .and_then(|d| d.get("duration_sec"))
                     .and_then(|v| v.as_u64());
@@ -181,9 +185,7 @@ fn update_controls(payload: &serde_json::Value, _app: &AppHandle) {
             mgr.controls.set_playback(playback).ok();
         }
         Some("PlaybackEnded") => {
-            mgr.controls
-                .set_playback(MediaPlayback::Stopped)
-                .ok();
+            mgr.controls.set_playback(MediaPlayback::Stopped).ok();
         }
         _ => {}
     }

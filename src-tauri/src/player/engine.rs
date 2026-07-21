@@ -34,7 +34,7 @@ impl AudioEngine {
     }
 
     pub fn load(&self, path: &str) -> Result<(), EngineError> {
-        let file = File::open(path)?;             
+        let file = File::open(path)?;
         let source = Decoder::try_from(file)?;
         let player = Player::connect_new(&self.handle.mixer());
         player.append(source);

@@ -51,15 +51,42 @@ mod tests {
 
     #[test]
     fn test_playback_source_from_db() {
-        assert_eq!(PlaybackSource::from_db("ALBUM", Some(1)), PlaybackSource::Album(1));
-        assert_eq!(PlaybackSource::from_db("ALBUM", None), PlaybackSource::Album(0));
-        assert_eq!(PlaybackSource::from_db("PLAYLIST", Some(5)), PlaybackSource::Playlist(5));
-        assert_eq!(PlaybackSource::from_db("ARTIST", Some(3)), PlaybackSource::Artist(3));
-        assert_eq!(PlaybackSource::from_db("FAVORITES", None), PlaybackSource::Favorites);
-        assert_eq!(PlaybackSource::from_db("DIRECT", None), PlaybackSource::Direct);
-        assert_eq!(PlaybackSource::from_db("QUEUE", None), PlaybackSource::Queue);
-        assert_eq!(PlaybackSource::from_db("SEARCH", None), PlaybackSource::Other);
-        assert_eq!(PlaybackSource::from_db("UNKNOWN", None), PlaybackSource::Other);
+        assert_eq!(
+            PlaybackSource::from_db("ALBUM", Some(1)),
+            PlaybackSource::Album(1)
+        );
+        assert_eq!(
+            PlaybackSource::from_db("ALBUM", None),
+            PlaybackSource::Album(0)
+        );
+        assert_eq!(
+            PlaybackSource::from_db("PLAYLIST", Some(5)),
+            PlaybackSource::Playlist(5)
+        );
+        assert_eq!(
+            PlaybackSource::from_db("ARTIST", Some(3)),
+            PlaybackSource::Artist(3)
+        );
+        assert_eq!(
+            PlaybackSource::from_db("FAVORITES", None),
+            PlaybackSource::Favorites
+        );
+        assert_eq!(
+            PlaybackSource::from_db("DIRECT", None),
+            PlaybackSource::Direct
+        );
+        assert_eq!(
+            PlaybackSource::from_db("QUEUE", None),
+            PlaybackSource::Queue
+        );
+        assert_eq!(
+            PlaybackSource::from_db("SEARCH", None),
+            PlaybackSource::Other
+        );
+        assert_eq!(
+            PlaybackSource::from_db("UNKNOWN", None),
+            PlaybackSource::Other
+        );
     }
 }
 
@@ -90,7 +117,9 @@ impl PlaybackSource {
 
     pub fn source_id(&self) -> Option<i64> {
         match self {
-            PlaybackSource::Album(id) | PlaybackSource::Playlist(id) | PlaybackSource::Artist(id) => Some(*id),
+            PlaybackSource::Album(id)
+            | PlaybackSource::Playlist(id)
+            | PlaybackSource::Artist(id) => Some(*id),
             _ => None,
         }
     }

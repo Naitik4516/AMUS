@@ -7,8 +7,8 @@ use std::thread;
 use tauri::{AppHandle, Listener};
 
 use super::dispatch;
-use super::paths::{socket_path};
-use super::protocol::{read_frame, write_frame, CliRequest};
+use super::paths::socket_path;
+use super::protocol::{CliRequest, read_frame, write_frame};
 
 static SERVER_RUNNING: AtomicBool = AtomicBool::new(false);
 
@@ -148,5 +148,3 @@ pub fn cleanup() {
     let _ = std::fs::remove_file(path);
     SERVER_RUNNING.store(false, Ordering::SeqCst);
 }
-
-

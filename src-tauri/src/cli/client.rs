@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::paths::{app_data_dir, socket_path};
-use super::protocol::{read_frame, write_frame, CliRequest, CliResponse};
+use super::protocol::{CliRequest, CliResponse, read_frame, write_frame};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
@@ -51,7 +51,10 @@ fn try_connect() -> Result<Stream, String> {
 fn try_connect() -> Result<Stream, String> {
     let port_file = socket_path();
     let port_str = std::fs::read_to_string(&port_file).map_err(|e| e.to_string())?;
-    let port: u16 = port_str.trim().parse().map_err(|e| format!("bad port file: {e}"))?;
+    let port: u16 = port_str
+        .trim()
+        .parse()
+        .map_err(|e| format!("bad port file: {e}"))?;
     Stream::connect(("127.0.0.1", port)).map_err(|e| e.to_string())
 }
 
@@ -80,7 +83,8 @@ fn start_server() -> Result<(), String> {
         }
     }
 
-    cmd.spawn().map_err(|e| format!("failed to start AMUS: {e}"))?;
+    cmd.spawn()
+        .map_err(|e| format!("failed to start AMUS: {e}"))?;
     Ok(())
 }
 
@@ -90,10 +94,10 @@ fn libc_setsid() {
     // Best-effort — if setsid fails, spawn still works.
     unsafe {
         // libc is a transitive dep of many crates; use raw if not linked.
-    #[allow(non_camel_case_types)]
-    unsafe extern "C" {
-        fn setsid() -> i32;
-    }
+        #[allow(non_camel_case_types)]
+        unsafe extern "C" {
+            fn setsid() -> i32;
+        }
         let _ = setsid();
     }
 }

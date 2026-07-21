@@ -219,9 +219,7 @@ pub struct SearchNamedLine {
 }
 
 /// Read a length-prefixed JSON frame (u32 LE length + payload).
-pub fn read_frame<R: std::io::Read>(
-    reader: &mut R,
-) -> std::io::Result<Vec<u8>> {
+pub fn read_frame<R: std::io::Read>(reader: &mut R) -> std::io::Result<Vec<u8>> {
     let mut len_buf = [0u8; 4];
     reader.read_exact(&mut len_buf)?;
     let len = u32::from_le_bytes(len_buf) as usize;

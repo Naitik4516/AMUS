@@ -21,7 +21,7 @@ use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
-use tauri_plugin_positioner::{Position, WindowExt};
+
 
 pub(crate) struct MiniPlayerPinned(AtomicBool);
 
@@ -59,10 +59,10 @@ fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
     let handle = app.state::<commands::PlayerHandle>();
     match event.id().as_ref() {
         "play_pause" => {
-             let _ = commands::send(&handle, PlayerCommand::PlayPause);
+            let _ = commands::send(&handle, PlayerCommand::PlayPause);
         }
         "next" => {
-             let _ = commands::send(&handle, PlayerCommand::Next);
+            let _ = commands::send(&handle, PlayerCommand::Next);
         }
         "previous" => {
             let _ = commands::send(&handle, PlayerCommand::Previous);
@@ -97,7 +97,6 @@ fn toggle_miniplayer(app: &tauri::AppHandle) {
         }
     } else if let Ok(window) = create_miniplayer(app) {
         let _ = window.show();
-        let _ = window.move_window(Position::TrayCenter);
         let _ = window.set_focus();
     }
 }
@@ -140,16 +139,15 @@ fn create_miniplayer(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWind
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::new().build());
+
     #[cfg(debug_assertions)]
-    let builder = tauri::Builder::default().plugin(tauri_plugin_devtools::init());
-    #[cfg(not(debug_assertions))]
-    let builder = tauri::Builder::default();
+    let builder = builder.plugin(tauri_plugin_devtools::init());
 
     let app = builder
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let w = app
-                .get_webview_window("main")
-                .expect("no main window");
+            let w = app.get_webview_window("main").expect("no main window");
             let _ = w.show();
             let _ = w.set_focus();
         }))
@@ -199,11 +197,12 @@ pub fn run() {
                         PRAGMA busy_timeout = 5000;",
                     )
                 });
-                let pool = Pool::new(manager)
-                    .map_err(|e| format!("failed to create db pool: {e}"))?;
+                let pool =
+                    Pool::new(manager).map_err(|e| format!("failed to create db pool: {e}"))?;
 
                 {
-                    let mut conn = pool.get()
+                    let mut conn = pool
+                        .get()
                         .map_err(|e| format!("failed to get db connection: {e}"))?;
                     db::init_db(&mut conn)
                         .map_err(|e| format!("failed to initialize database: {e}"))?;
@@ -371,7 +370,9 @@ pub fn run() {
                 .iter()
                 .filter_map(|u| {
                     if u.scheme() == "file" {
-                        u.to_file_path().ok().map(|p| p.to_string_lossy().into_owned())
+                        u.to_file_path()
+                            .ok()
+                            .map(|p| p.to_string_lossy().into_owned())
                     } else {
                         None
                     }

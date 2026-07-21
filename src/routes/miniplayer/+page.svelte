@@ -38,7 +38,8 @@
 
 {#if player.currentTrack}
     <div
-        class="relative bg-zinc-900 h-screen w-screen rounded-4xl overflow-hidden"
+        class="relative bg-zinc-900 h-screen w-screen rounded-4xl overflow-hidden cursor-grab select-none"
+        data-tauri-drag-region
     >
         <img
             src={store.getImageSrc(player.currentTrack?.cover_art)}
@@ -67,7 +68,7 @@
                 <img
                     src={store.getImageSrc(player.currentTrack?.cover_art)}
                     alt="Cover Art"
-                    class="oject-cover rounded-3xl shadow-lg shadow-zinc-800/60 w-full h-full"
+                    class="oject-cover rounded-3xl shadow-lg shadow-zinc-800/60 w-full h-full select-none"
                 />
             </div>
             <div class="col-span-3 flex flex-col gap-4 items-center">
@@ -80,7 +81,9 @@
                         </div>
                     </Marquee>
                     <Marquee>
-                        <span class="text-zinc-300 font-medium -ml-0.5" id="text"
+                        <span
+                            class="text-zinc-300 font-medium -ml-0.5"
+                            id="text"
                             >{player.currentTrack?.artists?.[0]?.name ??
                                 ""}</span
                         >
@@ -125,6 +128,7 @@
                                 );
                             }
                         }}
+                        data-tauri-no-drag
                     />
                     <span class="text-[10px] font-medium text-zinc-300 w-10">
                         {formatDurationColon(

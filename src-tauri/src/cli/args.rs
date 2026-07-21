@@ -7,7 +7,7 @@ use super::protocol::SearchKind;
 #[command(
     name = "amus",
     version,
-    about = "AMUS — control the AMUS music player from the terminal",
+    about = "AMUS — control the AMUS music player from the terminal"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -59,7 +59,7 @@ pub enum Commands {
     Playlist {
         #[command(subcommand)] // Show playlist by name/id when no subcommand
         action: Option<PlaylistCmd>,
-        
+
         #[arg(trailing_var_arg = true)]
         name: Vec<String>,
     },
@@ -111,23 +111,11 @@ pub enum LibraryCmd {
 
 #[derive(Debug, Subcommand)]
 pub enum PlaylistCmd {
-    Create {
-        name: String,
-    },
-    Add {
-        playlist: String,
-        path: PathBuf,
-    },
-    Remove {
-        playlist: String,
-        path: PathBuf,
-    },
-    Play {
-        playlist: String,
-    },
-    Delete {
-        playlist: String,
-    },
+    Create { name: String },
+    Add { playlist: String, path: PathBuf },
+    Remove { playlist: String, path: PathBuf },
+    Play { playlist: String },
+    Delete { playlist: String },
 }
 
 fn parse_search_scope(s: &str) -> Result<String, String> {
@@ -142,9 +130,7 @@ pub fn parse_signed_number(s: &str) -> Result<(f64, bool), String> {
     let relative = s.starts_with('+') || s.starts_with('-');
     // For relative, keep the sign as part of the value
     let value: f64 = if s.starts_with('+') {
-        s[1..]
-            .parse()
-            .map_err(|_| format!("invalid number: {s}"))?
+        s[1..].parse().map_err(|_| format!("invalid number: {s}"))?
     } else {
         s.parse().map_err(|_| format!("invalid number: {s}"))?
     };
@@ -161,7 +147,10 @@ pub fn parse_signed_number(s: &str) -> Result<(f64, bool), String> {
 pub fn parse_search_query(raw: &str) -> (String, SearchKind) {
     let raw = raw.trim();
     if let Some(rest) = raw.strip_prefix("artist:") {
-        return (rest.trim().trim_matches('"').to_string(), SearchKind::Artist);
+        return (
+            rest.trim().trim_matches('"').to_string(),
+            SearchKind::Artist,
+        );
     }
     if let Some(rest) = raw.strip_prefix("album:") {
         return (rest.trim().trim_matches('"').to_string(), SearchKind::Album);

@@ -37,14 +37,12 @@ pub struct Track {
     pub playlist_ids: Vec<i64>,
 }
 
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Playlist {
     pub id: i64,
     pub name: String,
     pub cover_art: Option<String>,
 }
-
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct Artist {
@@ -62,7 +60,6 @@ pub struct Album {
     pub album_artist: Option<Vec<Artist>>,
     pub year: Option<u32>,
 }
-
 
 // ---------------------------------------------------------------------------
 // Stats models
