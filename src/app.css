@@ -3,3 +3,9 @@
 @import "./styles/fonts.css";
 @import "tw-animate-css";
 @import "shadcn-svelte/tailwind.css";
+
+img,
+a {
+  -webkit-user-drag: none;
+  user-select: none;
+}

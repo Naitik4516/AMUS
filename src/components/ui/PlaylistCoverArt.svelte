@@ -1,7 +1,6 @@
 <script lang="ts">
     import { ListMusic } from "@lucide/svelte";
     import { store } from "$lib/stores.svelte";
-    import type { Track, Playlist } from "$lib/types";
 
     let { playlist, playlistTracks, ...props } = $props();
 

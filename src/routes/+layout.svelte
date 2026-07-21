@@ -3,7 +3,7 @@
     import { player } from "$lib/player.svelte";
     import { store } from "$lib/stores.svelte";
     import { startup } from "$lib/startup.svelte";
-    import StartupError from "$lib/components/StartupError.svelte";
+    import StartupError from "$components/StartupError.svelte";
 
     onMount(async () => {
         await startup.check();

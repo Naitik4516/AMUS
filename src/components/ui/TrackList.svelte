@@ -44,6 +44,7 @@
         canEdit?: boolean;
         canSort?: boolean;
         canToggleColumns?: boolean;
+        accentColor?: string;
     }
 
     let {
@@ -53,6 +54,7 @@
         canEdit = true,
         canSort = true,
         canToggleColumns = true,
+        accentColor = "#fff",
     }: TrackTableProps = $props();
 
     const COLUMN_META: Record<
@@ -386,7 +388,8 @@
     <div class="relative flex items-center gap-5 px-3 py-4 sm:px-4">
         <button
             type="button"
-            class="flex h-16 w-16 items-center justify-center rounded-full bg-accent text-accent-foreground shadow-lg shadow-accent/20 transition-all hover:scale-105 hover:bg-accent/80 active:scale-95 {focusRing}"
+            class=" flex h-16 w-16 items-center justify-center rounded-full bg-[{accentColor}] text-accent-foreground shadow-lg shadow-accent/20 transition-all hover:scale-105 hover:bg-{accentColor}/80 active:scale-95 {focusRing}"
+            style:background-color={accentColor}
             onclick={handleMainPlay}
             aria-label={isCurrentCollectionPlaying ? "Pause" : "Play"}
         >

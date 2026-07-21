@@ -262,15 +262,15 @@
 />
 
 <div
-    class="w-full h-screen overflow-hidden pt-5 bg-radial from-background to-neutral-950 {isMaximized
+    class="w-full h-screen overflow-hidden bg-radial from-background to-neutral-950 {isMaximized
         ? 'rounded-none'
         : 'rounded-3xl'}"
 >
     <div
         bind:this={scrollContainer}
-        class="main-scroller h-full overflow-y-auto {isMaximized
-            ? 'mr-1'
-            : 'mb-1.5 mr-1.5'}"
+        class="main-scroller h-full overflow-y-auto mr-1 {isMaximized
+            ? ''
+            : 'mb-1.5 '}"
     >
         <div
             use:setupSmoothScroll
@@ -288,7 +288,12 @@
             : 'bottom-5'} right-6 z-50"
         transition:slide
     >
-        <Button variant="outline" onclick={scrollToTop} size="icon-xl">
+        <Button
+            variant="outline"
+            onclick={scrollToTop}
+            size="icon-xl"
+            class="backdrop-blur-md "
+        >
             <MoveUp />
         </Button>
     </div>

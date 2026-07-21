@@ -2,19 +2,13 @@
     import { page } from "$app/state";
     import TrackList from "$components/ui/TrackList.svelte";
     import AlbumRow from "$components/ui/AlbumRow.svelte";
-    import { User } from "@lucide/svelte";
     import { formatDuration } from "$lib/utils";
     import { store } from "$lib/stores.svelte";
     import { onMount } from "svelte";
     import type { Artist } from "$lib/types";
     import { gsap } from "gsap";
     import { ScrollTrigger } from "gsap/ScrollTrigger";
-    import {
-        getSwatchesSync,
-        type HSL,
-        type Color,
-        getColorSync,
-    } from "colorthief";
+    import { getSwatches, type Color } from "colorthief";
     import type { Attachment } from "svelte/attachments";
 
     let artistId = $derived(Number(page.params.id));
@@ -35,6 +29,7 @@
     );
 
     let gColor = $state<Color>();
+    let aColor = $state<Color>();
 
     let bgUrl = $derived(store.getImageSrc(artist.banner_image, "artist"));
 
@@ -63,12 +58,12 @@
     });
 
     const ArtistImage: Attachment = (e) => {
-        e.addEventListener("load", () => {
+        e.addEventListener("load", async () => {
             try {
-                const swatches = getSwatchesSync(
+                const swatches = await getSwatches(
                     e as unknown as HTMLImageElement,
                 );
-                // gColor = swatches.DarkVibrant?.color;
+                aColor = swatches.Vibrant?.color;
                 gColor = swatches.DarkMuted?.color;
             } catch (error) {
                 console.error(
@@ -87,27 +82,29 @@
     class="relative flex flex-col h-full w-full pb-10 overflow-hidden"
 >
     <div
-        class="sticky artist-image z-0 top-0 flex justify-between px-2 mask-b-from-70% mask-r-from-90% mask-t-from-95%"
+        class="sticky artist-image z-0 top-0 flex justify-between px-2 mask-b-from-80% mask-r-from-90% mask-t-from-80%"
     >
         <div class="flex-1 min-w-0"></div>
 
-        <img
-            src={bgUrl}
-            {@attach ArtistImage}
-            alt={artist.name}
-            class="banner h-170 aspect-auto z-1 mask-l-from-70%"
-            crossorigin="anonymous"
-        />
-
         <div
-            class="absolute left-1/3 bottom-0 h-100 w-100 blur-[150px] banner"
-            style:background={gColor?.css()}
-        ></div>
+            class="banner h-170 w-full flex relative"
+            style="background: linear-gradient(to left, {gColor}, transparent);"
+        >
+            <img
+                src={bgUrl}
+                {@attach ArtistImage}
+                alt={artist.name}
+                class="h-full object-cover ml-auto aspect-auto z-1"
+                style="mask-image: linear-gradient(to right, transparent 0%, black 30%);
+                       -webkit-mask-image: linear-gradient(to right, transparent 0%, black 30%);"
+                crossorigin="anonymous"
+            />
+        </div>
     </div>
 
     <div class="flex flex-col gap-2 pb-2 min-w-0 px-8 -mt-90 z-10 pr-5">
         <h1
-            class="text-3xl md:text-5xl lg:text-[6cqw] xl:[7cqw] max-text-[7rem] font-black font-clash bg-linear-to-b from-white from-50% to-gray-400 bg-clip-text text-transparent truncate drop-shadow-lg  py-4.5 -mb-4"
+            class="text-3xl md:text-5xl lg:text-[6cqw] xl:[7cqw] max-text-[7rem] font-black font-clash bg-linear-to-b from-white from-50% to-gray-400 bg-clip-text text-transparent truncate drop-shadow-lg py-4.5 -mb-4"
         >
             {artist.name}
         </h1>
@@ -126,6 +123,7 @@
                     profileImage: bgUrl,
                     bannerImage: bgUrl,
                 }}
+                accentColor={aColor ? aColor.hex() : "#fff"}
                 {tracks}
             />
         </div>
@@ -144,16 +142,3 @@
         </div>
     {/if}
 </div>
-<!-- <div
-    class="fixed w-100 h-100 blur-[180px] -bottom-40 left-30 rounded-full -z-10"
-    style:background="{color1?.hex()}4D"
-></div>
-<div
-    class="absolute w-90 h-90 blur-[150px] bottom-10 right-20 rounded-full"
-    style:background="{color2?.hex()}99"
-></div>
-
-<div
-    class="fixed w-[80vw] h-50 top-30 right-5 blur-[150px]"
-    style:background={dominantColor?.css()}
-></div> -->
