@@ -1,13 +1,11 @@
 use std::path::{Path, PathBuf};
 
-const APP_QUALIFIER: &str = "com";
-const APP_ORG: &str = "amus";
 const APP_NAME: &str = "AMUS";
 const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];
 
 pub fn app_data_dir() -> PathBuf {
     dirs::data_dir()
-        .map(|d| d.join(format!("{}.{}.{}", APP_QUALIFIER, APP_ORG, APP_NAME)))
+        .map(|d| d.join(format!("{}", APP_NAME)))
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
@@ -24,11 +22,7 @@ pub fn socket_path() -> PathBuf {
 
 pub fn absolutize(path: &str, cwd: &Path) -> PathBuf {
     let p = PathBuf::from(path);
-    if p.is_absolute() {
-        p
-    } else {
-        cwd.join(p)
-    }
+    if p.is_absolute() { p } else { cwd.join(p) }
 }
 
 pub fn is_audio_file(path: &Path) -> bool {
