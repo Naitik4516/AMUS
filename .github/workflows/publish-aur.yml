@@ -1,0 +1,46 @@
+name: Publish AUR
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish"
+        required: true
+        type: string
+
+jobs:
+  aur-publish:
+    name: Publish AUR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Set PKGBUILD version from tag
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          if [ "$VERSION" = "$RELEASE_TAG" ]; then
+            echo "Tag must start with 'v' (got: $RELEASE_TAG)"
+            exit 1
+          fi
+
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" .github/aur/PKGBUILD
+          grep '^pkgver=' .github/aur/PKGBUILD
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v3
+        with:
+          pkgname: amus
+          pkgbuild: ./.github/aur/PKGBUILD
+          commit_username: ${{ github.actor }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          updpkgsums: true
