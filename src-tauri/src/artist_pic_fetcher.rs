@@ -82,7 +82,7 @@ async fn process_artist_image(
 
             let encoder = webp::Encoder::from_image(&img)
                 .map_err(|e| format!("Failed to create WebP encoder: {e}"))?;
-            let webp_data = encoder.encode(80.0).to_vec();
+            let webp_data = encoder.encode(90.0).to_vec();
 
             let filename = format!("{}.webp", sanitize_filename(&artist));
             let output_path = images_dir.join(&filename);
