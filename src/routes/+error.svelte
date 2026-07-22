@@ -6,9 +6,9 @@
     let status = $derived($page.status);
 </script>
 
-<div class="flex flex-col items-center justify-center min-h-screen p-8 text-center bg-background">
+<div class="flex flex-col items-center justify-center min-h-screen p-8 text-center bg-red-950">
     <div class="max-w-lg">
-        <h1 class="text-7xl font-bold text-red-400 tracking-tight">{status}</h1>
+        <h1 class="text-9xl font-black text-red-400 tracking-tight">{status}</h1>
         <p class="text-xl mt-4 text-muted-foreground">
             {#if status === 404}
                 Page not found
@@ -26,11 +26,12 @@
             </details>
         {/if}
 
-        <div class="flex gap-4 justify-center mt-8">
-            <Button onclick={() => window.location.reload()}>Try Again</Button>
+        <div class="flex gap-2 justify-center mt-8">
+            <Button onclick={() => window.location.reload()} size="lg" class="font-bold"  >Try Again</Button>
             <Button
                 variant="outline"
                 onclick={() => history.back()}
+                size="lg"
             >
                 Go Back
             </Button>

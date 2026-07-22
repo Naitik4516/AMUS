@@ -4,6 +4,7 @@
     import { store } from "$lib/stores.svelte";
     import { startup } from "$lib/startup.svelte";
     import StartupError from "$components/StartupError.svelte";
+    import "../app.css";
 
     onMount(async () => {
         await startup.check();

@@ -22,14 +22,14 @@
 </script>
 
 <div
-    class="w-full flex items-center gap-4 px-2 py-2 overflow-hidden  {styled
+    class="w-full flex items-center gap-4 px-2 py-2 overflow-hidden {styled
         ? 'hover:bg-white/5 transition-colors'
         : ''}  text-left"
     {...props}
 >
     <button
         class="{coverArtSize} relative rounded-lg bg-neutral-800 flex items-center justify-center overflow-hidden shrink-0"
-        onclick={() => onclick ? onclick() :  player.play([track])}
+        onclick={() => (onclick ? onclick() : player.play([track]))}
     >
         {#if track.cover_art}
             <img
@@ -49,14 +49,12 @@
         {/if}
     </button>
     <div class="flex flex-col min-w-0 flex-1">
-        <a href="/track/{track.id}" class="font-semibold truncate {titleColor}">
+        <a href="/library/track/{track.id}" class="font-semibold truncate {titleColor}">
             {track.title}
         </a>
-        <div
-            class="text-sm text-gray-300 truncate block"
-        >
+        <div class="text-sm text-gray-300 truncate block">
             {#each track.artists as artist, index (artist.id)}
-                <a href="/artist/{artist.id}">
+                <a href="/library/artists/{artist.id}">
                     {artist.name}{#if index < track.artists.length - 1}, {""}
                     {/if}
                 </a>

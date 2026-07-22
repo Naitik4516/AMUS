@@ -16,11 +16,8 @@
     import { store } from "$lib/stores.svelte";
     import { updater } from "$lib/update.svelte";
     import { listen } from "@tauri-apps/api/event";
-    import { getCurrentWindow } from "@tauri-apps/api/window";
     import { onMount } from "svelte";
     import { toast } from "svelte-sonner";
-    import "../../app.css";
-    import "../../styles/main.css";
     import type { LayoutProps } from "./$types";
     import { afterNavigate } from "$app/navigation";
     import { gsap } from "gsap";
@@ -31,16 +28,7 @@
     import Button from "$components/ui/button/button.svelte";
     import { MoveUp } from "@lucide/svelte";
     import { slide } from "svelte/transition";
-
-    type ResizeDirection =
-        | "East"
-        | "North"
-        | "NorthEast"
-        | "NorthWest"
-        | "South"
-        | "SouthEast"
-        | "SouthWest"
-        | "West";
+    import ResizeHandlers from "$components/ResizeHandlers.svelte";
 
     const SCROLL_THRESHOLD = 400;
 
@@ -77,7 +65,7 @@
                 lerp,
                 duration,
                 prevent: (node) => {
-                    return node.classList.contains("vlist");
+                    return node.classList.contains("vlist") || node.classList.contains("virtualizer");
                 },
             });
             lenis = newLenis;
@@ -131,12 +119,6 @@
             }
         }
     };
-
-    function startResize(direction: ResizeDirection, e: MouseEvent) {
-        e.preventDefault();
-        e.stopPropagation();
-        getCurrentWindow().startResizeDragging(direction);
-    }
 
     $effect(() => {
         let active = true;
@@ -300,31 +282,7 @@
 {/if}
 
 {#if !isMaximized}
-    <div
-        role="presentation"
-        class="fixed top-0 left-0 right-0 h-1.5 cursor-s-resize z-999"
-        onmousedown={(e) => startResize("North", e)}
-    ></div>
-    <div
-        role="presentation"
-        class="fixed bottom-0 left-0 right-0 h-1.5 cursor-s-resize z-999"
-        onmousedown={(e) => startResize("South", e)}
-    ></div>
-    <div
-        role="presentation"
-        class="fixed top-0 right-0 bottom-0 w-1.5 cursor-e-resize z-999"
-        onmousedown={(e) => startResize("East", e)}
-    ></div>
-    <div
-        role="presentation"
-        class="fixed top-0 left-0 bottom-0 w-1.5 cursor-w-resize z-999"
-        onmousedown={(e) => startResize("West", e)}
-    ></div>
-    <div
-        role="presentation"
-        class="fixed bottom-0 right-0 w-4 h-4 cursor-se-resize z-999"
-        onmousedown={(e) => startResize("SouthEast", e)}
-    ></div>
+    <ResizeHandlers />
 {/if}
 
 {#if player.currentTrack}

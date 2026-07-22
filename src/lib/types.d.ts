@@ -1,3 +1,5 @@
+export type WithRest<T> = T & Record<string, unknown>;
+
 export interface Artist {
   id: number;
   name: string;

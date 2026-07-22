@@ -1,6 +1,9 @@
 <script>
-    import "../../app.css";
+    import { player } from "$lib/player.svelte";
+
     let { children } = $props();
 </script>
 
-{@render children()}
+{#if player.isReady}
+    {@render children()}
+{/if}

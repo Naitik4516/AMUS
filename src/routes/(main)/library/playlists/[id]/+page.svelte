@@ -139,12 +139,13 @@
             />
         </button>
         <div class="flex flex-col justify-end ml-4 py-1">
-            <h1
-                class="text-3xl md:text-5xl lg:text-7xl xl:text-8xl drop-shadow-lg font-black font-switzer line-clamp-2"
-                onclick={() => (editOpen = true)}
-            >
-                {playlist.name}
-            </h1>
+            <button onclick={() => (editOpen = true)}>
+                <h1
+                    class="text-3xl md:text-5xl lg:text-7xl xl:text-8xl drop-shadow-lg font-black font-switzer line-clamp-2"
+                >
+                    {playlist.name}
+                </h1>
+            </button>
             <div class="flex font-mono text-gray-300 gap-2 items-center">
                 <span class="">
                     {tracks.length} songs

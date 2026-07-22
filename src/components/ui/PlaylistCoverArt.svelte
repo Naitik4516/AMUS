@@ -1,8 +1,9 @@
 <script lang="ts">
     import { ListMusic } from "@lucide/svelte";
     import { store } from "$lib/stores.svelte";
+    import type { Playlist, Track, WithRest } from "$lib/types";
 
-    let { playlist, playlistTracks, ...props } = $props();
+    let { playlist, playlistTracks, ...props }: WithRest<{ playlist: Playlist; playlistTracks?: Track[] }> = $props();
 
     let tracks = $derived(
         playlistTracks ?? store.tracksByPlaylist(playlist.id),

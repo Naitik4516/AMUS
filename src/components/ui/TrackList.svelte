@@ -823,7 +823,6 @@
         albumId={context.id ?? 0}
         name={context.name}
         coverArt={context.coverArt}
-        onClose={() => (showEditDialog = false)}
     />
 {/if}
 
@@ -834,6 +833,5 @@
         name={context.name}
         profileImage={context.profileImage}
         bannerImage={context.bannerImage}
-        onClose={() => (showEditDialog = false)}
     />
 {/if}

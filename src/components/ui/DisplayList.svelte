@@ -1,28 +1,50 @@
 <script lang="ts">
     import { User, Search } from "@lucide/svelte";
+    import type { Album, Artist, Playlist } from "$lib/types";
+    import { Virtualizer } from "virtua/svelte";
+    import Button from "./button/button.svelte";
+    import {  fade, fly } from "svelte/transition";
+    import { MoveUp } from "@lucide/svelte";
 
     interface DisplayListProps {
-        listItems: Array<{ name: string; [key: string]: any }>;
+        listItems: (Album | Artist | Playlist)[];
         title: string;
         Card: any;
     }
 
     let { listItems, title, Card }: DisplayListProps = $props();
+
     let searchQuery = $state("");
+    let showFAB = $state(false);
+    let grid: Element | null = $state(null);
 
     let filteredItems = $derived(
         listItems.filter((a) =>
             a.name.toLowerCase().includes(searchQuery.toLowerCase()),
         ),
     );
+
+    const cellWidth = 280;
+    const cellHeight = 320;
+
+    let gridWidth = $state(500);
+    let cols = $derived(Math.max(1, Math.floor(gridWidth / cellWidth)));
+
+    const data = $derived.by(() => {
+        const result = [];
+        for (let i = 0; i < filteredItems.length; i += cols) {
+            result.push(filteredItems.slice(i, i + cols));
+        }
+        return result;
+    });
 </script>
 
-<div class="p-8 w-full flex flex-col h-full">
-    <div class="flex items-center justify-between mb-8">
-        <h1 class="text-6xl font-black text-white">{title}</h1>
+<div class="px-2 w-full flex flex-col">
+    <div class="flex items-center justify-between py-4 mt-5">
+        <h1 class="text-7xl font-black font-switzer text-white">{title}</h1>
 
         <div
-            class="flex items-center gap-2 bg-secondary/70 rounded-full px-6 py-4 w-50 border-2 border-transparent focus-within:border-border hover-within:w-70 focus-within:w-70 hover:bg-secondary/80 transition-all duration-300"
+            class="flex items-center gap-2 bg-secondary rounded-full px-6 py-5 w-60 ring-gray-600 focus-within:ring-2 focus-within:w-80 transition-all duration-300 mr-14"
         >
             <Search size={18} class="text-gray-400" />
             <input
@@ -52,11 +74,53 @@
         </div>
     {:else}
         <div
-            class="grid auto-cols-auto container grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-6 overflow-y-auto overflow-x-hidden h-full"
+            class="virtualizer mask-y-from-90% pt-8 scroll-smooth w-full h-[84vh] overflow-y-auto"
+            bind:clientWidth={gridWidth}
         >
-            {#each filteredItems as item}
-                <Card data={item} />
-            {/each}
+            <Virtualizer
+                {data}
+                getKey={(r) => r[0].id}
+                itemSize={cellHeight}
+                onscroll={(offset) => (showFAB = offset > 300)}
+                bind:this={grid}
+            >
+                {#snippet children(rowItems, rowIndex)}
+                    <div
+                        style="display: flex; height: {cellHeight}px;"
+                        transition:fade={{ delay: 50 }}
+                    >
+                        {#each rowItems as item, colIndex (colIndex)}
+                            <div style="padding: 8px; flex: 1;">
+                                <Card data={item} />
+                            </div>
+                        {/each}
+                        <!-- Fill empty space if the last row isn't full -->
+                        {#if rowItems.length < cols}
+                            {#each Array(cols - rowItems.length) as _}
+                                <div style="flex: 1;"></div>
+                            {/each}
+                        {/if}
+                    </div>
+                {/snippet}
+            </Virtualizer>
         </div>
     {/if}
 </div>
+
+{#if showFAB}
+    <div
+        class="fixed {true ? 'bottom-30' : 'bottom-5'} right-8 z-50"
+        transition:fly={{ duration: 300, y: 150 }}
+    >
+        <Button
+            variant="outline"
+            onclick={() =>
+                grid && grid.scrollTo({ top: 0, behavior: "smooth" })}
+            size="icon-xl"
+            class="backdrop-blur-md tooltip"
+            title="Scroll to top"
+        >
+            <MoveUp />
+        </Button>
+    </div>
+{/if}

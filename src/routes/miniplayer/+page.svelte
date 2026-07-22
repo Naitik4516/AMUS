@@ -17,6 +17,8 @@
     import { store } from "$lib/stores.svelte";
     import { invoke } from "@tauri-apps/api/core";
     import Marquee from "$components/ui/Marquee.svelte";
+    import { getCurrentWindow } from "@tauri-apps/api/window";
+    import ResizeHandlers from "$components/ResizeHandlers.svelte";
 
     let volumeValue = $state(player.volume);
     let isPinned = $state(true);
@@ -34,13 +36,17 @@
     async function togglePin() {
         isPinned = await invoke<boolean>("toggle_mini_player_pin");
     }
+
+    const startDrag = async (_event: MouseEvent) => {
+        const appWindow = getCurrentWindow();
+        await appWindow.startDragging();
+    };
 </script>
 
-{#if player.currentTrack}
-    <div
-        class="relative bg-zinc-900 h-screen w-screen rounded-4xl overflow-hidden cursor-grab select-none"
-        data-tauri-drag-region
-    >
+<div
+    class="relative bg-zinc-900 h-screen w-screen rounded-4xl overflow-hidden select-none"
+>
+    {#if player.currentTrack}
         <img
             src={store.getImageSrc(player.currentTrack?.cover_art)}
             alt="Cover Art"
@@ -174,11 +180,32 @@
                 </div>
             </div>
         </div>
-    </div>
-{/if}
+    {:else}
+        <div class="flex flex-col items-center justify-center h-full gap-3">
+            <div
+                class="size-16 rounded-full bg-white/5 flex items-center justify-center"
+            >
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    class="size-8 text-zinc-500"
+                >
+                    <path d="M9 18V5l12-2v13" />
+                    <circle cx="6" cy="18" r="3" />
+                    <circle cx="18" cy="16" r="3" />
+                </svg>
+            </div>
+            <div class="text-center">
+                <p class="text-zinc-400 text-sm font-medium">Nothing Playing</p>
+                <p class="text-zinc-600 text-xs mt-0.5">
+                    Play music from your library
+                </p>
+            </div>
+        </div>
+    {/if}
+</div>
 
-<style>
-    button {
-        cursor: pointer;
-    }
-</style>
+<ResizeHandlers />
