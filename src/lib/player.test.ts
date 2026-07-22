@@ -1,14 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { player } from "./player.svelte";
-import type { Track, PlaybackSource, RepeatMode } from "./types";
+import type { RepeatMode } from "./types";
 import { mockTrack, mockSource } from "./test-utils";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 const mockInvoke = vi.mocked(invoke);
 const mockListen = vi.mocked(listen);
 
-// Track the handler that init() passes to listen()
 let playerEventHandler: ((event: { payload: unknown }) => void) | null = null;
 
 function resetPlayer() {
@@ -128,9 +127,9 @@ describe("init / lifecycle", () => {
 });
 
 describe("event handling — state machine", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     mockInvoke.mockResolvedValueOnce(mockSnapshot());
-    player.init();
+    await player.init();
   });
 
   it("TrackChanged updates track, duration, source, resets position", () => {
@@ -253,7 +252,7 @@ describe("public command methods", () => {
 
   it("stop invokes stop", async () => {
     await player.close();
-    expect(mockInvoke).toHaveBeenCalledWith("stop");
+    expect(mockInvoke).toHaveBeenCalledWith("close_player");
   });
 
   it("next invokes next", async () => {
