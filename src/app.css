@@ -4,8 +4,60 @@
 @import "tw-animate-css";
 @import "shadcn-svelte/tailwind.css";
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+button {
+  cursor: pointer;
+}
+
+a:hover {
+  text-decoration-line: underline;
+}
+
 img,
 a {
   -webkit-user-drag: none;
   user-select: none;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar:hover {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(62, 64, 69, 0.7);
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(62, 64, 69, 0.9);
+  width: 8px;
+  cursor: pointer;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: rgb(62, 64, 69);
 }
