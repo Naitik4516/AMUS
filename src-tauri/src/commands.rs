@@ -609,16 +609,7 @@ pub fn set_os_media_controls(enabled: bool, app: tauri::AppHandle) -> Result<()>
 
 #[tauri::command]
 pub(crate) fn toggle_mini_player(app: tauri::AppHandle) -> std::result::Result<(), String> {
-    if let Some(window) = app.get_webview_window("mini-player") {
-        if window.is_visible().map_err(|e| e.to_string())? {
-            window.hide().map_err(|e| e.to_string())?;
-        } else {
-            window.show().map_err(|e| e.to_string())?;
-            window.set_focus().map_err(|e| e.to_string())?;
-        }
-    } else {
-        crate::toggle_miniplayer(&app);
-    }
+    crate::toggle_miniplayer(&app);
     Ok(())
 }
 

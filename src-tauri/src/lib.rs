@@ -17,7 +17,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use std::sync::atomic::{AtomicBool, Ordering};
 use sync::SyncManager;
 use tauri::{
-    Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
+    Emitter, Manager,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
@@ -95,46 +95,7 @@ fn toggle_miniplayer(app: &tauri::AppHandle) {
             let _ = window.show();
             let _ = window.set_focus();
         }
-    } else if let Ok(window) = create_miniplayer(app) {
-        let _ = window.show();
-        let _ = window.set_focus();
     }
-}
-
-fn create_miniplayer(app: &tauri::AppHandle) -> tauri::Result<tauri::WebviewWindow> {
-    let window =
-        WebviewWindowBuilder::new(app, "mini-player", WebviewUrl::App("/miniplayer".into()))
-            .title("Amus - Mini Player")
-            .inner_size(420.0, 220.0)
-            .resizable(false)
-            .decorations(false)
-            .transparent(true)
-            .shadow(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .build()?;
-
-    let app_clone = app.clone();
-    window.on_window_event(move |event| match event {
-        tauri::WindowEvent::CloseRequested { api, .. } => {
-            api.prevent_close();
-            if let Some(w) = app_clone.get_webview_window("mini-player") {
-                let _ = w.hide();
-            }
-        }
-        tauri::WindowEvent::Focused(false) => {
-            if let Some(state) = app_clone.try_state::<MiniPlayerPinned>() {
-                if !state.0.load(Ordering::Relaxed) {
-                    if let Some(w) = app_clone.get_webview_window("mini-player") {
-                        let _ = w.hide();
-                    }
-                }
-            }
-        }
-        _ => {}
-    });
-
-    Ok(window)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -228,15 +189,12 @@ pub fn run() {
             app.manage(startup_status);
             app.manage(MiniPlayerPinned(AtomicBool::new(true)));
 
-            // CLI IPC server — always start (doesn't depend on DB)
             cli::start_server(app_handle.clone());
 
-            // OS media controls — best-effort, non-critical
             if sync::get_setting(app_handle, "osMediaControls", true).unwrap_or(true) {
                 let _ = media_controls::init(app_handle.clone());
             }
 
-            // System Tray
             let tray_menu = build_tray_menu(app_handle)?;
 
             TrayIconBuilder::new()
@@ -256,6 +214,29 @@ pub fn run() {
                 })
                 .on_menu_event(handle_tray_menu)
                 .build(app_handle)?;
+
+            // Mini-player window event handlers 
+            if let Some(mini_win) = app_handle.get_webview_window("mini-player") {
+                let app_clone = app_handle.clone();
+                mini_win.on_window_event(move |event| match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        if let Some(w) = app_clone.get_webview_window("mini-player") {
+                            let _ = w.hide();
+                        }
+                    }
+                    tauri::WindowEvent::Focused(false) => {
+                        if let Some(state) = app_clone.try_state::<MiniPlayerPinned>() {
+                            if !state.0.load(Ordering::Relaxed) {
+                                if let Some(w) = app_clone.get_webview_window("mini-player") {
+                                    let _ = w.hide();
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                });
+            }
 
             // Prevent closing the main window if "keepRunningInBg" is true
             let handle = app_handle.clone();
@@ -278,7 +259,6 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
-                // best-effort flush; the periodic 30s checkpoint is the real safety net
                 let _ = window
                     .state::<commands::PlayerHandle>()
                     .0
