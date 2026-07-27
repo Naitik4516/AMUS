@@ -102,7 +102,9 @@ describe("init / lifecycle", () => {
     mockInvoke.mockRejectedValueOnce(new Error("db error"));
     await player.init();
 
-    expect(player.isReady).toBe(true);
+    expect(player.isReady).toBe(false);
+    expect(player.currentTrack).toBeNull();
+    expect(player.isPlaying).toBe(false);
   });
 
   it("destroy cleans up listener", async () => {
@@ -316,9 +318,12 @@ describe("public command methods", () => {
     expect(mockInvoke).toHaveBeenCalledWith("enqueue_end_many", { tracks });
   });
 
-  it("removeFromQueue invokes with queueId", async () => {
-    await player.removeFromQueue(99);
-    expect(mockInvoke).toHaveBeenCalledWith("remove_from_queue", { queueId: 99 });
+  it("removeFromQueue invokes with queueId and type", async () => {
+    await player.removeFromQueue(99, "user");
+    expect(mockInvoke).toHaveBeenCalledWith("remove_from_queue", {
+      queueId: 99,
+      queueType: "user",
+    });
   });
 
   it("clearQueue invokes clear_queue", async () => {

@@ -40,8 +40,12 @@ export async function importAudioLibrary() {
   });
 
   if (selected) {
-    for (const path of selected) {
-      await invoke("add_source", { path });
+    const results = await Promise.allSettled(
+      selected.map((path) => invoke("add_source", { path })),
+    );
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+      console.warn(`${failures.length} source path(s) failed to add`);
     }
   }
   await invoke("scan_library");

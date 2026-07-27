@@ -1,11 +1,9 @@
-// src/lib/player.svelte.ts
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Track, PlaybackSource, RepeatMode } from "./types";
 import { store } from "./stores.svelte";
 import { saveSession } from "./session.svelte";
 
-// discriminated union matching the #[serde(tag = "event", content = "payload")] enum
 type PlayerEvent =
   | {
       event: "TrackChanged";
@@ -110,12 +108,18 @@ class PlayerStore {
   #lastUpdateAtMs = Date.now();
   #rafHandle: number | null = null;
   #unlisten: UnlistenFn | null = null;
+  #initializing = false;
 
   async init() {
-    if (this.#unlisten) return; // already initialized
-    this.#unlisten = await listen<PlayerEvent>(EVENT_NAME, (e) => this.#handleEvent(e.payload));
-    await this.#hydrate();
-    this.#setupBeforeUnload();
+    if (this.#unlisten || this.#initializing) return;
+    this.#initializing = true;
+    try {
+      this.#unlisten = await listen<PlayerEvent>(EVENT_NAME, (e) => this.#handleEvent(e.payload));
+      await this.#hydrate();
+      this.#setupBeforeUnload();
+    } finally {
+      this.#initializing = false;
+    }
   }
 
   #setupBeforeUnload() {
@@ -151,10 +155,9 @@ class PlayerStore {
       if (this.isPlaying) {
         this.#startTicking();
       }
+      this.isReady = true;
     } catch (err) {
       console.error("failed to hydrate player state", err);
-    } finally {
-      this.isReady = true;
     }
   }
 
@@ -273,6 +276,18 @@ class PlayerStore {
     }
   }
 
+  async #invoke(cmd: string, args?: Record<string, unknown>) {
+    try {
+      if (args) {
+        await invoke(cmd, args);
+      } else {
+        await invoke(cmd);
+      }
+    } catch (e) {
+      console.error(`command '${cmd}' failed`, e);
+    }
+  }
+
   async play(
     tracks: Track[],
     source: PlaybackSource = { type: "Direct" },
@@ -280,7 +295,7 @@ class PlayerStore {
     label?: string,
   ) {
     const { sourceType, sourceId } = toBackendSource(source);
-    await invoke("play_context", {
+    await this.#invoke("play_context", {
       tracks,
       sourceType,
       sourceId,
@@ -290,79 +305,94 @@ class PlayerStore {
   }
 
   async playPause() {
-    await invoke("play_pause");
+    await this.#invoke("play_pause");
   }
 
   async close() {
-    await invoke("close_player");
+    await this.#invoke("close_player");
   }
 
   async next() {
-    await invoke("next");
+    await this.#invoke("next");
   }
 
   async previous() {
-    await invoke("previous");
+    await this.#invoke("previous");
   }
 
   async toggleMute() {
-    await invoke("toggle_mute");
+    await this.#invoke("toggle_mute");
   }
 
   async seek(positionSec: number) {
-    // optimistic update so the slider feels instant; the next Position
-    // event will correct any drift from symphonia's keyframe seeking
+    const prev = this.#lastKnownPos;
     this.#setPosition(positionSec);
-    await invoke("seek", { positionSec });
+    try {
+      await invoke("seek", { positionSec });
+    } catch (e) {
+      this.#setPosition(prev);
+      console.error("seek failed", e);
+    }
   }
 
   async setVolume(volume: number) {
-    this.volume = volume; // optimistic
-    await invoke("set_volume", { volume });
+    const prev = this.volume;
+    this.volume = volume;
+    try {
+      await invoke("set_volume", { volume });
+    } catch (e) {
+      this.volume = prev;
+      console.error("setVolume failed", e);
+    }
   }
 
   async cycleRepeat() {
-    const nextMode: RepeatMode =
-      this.repeatMode === "OFF" ? "ALL" : this.repeatMode === "ALL" ? "ONE" : "OFF";
-    await invoke("set_repeat", { mode: nextMode });
+    await this.#invoke("set_repeat", {
+      mode: this.repeatMode === "OFF" ? "ALL" : this.repeatMode === "ALL" ? "ONE" : "OFF",
+    });
   }
 
   async toggleShuffle() {
-    await invoke("toggle_shuffle");
+    await this.#invoke("toggle_shuffle");
   }
 
   async enqueueNext(track: Track) {
-    await invoke("enqueue_next", { track });
+    await this.#invoke("enqueue_next", { track });
   }
 
   async enqueueEnd(track: Track) {
-    await invoke("enqueue_end", { track });
+    await this.#invoke("enqueue_end", { track });
   }
 
   async enqueueEndMany(tracks: Track[]) {
-    await invoke("enqueue_end_many", { tracks });
+    await this.#invoke("enqueue_end_many", { tracks });
   }
 
-  async removeFromQueue(queueId: number) {
-    await invoke("remove_from_queue", { queueId });
+  async removeFromQueue(queueId: number, type: "user" | "context" = "user") {
+    console.log("Removing...");
+    await this.#invoke("remove_from_queue", { queueId, queueType: type });
   }
 
   async clearQueue() {
-    await invoke("clear_queue");
+    await this.#invoke("clear_queue");
   }
 
   async reorderQueue(queueId: number, newIndex: number) {
-    await invoke("reorder_queue", { queueId, newIndex });
+    await this.#invoke("reorder_queue", { queueId, newIndex });
+  }
+
+  async reorderContextQueue(fromRel: number, toRel: number) {
+    await this.#invoke("reorder_context", { fromRel, toRel });
   }
 
   async setAutoplay(enabled: boolean) {
-    await invoke("set_autoplay", { enabled });
+    await this.#invoke("set_autoplay", { enabled });
   }
 
   async playFromContextIndex(index: number) {
     const track = this.playNext[index];
     if (track) {
-      await invoke("play_track_from_context", { trackId: track.id });
+      await this.#invoke("play_track_from_context", { trackId: track.id });
     }
   }
 
