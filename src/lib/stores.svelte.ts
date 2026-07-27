@@ -1,7 +1,7 @@
 import { initSettings } from "$lib/settings.svelte";
 import type { Album, Artist, Playlist, Track } from "$lib/types";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { appDataDir } from "@tauri-apps/api/path";
 
 class LibraryStore {
@@ -15,6 +15,7 @@ class LibraryStore {
 
   appDataDirPath = $state<string | null>(null);
   #appDataDirPromise: Promise<string> | null = null;
+  #unlistenLibraryUpdate: UnlistenFn | null = null;
 
   tracksById = new Map<number, Track>();
   albumsById = new Map<number, Album>();
@@ -110,7 +111,8 @@ class LibraryStore {
       this.loading = false;
     }
 
-    await listen("library-updated", async () => {
+    this.#unlistenLibraryUpdate?.();
+    this.#unlistenLibraryUpdate = await listen("library-updated", async () => {
       console.log("Library updated event received, reloading library...");
       await this.#reloadAll();
     });

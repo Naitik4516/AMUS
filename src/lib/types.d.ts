@@ -32,6 +32,7 @@ export interface Track {
   added_at: string;
   track_number?: number;
   playlist_ids: number[];
+  queue_id?: number;
 }
 
 export interface TrackDetails extends Track {

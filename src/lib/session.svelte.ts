@@ -38,12 +38,6 @@ export async function loadSession(): Promise<SessionState | null> {
   return val ?? null;
 }
 
-export async function hasSession(): Promise<boolean> {
-  const s = await getStore();
-  const val = await s.get(KEY);
-  return val !== undefined && val !== null;
-}
-
 export async function clearSession(): Promise<void> {
   const s = await getStore();
   await s.delete(KEY);
