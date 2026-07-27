@@ -7,12 +7,16 @@ use crate::player::source::{PlaybackSource, RepeatMode};
 use crate::scanner;
 use crate::startup::StartupStatus;
 use crate::sync::SyncManager;
-use std::sync::mpsc::Sender;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::SyncSender;
+use std::time::Duration;
 use tauri::Manager;
 use tauri::State;
 use tokio::sync::oneshot;
 
-pub struct PlayerHandle(pub Sender<PlayerCommand>);
+static SCAN_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+pub struct PlayerHandle(pub SyncSender<PlayerCommand>);
 
 #[tauri::command]
 pub async fn add_source(
@@ -53,30 +57,24 @@ pub async fn refresh_watcher(
 ) -> Result<()> {
     sync_manager
         .refresh_watcher(&app_handle)
-        .map_err(|e| Error::Unknown(e.to_string()))?;
+        .map_err(Error::Unknown)?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn has_music(pool: State<'_, DbPool>) -> Result<bool> {
-    let conn = pool.get().map_err(Error::Pool)?;
-    let exists: bool = conn
-        .query_row("SELECT EXISTS(SELECT 1 FROM track LIMIT 1)", [], |row| {
-            row.get(0)
-        })
-        .map_err(Error::Db)?;
-    Ok(exists)
-}
-
-#[tauri::command]
 pub async fn scan_library(app_handle: tauri::AppHandle, pool: State<'_, DbPool>) -> Result<()> {
+    if SCAN_IN_PROGRESS.swap(true, Ordering::AcqRel) {
+        return Err(Error::Unknown("scan already in progress".into()));
+    }
     let pool = pool.inner().clone();
-    tokio::task::spawn_blocking(move || {
+    let scan_result: Result<()> = tokio::task::spawn_blocking(move || {
         let mut conn = pool.get().map_err(Error::Pool)?;
         scanner::scan_directories(&mut conn, &app_handle)
     })
     .await
-    .map_err(|e| Error::Unknown(e.to_string()))?
+    .map_err(|e| Error::Unknown(e.to_string()))?;
+    SCAN_IN_PROGRESS.store(false, Ordering::Release);
+    scan_result
 }
 
 #[tauri::command]
@@ -214,7 +212,10 @@ pub async fn get_favorite_tracks(pool: State<'_, DbPool>) -> Result<Vec<Track>> 
 // ---------------------------------------------------------------------------
 
 pub fn send(handle: &State<PlayerHandle>, cmd: PlayerCommand) -> Result<()> {
-    handle.0.send(cmd).map_err(|e| Error::Audio(e.to_string()))
+    handle.0.try_send(cmd).map_err(|e| Error::Audio(match e {
+        std::sync::mpsc::TrySendError::Full(_) => "command queue full".into(),
+        std::sync::mpsc::TrySendError::Disconnected(_) => "player disconnected".into(),
+    }))
 }
 
 #[tauri::command]
@@ -302,8 +303,17 @@ pub fn enqueue_end_many(handle: State<PlayerHandle>, tracks: Vec<Track>) -> Resu
 }
 
 #[tauri::command]
-pub fn remove_from_queue(handle: State<PlayerHandle>, queue_id: i64) -> Result<()> {
-    send(&handle, PlayerCommand::RemoveFromQueue(queue_id))
+pub fn remove_from_queue(
+    handle: State<PlayerHandle>,
+    queue_id: i64,
+    queue_type: String,
+) -> Result<()> {
+    println!("Removing from queue: {} (type: {})", queue_id, queue_type);
+    match queue_type.as_str() {
+        "user" => send(&handle, PlayerCommand::RemoveFromQueue(queue_id)),
+        "context" => send(&handle, PlayerCommand::RemoveFromContext(queue_id)),
+        _ => Err(Error::Unknown(format!("Unknown queue type: {queue_type}"))),
+    }
 }
 
 #[tauri::command]
@@ -319,6 +329,18 @@ pub fn reorder_queue(handle: State<PlayerHandle>, queue_id: i64, new_index: usiz
             queue_id,
             new_index,
         },
+    )
+}
+
+#[tauri::command]
+pub fn reorder_context(
+    handle: State<PlayerHandle>,
+    from_rel: usize,
+    to_rel: usize,
+) -> Result<()> {
+    send(
+        &handle,
+        PlayerCommand::ReorderContext { from_rel, to_rel },
     )
 }
 
@@ -368,9 +390,14 @@ pub async fn get_current_state(handle: State<'_, PlayerHandle>) -> Result<Player
     let (tx, rx) = oneshot::channel();
     handle
         .0
-        .send(PlayerCommand::GetState(tx))
-        .map_err(|e| Error::Audio(e.to_string()))?;
-    rx.await
+        .try_send(PlayerCommand::GetState(tx))
+        .map_err(|e| Error::Audio(match e {
+            std::sync::mpsc::TrySendError::Full(_) => "command queue full".into(),
+            std::sync::mpsc::TrySendError::Disconnected(_) => "player disconnected".into(),
+        }))?;
+    tokio::time::timeout(Duration::from_secs(5), rx)
+        .await
+        .map_err(|_| Error::Unknown("player did not respond within 5s".into()))?
         .map_err(|_| Error::Unknown("channel closed".to_string()))
 }
 
@@ -598,13 +625,19 @@ pub(crate) fn quit_app(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
-pub fn set_os_media_controls(enabled: bool, app: tauri::AppHandle) -> Result<()> {
-    if enabled {
-        crate::media_controls::init(app).map_err(|e| Error::Unknown(e))?;
-    } else {
-        crate::media_controls::detach().map_err(|e| Error::Unknown(e))?;
-    }
-    Ok(())
+pub async fn set_os_media_controls(enabled: bool, app: tauri::AppHandle) -> Result<()> {
+    // media_controls::init may block briefly (D-Bus/COM setup);
+    // offload to blocking thread pool to avoid freezing the async runtime.
+    tokio::task::spawn_blocking(move || {
+        if enabled {
+            crate::media_controls::init(app).map_err(|e| format!("media controls init: {e}"))
+        } else {
+            crate::media_controls::detach().map_err(|e| format!("media controls detach: {e}"))
+        }
+    })
+    .await
+    .map_err(|e| Error::Unknown(format!("media controls task panicked: {e}")))?
+    .map_err(Error::Unknown)
 }
 
 #[tauri::command]
@@ -619,23 +652,24 @@ pub fn get_startup_status(startup: State<'_, StartupStatus>) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn reset_app_data(app_handle: tauri::AppHandle) -> std::result::Result<(), String> {
+pub async fn reset_app_data(app_handle: tauri::AppHandle) -> std::result::Result<(), String> {
     let app_dir = app_handle
         .path()
         .app_data_dir()
         .map_err(|e| format!("failed to resolve app data dir: {e}"))?;
 
-    let _ = std::fs::remove_file(app_dir.join("music.db"));
-    let _ = std::fs::remove_file(app_dir.join("music.db-wal"));
-    let _ = std::fs::remove_file(app_dir.join("music.db-shm"));
-
-    let _ = std::fs::remove_file(app_dir.join("session.json"));
-
-    let _ = std::fs::remove_file(app_dir.join("settings.json"));
-
-    for dir in &["artists", "artist_banner", "cover_art"] {
-        let _ = std::fs::remove_dir_all(app_dir.join(dir));
-    }
+    tokio::task::spawn_blocking(move || {
+        let _ = std::fs::remove_file(app_dir.join("music.db"));
+        let _ = std::fs::remove_file(app_dir.join("music.db-wal"));
+        let _ = std::fs::remove_file(app_dir.join("music.db-shm"));
+        let _ = std::fs::remove_file(app_dir.join("session.json"));
+        let _ = std::fs::remove_file(app_dir.join("settings.json"));
+        for dir in &["artists", "artist_banner", "cover_art"] {
+            let _ = std::fs::remove_dir_all(app_dir.join(dir));
+        }
+    })
+    .await
+    .map_err(|e| format!("failed to reset app data: {e}"))?;
 
     // Spawn a fresh instance before exiting
     if let Ok(exe) = std::env::current_exe() {

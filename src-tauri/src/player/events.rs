@@ -48,7 +48,23 @@ pub const PLAYER_EVENT_NAME: &str = "player://event";
 
 pub fn emit(app: &tauri::AppHandle, event: PlayerEvent) {
     use tauri::Emitter;
+    let event_name = event.event_name();
     if let Err(e) = app.emit(PLAYER_EVENT_NAME, &event) {
-        eprintln!("failed to emit player event: {e}");
+        eprintln!("⚠️ failed to emit player event '{event_name}': {e}");
+    }
+}
+
+impl PlayerEvent {
+    fn event_name(&self) -> &'static str {
+        match self {
+            PlayerEvent::TrackChanged { .. } => "TrackChanged",
+            PlayerEvent::StateChanged { .. } => "StateChanged",
+            PlayerEvent::Position { .. } => "Position",
+            PlayerEvent::QueueChanged { .. } => "QueueChanged",
+            PlayerEvent::RepeatShuffleChanged { .. } => "RepeatShuffleChanged",
+            PlayerEvent::VolumeChanged { .. } => "VolumeChanged",
+            PlayerEvent::PlaybackEnded => "PlaybackEnded",
+            PlayerEvent::Error { .. } => "Error",
+        }
     }
 }

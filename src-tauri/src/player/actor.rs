@@ -1,6 +1,6 @@
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{Receiver, SyncSender};
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tokio::sync::oneshot;
@@ -38,10 +38,15 @@ pub enum PlayerCommand {
     EnqueueEnd(Track),
     EnqueueEndMany(Vec<Track>),
     RemoveFromQueue(i64),
+    RemoveFromContext(i64),
     ClearQueue,
     ReorderQueue {
         queue_id: i64,
         new_index: usize,
+    },
+    ReorderContext {
+        from_rel: usize,
+        to_rel: usize,
     },
     Stop,
     SetAutoplay(bool),
@@ -97,15 +102,13 @@ pub struct PlayerActor {
     autoplay_enabled: bool,
     now_playing: Option<NowPlaying>,
     has_track_loaded: bool,
-    last_emitted_pos_at: Instant,
 }
 
 const TICK_INTERVAL: Duration = Duration::from_millis(250);
-const POSITION_EMIT_INTERVAL: Duration = Duration::from_millis(1000);
 
 impl PlayerActor {
-    pub fn spawn(app: AppHandle, pool: DbPool) -> Sender<PlayerCommand> {
-        let (tx, rx) = std::sync::mpsc::channel::<PlayerCommand>();
+    pub fn spawn(app: AppHandle, pool: DbPool) -> SyncSender<PlayerCommand> {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<PlayerCommand>(128);
 
         std::thread::Builder::new()
             .name("player-actor".into())
@@ -129,7 +132,6 @@ impl PlayerActor {
                     autoplay_enabled: true,
                     now_playing: None,
                     has_track_loaded: false,
-                    last_emitted_pos_at: Instant::now(),
                 };
                 actor.run();
             })
@@ -227,10 +229,14 @@ impl PlayerActor {
                     }
                 }
                 PlayerCommand::RemoveFromQueue(db_id) => {
-                    self.queue.remove_from_queue(db_id);
+                    self.queue.remove_from_user_queue(db_id);
                     if let Some(conn) = self.conn() {
                         let _ = playback::queue_remove(&conn, db_id);
                     }
+                    self.emit_queue_changed();
+                }
+                PlayerCommand::RemoveFromContext(track_id) => {
+                    self.queue.remove_from_context(track_id);
                     self.emit_queue_changed();
                 }
                 PlayerCommand::ClearQueue => {
@@ -248,6 +254,10 @@ impl PlayerActor {
                     if let Some(conn) = self.conn() {
                         let _ = playback::queue_reorder(&conn, queue_id, new_index);
                     }
+                    self.emit_queue_changed();
+                }
+                PlayerCommand::ReorderContext { from_rel, to_rel } => {
+                    self.queue.reorder_context(from_rel, to_rel);
                     self.emit_queue_changed();
                 }
                 PlayerCommand::SetAutoplay(v) => self.autoplay_enabled = v,
@@ -436,6 +446,14 @@ impl PlayerActor {
             return;
         }
         self.engine.pause();
+        let (pos, _) = self.engine.state();
+        emit(
+            &self.app,
+            PlayerEvent::Position {
+                pos_sec: pos,
+                at_epoch_ms: now_epoch_ms(),
+            },
+        );
         emit(&self.app, PlayerEvent::StateChanged { is_playing: false });
     }
 
@@ -590,18 +608,6 @@ impl PlayerActor {
 
         if track_ended {
             self.handle_next();
-            return;
-        }
-
-        if self.last_emitted_pos_at.elapsed() >= POSITION_EMIT_INTERVAL {
-            emit(
-                &self.app,
-                PlayerEvent::Position {
-                    pos_sec: pos,
-                    at_epoch_ms: now_epoch_ms(),
-                },
-            );
-            self.last_emitted_pos_at = Instant::now();
         }
     }
 
@@ -610,8 +616,11 @@ impl PlayerActor {
             if np.duration_sec > 0.0 {
                 let pct = (np.max_position_reached / np.duration_sec * 100.0).clamp(0.0, 100.0);
                 if let Some(conn) = self.conn() {
-                    let _ =
-                        playback::record_playback(&conn, np.track_id, np.source.type_str(), pct);
+                    if let Err(e) =
+                        playback::record_playback(&conn, np.track_id, np.source.type_str(), pct)
+                    {
+                        eprintln!("failed to record playback history: {e}");
+                    }
                 }
             }
         }
@@ -636,7 +645,11 @@ impl PlayerActor {
                 .queue
                 .user_queue()
                 .iter()
-                .map(|q: &QueueItem| q.track.clone())
+                .map(|q: &QueueItem| {
+                    let mut t = q.track.clone();
+                    t.queue_id = Some(q.db_id);
+                    t
+                })
                 .collect(),
             queue_view: self.build_queue_view(),
         }
@@ -646,7 +659,7 @@ impl PlayerActor {
         QueueViewPayload {
             context_source_type: self.queue.context_source().type_str().to_string(),
             context_label: self.queue.context_label().map(str::to_string),
-            upcoming_context: self.queue.upcoming_context(20),
+            upcoming_context: self.queue.upcoming_context(self.queue.context_len()),
         }
     }
 
@@ -658,7 +671,11 @@ impl PlayerActor {
                     .queue
                     .user_queue()
                     .iter()
-                    .map(|q| q.track.clone())
+                    .map(|q| {
+                        let mut t = q.track.clone();
+                        t.queue_id = Some(q.db_id);
+                        t
+                    })
                     .collect(),
                 context_len: self.queue.context_len(),
                 context_position: self.queue.context_position(),

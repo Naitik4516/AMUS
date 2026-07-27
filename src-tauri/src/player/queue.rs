@@ -39,6 +39,8 @@ pub struct PlaybackQueue {
     shuffle_order: Option<Vec<usize>>,
     shuffle_cursor: usize,
 
+    context_custom_order: Vec<usize>,
+
     user_queue: VecDeque<QueueItem>,
 
     history: VecDeque<HistoryEntry>,
@@ -57,6 +59,7 @@ impl PlaybackQueue {
             shuffle_enabled: false,
             shuffle_order: None,
             shuffle_cursor: 0,
+            context_custom_order: Vec::new(),
             user_queue: VecDeque::new(),
             history: VecDeque::new(),
             repeat_mode: RepeatMode::Off,
@@ -125,10 +128,16 @@ impl PlaybackQueue {
                 }
             }
             (None, Some(pos)) => {
-                let mut i = pos + 1;
-                while result.len() < n && i < self.context.len() {
-                    result.push(i);
-                    i += 1;
+                let start_in_order = self
+                    .context_custom_order
+                    .iter()
+                    .position(|&i| i == pos)
+                    .map(|p| p + 1)
+                    .unwrap_or(pos + 1);
+                let mut cursor = start_in_order;
+                while result.len() < n && cursor < self.context_custom_order.len() {
+                    result.push(self.context_custom_order[cursor]);
+                    cursor += 1;
                 }
             }
             _ => {}
@@ -148,6 +157,7 @@ impl PlaybackQueue {
         self.context_label = label;
         self.shuffle_order = None;
         self.shuffle_cursor = 0;
+        self.context_custom_order = (0..self.context.len()).collect();
         self.history.clear();
         let start_index = start_index.min(self.context.len().saturating_sub(1));
 
@@ -178,6 +188,7 @@ impl PlaybackQueue {
         self.context_source = PlaybackSource::Direct;
         self.context_label = None;
         self.shuffle_order = None; // recommendations are already varied
+        self.context_custom_order = (0..self.context.len()).collect();
         self.context_position = if self.context.is_empty() {
             None
         } else {
@@ -186,7 +197,6 @@ impl PlaybackQueue {
         self.set_current_from_context();
     }
 
-    // ---------- shuffle ----------
 
     pub fn set_shuffle(&mut self, enabled: bool) {
         if enabled == self.shuffle_enabled {
@@ -240,9 +250,51 @@ impl PlaybackQueue {
         self.user_queue.push_back(QueueItem { db_id, track });
     }
 
-    pub fn remove_from_queue(&mut self, db_id: i64) -> Option<QueueItem> {
+    pub fn remove_from_user_queue(&mut self, db_id: i64) -> Option<QueueItem> {
         let idx = self.user_queue.iter().position(|q| q.db_id == db_id)?;
         self.user_queue.remove(idx)
+    }
+
+    pub fn remove_from_context(&mut self, track_id: i64) -> Option<Track> {
+        if let Some(idx) = self.context.iter().position(|t| t.id == track_id) {
+            let removed_track = self.context.remove(idx);
+
+            // Fix context_custom_order: remove idx and shift higher indices down
+            self.context_custom_order.retain(|&i| i != idx);
+            for i in &mut self.context_custom_order {
+                if *i > idx {
+                    *i -= 1;
+                }
+            }
+
+            // Fix shuffle_order if present
+            if let Some(order) = &mut self.shuffle_order {
+                // If the removed track was at or before shuffle_cursor, adjust cursor
+                if let Some(cursor_pos) = order.iter().position(|&i| i == idx) {
+                    if cursor_pos <= self.shuffle_cursor {
+                        self.shuffle_cursor = self.shuffle_cursor.saturating_sub(1);
+                    }
+                }
+                order.retain(|&i| i != idx);
+                for i in order.iter_mut() {
+                    if *i > idx {
+                        *i -= 1;
+                    }
+                }
+            }
+
+            if let Some(pos) = self.context_position {
+                if pos == idx {
+                    self.context_position = None;
+                    self.current = None;
+                } else if pos > idx {
+                    self.context_position = Some(pos - 1);
+                }
+            }
+            Some(removed_track)
+        } else {
+            None
+        }
     }
 
     pub fn clear_queue(&mut self) {
@@ -258,10 +310,29 @@ impl PlaybackQueue {
         }
     }
 
+    pub fn reorder_context(&mut self, from_rel: usize, to_rel: usize) {
+        if self.shuffle_enabled || self.context.is_empty() {
+            return;
+        }
+        let start_in_order = self
+            .context_custom_order
+            .iter()
+            .position(|&i| i == self.context_position.unwrap_or(0))
+            .map(|p| p + 1)
+            .unwrap_or(0);
+        let from_abs = start_in_order + from_rel;
+        let to_abs = start_in_order + to_rel;
+        if from_abs < self.context_custom_order.len()
+            && to_abs < self.context_custom_order.len()
+        {
+            let item = self.context_custom_order.remove(from_abs);
+            self.context_custom_order.insert(to_abs, item);
+        }
+    }
+
     pub fn advance_next(&mut self) -> NextOutcome {
         if let Some((track, source)) = self.current.take() {
             self.history.push_back(HistoryEntry { track, source });
-            // Keep history bounded to avoid unbounded memory growth over long sessions.
             if self.history.len() > MAX_HISTORY {
                 self.history.pop_front();
             }
@@ -299,9 +370,14 @@ impl PlaybackQueue {
                 }
             }
             (None, Some(pos)) => {
-                let next = pos + 1;
-                if next < self.context.len() {
-                    Some(next)
+                let next_order_idx = self
+                    .context_custom_order
+                    .iter()
+                    .position(|&i| i == pos)
+                    .map(|p| p + 1)
+                    .unwrap_or(pos + 1);
+                if next_order_idx < self.context_custom_order.len() {
+                    Some(self.context_custom_order[next_order_idx])
                 } else {
                     None
                 }
@@ -397,6 +473,10 @@ impl PlaybackQueue {
     }
 }
 
+///////////////////////////////////
+///////////  Tests ///////////////
+//////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,6 +505,7 @@ mod tests {
             added_at: chrono::Utc::now(),
             track_number: Some(id as u32),
             playlist_ids: vec![],
+            queue_id: None,
         }
     }
 
@@ -533,7 +614,7 @@ mod tests {
         q.enqueue_next(1, make_track(10));
         q.enqueue_next(2, make_track(20));
 
-        let removed = q.remove_from_queue(1);
+        let removed = q.remove_from_user_queue(1);
         assert!(removed.is_some());
         assert_eq!(removed.unwrap().track.id, 10);
         assert_eq!(q.user_queue().len(), 1);
@@ -643,5 +724,106 @@ mod tests {
         q.set_shuffle(true);
         q.set_shuffle(false);
         assert!(!q.shuffle_enabled());
+    }
+
+    #[test]
+    fn test_remove_from_context_shifts_indices() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![
+            make_track(10),
+            make_track(20),
+            make_track(30),
+            make_track(40),
+        ];
+        // Start at track 20
+        q.load_context(tracks, PlaybackSource::Album(1), 1, None);
+        assert_eq!(q.context_position(), Some(1));
+        assert_eq!(q.current().unwrap().0.id, 20);
+
+        // Remove track 30 (index 2) — after current position
+        let removed = q.remove_from_context(30);
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().id, 30);
+        assert_eq!(q.context_position(), Some(1)); // unchanged
+        assert_eq!(q.current().unwrap().0.id, 20);
+
+        // upcoming_context should not panic — only track 40 remains ahead
+        let upcoming = q.upcoming_context(10);
+        assert_eq!(upcoming.len(), 1);
+        assert_eq!(upcoming[0].id, 40);
+    }
+
+    #[test]
+    fn test_remove_from_context_at_current() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![make_track(10), make_track(20), make_track(30)];
+        q.load_context(tracks, PlaybackSource::Album(1), 1, None);
+        assert_eq!(q.current().unwrap().0.id, 20);
+
+        // Remove the currently playing track
+        q.remove_from_context(20);
+        assert!(q.current().is_none());
+        assert_eq!(q.context_position(), None);
+
+        // Should not panic
+        let _ = q.upcoming_context(10);
+    }
+
+    #[test]
+    fn test_remove_from_context_before_current() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![make_track(10), make_track(20), make_track(30)];
+        q.load_context(tracks, PlaybackSource::Album(1), 2, None);
+        assert_eq!(q.current().unwrap().0.id, 30);
+
+        // Remove track before current position
+        q.remove_from_context(10);
+        assert_eq!(q.context_position(), Some(1)); // shifted down from 2 to 1
+        assert_eq!(q.current().unwrap().0.id, 30);
+
+        // Should not panic
+        let _ = q.upcoming_context(10);
+    }
+
+    #[test]
+    fn test_remove_from_context_last_track() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![make_track(10)];
+        q.load_context(tracks, PlaybackSource::Album(1), 0, None);
+
+        q.remove_from_context(10);
+        assert!(q.current().is_none());
+        assert_eq!(q.context_position(), None);
+        assert_eq!(q.context_len(), 0);
+
+        // Should not panic
+        let _ = q.upcoming_context(10);
+    }
+
+    #[test]
+    fn test_remove_from_context_with_shuffle() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![
+            make_track(10),
+            make_track(20),
+            make_track(30),
+            make_track(40),
+            make_track(50),
+        ];
+        q.load_context(tracks, PlaybackSource::Album(1), 0, None);
+        q.set_shuffle(true);
+
+        // Remove a track from the middle
+        q.remove_from_context(30);
+
+        // All indices in shuffle_order should be valid
+        if let Some(order) = &q.shuffle_order {
+            for &i in order {
+                assert!(i < q.context.len(), "index {} out of bounds for len {}", i, q.context.len());
+            }
+        }
+
+        // Should not panic
+        let _ = q.upcoming_context(10);
     }
 }

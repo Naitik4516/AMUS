@@ -1,6 +1,6 @@
+use parking_lot::Mutex;
 use rodio::{Decoder, DeviceSinkBuilder, Player};
 use std::fs::File;
-use std::sync::Mutex;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -39,18 +39,18 @@ impl AudioEngine {
         let player = Player::connect_new(&self.handle.mixer());
         player.append(source);
         player.pause();
-        *self.player.lock().unwrap() = Some(player);
+        *self.player.lock() = Some(player);
         Ok(())
     }
 
     pub fn play(&self) {
-        if let Some(p) = self.player.lock().unwrap().as_ref() {
+        if let Some(p) = self.player.lock().as_ref() {
             p.play();
         }
     }
 
     pub fn pause(&self) {
-        if let Some(p) = self.player.lock().unwrap().as_ref() {
+        if let Some(p) = self.player.lock().as_ref() {
             p.pause();
         }
     }
@@ -58,7 +58,6 @@ impl AudioEngine {
     pub fn is_paused(&self) -> bool {
         self.player
             .lock()
-            .unwrap()
             .as_ref()
             .map(|p| p.is_paused())
             .unwrap_or(true)
@@ -67,14 +66,13 @@ impl AudioEngine {
     pub fn position(&self) -> Duration {
         self.player
             .lock()
-            .unwrap()
             .as_ref()
             .map(|p| p.get_pos())
             .unwrap_or_default()
     }
 
     pub fn seek(&self, pos: Duration) -> Result<(), EngineError> {
-        let guard = self.player.lock().unwrap();
+        let guard = self.player.lock();
         let player = guard.as_ref().ok_or(EngineError::NoTrack)?;
         player
             .try_seek(pos)
@@ -82,7 +80,7 @@ impl AudioEngine {
     }
 
     pub fn set_volume(&self, v: f32) {
-        if let Some(p) = self.player.lock().unwrap().as_ref() {
+        if let Some(p) = self.player.lock().as_ref() {
             p.set_volume(v.clamp(0.0, 1.0));
         }
     }
@@ -90,14 +88,13 @@ impl AudioEngine {
     pub fn is_finished(&self) -> bool {
         self.player
             .lock()
-            .unwrap()
             .as_ref()
             .map(|p| p.empty())
             .unwrap_or(true)
     }
 
     pub fn tick_status(&self) -> (f64, bool) {
-        let guard = self.player.lock().unwrap();
+        let guard = self.player.lock();
         match guard.as_ref() {
             Some(p) => (p.get_pos().as_secs_f64(), p.empty()),
             None => (0.0, true),
@@ -105,7 +102,7 @@ impl AudioEngine {
     }
 
     pub fn state(&self) -> (f64, bool) {
-        let guard = self.player.lock().unwrap();
+        let guard = self.player.lock();
         match guard.as_ref() {
             Some(p) => (p.get_pos().as_secs_f64(), p.is_paused()),
             None => (0.0, true),
@@ -113,6 +110,6 @@ impl AudioEngine {
     }
 
     pub fn stop(&self) {
-        *self.player.lock().unwrap() = None;
+        *self.player.lock() = None;
     }
 }
