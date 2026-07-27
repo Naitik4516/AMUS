@@ -36,10 +36,12 @@ a {
 
 ::-webkit-scrollbar {
   width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar:hover {
   width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -55,6 +57,7 @@ a {
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(62, 64, 69, 0.9);
   width: 8px;
+  height: 8px;
   cursor: pointer;
 }
 
