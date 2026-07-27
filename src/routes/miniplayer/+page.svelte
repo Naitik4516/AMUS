@@ -17,15 +17,9 @@
     import { store } from "$lib/stores.svelte";
     import { invoke } from "@tauri-apps/api/core";
     import Marquee from "$components/ui/Marquee.svelte";
-    import { getCurrentWindow } from "@tauri-apps/api/window";
     import ResizeHandlers from "$components/ResizeHandlers.svelte";
 
-    let volumeValue = $state(player.volume);
     let isPinned = $state(true);
-
-    $effect(() => {
-        player.setVolume(volumeValue);
-    });
 
     async function toggleFavorite() {
         if (player.currentTrack) {
@@ -36,16 +30,13 @@
     async function togglePin() {
         isPinned = await invoke<boolean>("toggle_mini_player_pin");
     }
-
-    const startDrag = async (_event: MouseEvent) => {
-        const appWindow = getCurrentWindow();
-        await appWindow.startDragging();
-    };
 </script>
 
 <div
     class="relative bg-zinc-900 h-screen w-screen rounded-4xl overflow-hidden select-none"
 >
+    <div class="absolute inset-0 z-10 cursor-grab" data-tauri-drag-region></div>
+
     {#if player.currentTrack}
         <img
             src={store.getImageSrc(player.currentTrack?.cover_art)}
@@ -53,7 +44,7 @@
             class="w-screen h-screen object-cover blur-3xl -z-10 rounded-4xl"
         />
 
-        <div class="absolute top-3 right-3 z-20">
+        <div class="absolute top-3 right-3 z-30">
             <button
                 onclick={togglePin}
                 class="text-gray-300 hover:text-white transition-colors"
@@ -67,9 +58,7 @@
             </button>
         </div>
 
-        <div
-            class="absolute inset-0 z-10 p-5 grid grid-cols-5 gap-3 items-center"
-        >
+        <div class="absolute inset-0 p-5 grid grid-cols-5 gap-3 items-center">
             <div class="col-span-2">
                 <img
                     src={store.getImageSrc(player.currentTrack?.cover_art)}
@@ -77,7 +66,7 @@
                     class="oject-cover rounded-3xl shadow-lg shadow-zinc-800/60 w-full h-full select-none"
                 />
             </div>
-            <div class="col-span-3 flex flex-col gap-4 items-center">
+            <div class="col-span-3 flex flex-col gap-4 items-center z-20">
                 <div class="flex flex-col items-center overflow-hidden w-50">
                     <Marquee>
                         <div
@@ -88,7 +77,7 @@
                     </Marquee>
                     <Marquee>
                         <span
-                            class="text-zinc-300 font-medium -ml-0.5"
+                            class="text-zinc-300 font-bold -ml-0.5 font-satoshi"
                             id="text"
                             >{player.currentTrack?.artists?.[0]?.name ??
                                 ""}</span

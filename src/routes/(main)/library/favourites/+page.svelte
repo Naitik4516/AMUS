@@ -12,31 +12,33 @@
 </script>
 
 <div
-    class="relative flex flex-col rounded-2xl h-full w-full overflow-y-scroll px-4 pb-10"
->
-    <div
-        class="flex gap-15 items-end p-5 pb-30 rounded-t-2xl bg-linear-to-b from-rose-600 via-pink-900 to-fuchsia-950/20"
-    >
+    class="fixed top-1/5 inset-x-25 h-90 blur-[120px] bg-linear-to-b from-rose-600 to-pink-900 z-0"
+></div>
+
+<div class="flex flex-col z-1 isolate">
+    <div class="flex gap-10 items-end p-5 pb-8">
         <div
-            class="flex items-center justify-center rounded-2xl w-60 h-60 bg-rose-600"
+            class="flex items-center justify-center rounded-[70px] w-60 h-60 bg-linear-to-b from-pink-700  to-pink-900 shadow-xl"
         >
-            <Heart fill="white" size="200" />
+            <Heart class="fill-fuchsia-100 text-fuchsia-100" size="160" />
         </div>
 
-        <div class="flex flex-col gap-4 min-w-0 pb-2">
+        <div class="flex flex-col min-w-0 pb-2">
             <h1
-                class="text-3xl md:text-5xl lg:text-[6cqw] font-black font-switzer line-clamp-2"
+                class="text-3xl md:text-5xl lg:text-7xl xl:text-[180px] font-black font-switzer line-clamp-2 text-transparent bg-clip-text bg-linear-to-br from-rose-500 to-pink-600 drop-shadow-xl"
             >
                 Favourites
             </h1>
-            <span class="text-gray-300">
+            <span
+                class="text-gray-300 font-satoshi font-extrabold text-lg ml-2"
+            >
                 {tracks.length} songs, {formatDuration(totalDuration)}
             </span>
         </div>
     </div>
 
     {#if tracks.length > 0}
-        <div class="-translate-y-22">
+        <div>
             <TrackList
                 context={{ type: "Favorites", name: "Favorites" }}
                 {tracks}

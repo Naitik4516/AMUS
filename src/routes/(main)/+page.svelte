@@ -4,10 +4,7 @@
     import ArtistsSection from "$components/ui/Home/ArtistsSection.svelte";
     import AlbumsSection from "$components/ui/Home/AlbumsSection.svelte";
     import type { InvokeArgs } from "@tauri-apps/api/core";
-    import type { PageProps } from "./$types";
     import { store } from "$lib/stores.svelte";
-
-    let { data }: PageProps = $props();
 
 
     type LoadFunction =
@@ -30,9 +27,9 @@
     ];
 </script>
 
-<div class="pb-12 pr-6">
+<div class="pr-6">
     <div>
-        <HeroSection hasMusic={data.hasMusic} />
+        <HeroSection />
     </div>
 
     <div class="flex flex-col gap-16 py-10">

@@ -10,7 +10,7 @@
 
     let albumId = $derived(Number(page.params.id));
     let tracks = $derived(store.tracksByAlbum(albumId));
-    let album = $derived(store.albums.find(a => a.id === albumId));
+    let album = $derived(store.albums.find((a) => a.id === albumId));
     let name = $derived(album?.name ?? "Album");
     let coverArt = $derived(album ? store.getImageSrc(album.cover_art) : null);
     let coverArtFilename = $derived(album?.cover_art ?? null);
@@ -23,7 +23,6 @@
     let totalDuration = $derived(
         tracks.reduce((sum, track) => sum + track.duration_seconds, 0),
     );
-
 
     const CoverImage: Attachment = (e) => {
         e.addEventListener("load", () => {
@@ -53,11 +52,13 @@
 <div
     class="relative flex flex-col h-full w-full overflow-y-scroll px-6 pb-10 z-1"
 >
-    <div class="flex gap-15 items-end p-5 pb-30">
+    <div class="flex gap-15 items-end p-5 pb-6">
         <img
             src={coverArt ? coverArt : "/PhonographRecord.webp"}
             alt={name}
-            class="w-64 {coverArt ? 'rounded-xl shadow-xl' : 'drop-shadow-xl drop-shadow-black/50'}"
+            class="w-64 {coverArt
+                ? 'rounded-xl shadow-xl'
+                : 'drop-shadow-xl drop-shadow-black/50'}"
             crossorigin="anonymous"
             {@attach CoverImage}
         />
@@ -73,7 +74,8 @@
                     <div class="flex gap-1 items-center font-medium">
                         {#if artist.profile_image}
                             <img
-                                src={store.getImageSrc(artist.profile_image) ?? ""}
+                                src={store.getImageSrc(artist.profile_image) ??
+                                    ""}
                                 alt={artist.name}
                                 class="w-6 h-6 rounded-full object-cover"
                             />
@@ -95,7 +97,7 @@
     </div>
 
     {#if tracks.length > 0}
-        <div class="-translate-y-22">
+        <div>
             <TrackList
                 context={{
                     type: "Album",

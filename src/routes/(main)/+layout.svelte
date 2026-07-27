@@ -1,8 +1,11 @@
 <script lang="ts">
+    import { afterNavigate } from "$app/navigation";
     import Header from "$components/Header.svelte";
     import Player from "$components/Player.svelte";
+    import ResizeHandlers from "$components/ResizeHandlers.svelte";
     import ScanProgress from "$components/ScanProgress.svelte";
     import Sidebar from "$components/Sidebar.svelte";
+    import Button from "$components/ui/button/button.svelte";
     import { Toaster } from "$components/ui/sonner/index.js";
     import { player } from "$lib/player.svelte";
     import { flags, initSettings, settings } from "$lib/settings.svelte";
@@ -15,20 +18,17 @@
     } from "$lib/shortcuts.svelte";
     import { store } from "$lib/stores.svelte";
     import { updater } from "$lib/update.svelte";
+    import { MoveUp } from "@lucide/svelte";
     import { listen } from "@tauri-apps/api/event";
-    import { onMount } from "svelte";
-    import { toast } from "svelte-sonner";
-    import type { LayoutProps } from "./$types";
-    import { afterNavigate } from "$app/navigation";
     import { gsap } from "gsap";
     import { ScrollTrigger } from "gsap/ScrollTrigger";
     import Lenis from "lenis";
     import "lenis/dist/lenis.css";
+    import { onDestroy, onMount } from "svelte";
+    import { toast } from "svelte-sonner";
     import type { Action } from "svelte/action";
-    import Button from "$components/ui/button/button.svelte";
-    import { MoveUp } from "@lucide/svelte";
     import { slide } from "svelte/transition";
-    import ResizeHandlers from "$components/ResizeHandlers.svelte";
+    import type { LayoutProps } from "./$types";
 
     const SCROLL_THRESHOLD = 400;
 
@@ -179,10 +179,15 @@
     onMount(() => {
         gsap.registerPlugin(ScrollTrigger);
 
+        const origHandler = window.onunhandledrejection;
         window.onunhandledrejection = (e) => {
             console.error("Unhandled rejection:", e.reason);
             toast.error("An unexpected error occurred");
         };
+
+        onDestroy(() => {
+            window.onunhandledrejection = origHandler;
+        });
 
         initSettings();
         store.init();
@@ -215,15 +220,15 @@
         }
     });
 
-    afterNavigate(() => {
-        if (scrollContainer) {
-            if (lenis) {
-                lenis.scrollTo(0, { immediate: true });
-            } else {
-                scrollContainer.scrollTop = 0;
-            }
-        }
-    });
+   //  afterNavigate(() => {
+   //      if (scrollContainer) {
+   //          if (lenis) {
+   //              lenis.scrollTo(0, { immediate: true });
+   //          } else {
+   //              scrollContainer.scrollTop = 0;
+   //          }
+   //      }
+   // });
 </script>
 
 <Sidebar />
@@ -254,10 +259,7 @@
             ? ''
             : 'mb-1.5 '}"
     >
-        <div
-            use:setupSmoothScroll
-            class="pt-18 pl-30 {player.currentTrack ? 'pb-32' : ''}"
-        >
+        <div class="pt-18 pl-30 {player.currentTrack ? 'pb-32' : ''}">
             {@render children()}
         </div>
     </div>

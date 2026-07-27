@@ -94,9 +94,7 @@
                 src={bgUrl}
                 {@attach ArtistImage}
                 alt={artist.name}
-                class="h-full object-cover ml-auto aspect-auto z-1"
-                style="mask-image: linear-gradient(to right, transparent 0%, black 30%);
-                       -webkit-mask-image: linear-gradient(to right, transparent 0%, black 30%);"
+                class="h-full object-cover ml-auto aspect-auto z-1 mask-l-from-70% "
                 crossorigin="anonymous"
             />
         </div>
