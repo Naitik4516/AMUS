@@ -15,7 +15,10 @@
     let scanTimeout: ReturnType<typeof setTimeout>;
 
     $effect(() => {
+        let active = true;
+
         const unlistenScan = listen<ProgressEvent>("scan-progress", (event) => {
+            if (!active) return;
             scanProgress = event.payload;
             showScan = true;
 
@@ -32,6 +35,7 @@
         const unlistenFetch = listen<ProgressEvent>(
             "fetch-progress",
             (event) => {
+                if (!active) return;
                 fetchProgress = event.payload;
                 showFetch = true;
 
@@ -48,10 +52,12 @@
         );
 
         const unlistenUpdate = listen("library-updated", () => {
+            if (!active) return;
             invalidateAll();
         });
 
         return () => {
+            active = false;
             unlistenScan.then((fn) => fn());
             unlistenFetch.then((fn) => fn());
             unlistenUpdate.then((fn) => fn());

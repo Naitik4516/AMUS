@@ -17,11 +17,13 @@
         loadFunction,
         args,
         tracks: tracksProp,
+        class: className,
     }: {
         title: string;
         loadFunction?: loadFunction;
         args?: InvokeArgs;
         tracks?: Track[];
+        class?: string;
     } = $props();
 
     let tracks = $state([] as Track[]);
@@ -44,5 +46,5 @@
 </script>
 
 {#if tracks.length > 0}
-    <HorizontalScroll {title} data={tracks} Card={TrackCard} />
+    <HorizontalScroll {title} data={tracks} Card={TrackCard} class={className} />
 {/if}

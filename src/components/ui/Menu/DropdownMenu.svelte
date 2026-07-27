@@ -47,6 +47,13 @@
             const rect = position.anchor.getBoundingClientRect();
             x = rect.left;
             y = rect.bottom;
+            console.log(
+                "anchor rect",
+                rect,
+                "menu size",
+                menuWidth,
+                menuHeight,
+            );
         }
 
         return {
@@ -63,12 +70,17 @@
             onClose();
         }
     };
+
+    $inspect("DropdownMenu", { x, y });
 </script>
 
 <svelte:document
     onmousedown={(e) => {
         const target = e.target as HTMLElement;
-        if (!target.closest(".dropdown-menu")) {
+        if (
+            !target.closest(".dropdown-menu") &&
+            !target.closest(".dropdown-trigger")
+        ) {
             onClose();
         }
     }}
@@ -127,7 +139,7 @@
 {/snippet}
 
 <div
-    class="dropdown-menu fixed z-50 min-w-55 max-w-75 rounded-2xl border border-white/10 bg-card/40 shadow-lg backdrop-blur-xl isolate"
+    class="dropdown-menu fixed z-50 min-w-55 max-w-75 rounded-2xl border border-white/10 bg-card/40 shadow-lg backdrop-blur-xl"
     role="menu"
     bind:offsetWidth={menuWidth}
     bind:offsetHeight={menuHeight}

@@ -2,14 +2,216 @@
     import { X } from "@lucide/svelte";
     import TrackListSmall from "./ui/TrackListSmall.svelte";
     import { player } from "$lib/player.svelte";
-    import {  slide } from "svelte/transition";
+    import { slide } from "svelte/transition";
+    import { fade } from "svelte/transition";
+    import { flip } from "svelte/animate";
+    import Button from "./ui/button/button.svelte";
+    import type { Track } from "$lib/types";
 
     let { showQueue = $bindable(false) }: { showQueue?: boolean } = $props();
+
+    let userQueue = $derived(player.userQueue);
+
+    let isDragging = $state(false);
+    let dragSection = $state<"user" | "context" | null>(null);
+    let dragItem = $state<Track | null>(null);
+    let dragFromIndex = $state(0);
+    let dragStartY = $state(0);
+    let dragX = $state(0);
+    let dragY = $state(0);
+    let dropIndex = $state<number | null>(null);
+    let itemHeight = $state(60);
+    let containerEl = $state<HTMLDivElement | null>(null);
+    let autoScrollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const DRAG_THRESHOLD = 5;
+    const SCROLL_ZONE = 40;
+    const SCROLL_SPEED = 20;
+
+    function getTotalItems(section: "user" | "context"): number {
+        return section === "user" ? userQueue.length : player.playNext.length;
+    }
+
+    function startDrag(
+        e: PointerEvent,
+        section: "user" | "context",
+        index: number,
+        track: Track,
+    ) {
+        if (e.button !== 0) return;
+        const target = e.currentTarget as HTMLElement;
+        itemHeight = target.offsetHeight || 60;
+
+        dragSection = section;
+        dragItem = track;
+        dragFromIndex = index;
+        dragStartY = e.clientY;
+        dragX = e.clientX;
+        dragY = e.clientY;
+        dropIndex = index;
+        isDragging = false;
+
+        document.addEventListener("pointermove", onDocumentMove);
+        document.addEventListener("pointerup", onDocumentUp);
+        document.addEventListener("pointercancel", onDocumentCancel);
+    }
+
+    function onDocumentMove(e: PointerEvent) {
+        if (dragSection === null) return;
+        const deltaY = e.clientY - dragStartY;
+
+        if (!isDragging && Math.abs(deltaY) > DRAG_THRESHOLD) {
+            isDragging = true;
+        }
+        if (!isDragging) return;
+
+        dragX = e.clientX;
+        dragY = e.clientY;
+
+        const total = getTotalItems(dragSection);
+        const deltaItems = Math.round(deltaY / itemHeight);
+        dropIndex = Math.max(
+            0,
+            Math.min(total - 1, dragFromIndex + deltaItems),
+        );
+
+        handleAutoScroll(e);
+    }
+
+    function onDocumentUp(_e: PointerEvent) {
+        document.removeEventListener("pointermove", onDocumentMove);
+        document.removeEventListener("pointerup", onDocumentUp);
+        document.removeEventListener("pointercancel", onDocumentCancel);
+        if (
+            isDragging &&
+            dragSection !== null &&
+            dropIndex !== null &&
+            dropIndex !== dragFromIndex
+        ) {
+            if (dragSection === "user") {
+                player.reorderQueue(dragItem!.queue_id!, dropIndex);
+            } else {
+                player.reorderContextQueue(dragFromIndex, dropIndex);
+            }
+        }
+        resetDragState();
+        stopAutoScroll();
+    }
+
+    function onDocumentCancel() {
+        document.removeEventListener("pointermove", onDocumentMove);
+        document.removeEventListener("pointerup", onDocumentUp);
+        document.removeEventListener("pointercancel", onDocumentCancel);
+        resetDragState();
+        stopAutoScroll();
+    }
+
+    function resetDragState() {
+        isDragging = false;
+        dragSection = null;
+        dragItem = null;
+        dropIndex = null;
+    }
+
+    function handleAutoScroll(e: PointerEvent) {
+        if (!containerEl) return;
+        const rect = containerEl.getBoundingClientRect();
+        const relativeY = e.clientY - rect.top;
+
+        if (relativeY < SCROLL_ZONE) {
+            startAutoScroll(-SCROLL_SPEED);
+        } else if (relativeY > rect.height - SCROLL_ZONE) {
+            startAutoScroll(SCROLL_SPEED);
+        } else {
+            stopAutoScroll();
+        }
+    }
+
+    function startAutoScroll(speed: number) {
+        if (autoScrollTimer) return;
+        autoScrollTimer = setInterval(() => {
+            if (containerEl) containerEl.scrollTop += speed;
+        }, 50);
+    }
+
+    function stopAutoScroll() {
+        if (autoScrollTimer) {
+            clearInterval(autoScrollTimer);
+            autoScrollTimer = null;
+        }
+    }
+
+    function shouldShowIndicator(
+        section: "user" | "context",
+        index: number,
+    ): boolean {
+        return !!(
+            isDragging &&
+            dragSection === section &&
+            dropIndex === index &&
+            dropIndex !== dragFromIndex
+        );
+    }
 </script>
+
+{#snippet DNDTrackList(tracks: Track[], section: "user" | "context")}
+    {#each tracks as track, i (track.queue_id ?? track.id)}
+        <div
+            in:fade={{ duration: 200 }}
+            out:fade={{ duration: 200 }}
+            animate:flip={{ duration: 250 }}
+        >
+            {#if shouldShowIndicator(section, i)}
+                <div class="h-0.75 bg-accent/40 rounded-md mx-2 my-1"></div>
+            {/if}
+            <div
+                class="flex justify-between items-center rounded-xl h-16 px-1 gap-1 hover:bg-white/5 drag-item group {isDragging &&
+                dragSection === section &&
+                dragFromIndex === i
+                    ? 'invisible'
+                    : isDragging
+                      ? 'cursor-default'
+                      : 'cursor-grab'}"
+                onpointerdown={(e) => startDrag(e, section, i, track)}
+                role="listitem"
+            >
+                <TrackListSmall
+                    {track}
+                    onclick={() => {
+                        if (isDragging) return;
+                        if (section === "user") {
+                            player.contextPosition = i;
+                        } else {
+                            player.playFromContextIndex(i);
+                        }
+                    }}
+                    styled={false}
+                />
+                <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="text-gray-400 hover:text-red-400 transition-colors group-hover:opacity-100 opacity-0"
+                    onclick={() => {
+                        const id = section === "user" ? track.queue_id! : track.id;
+                        player.removeFromQueue(id, section);
+                    }}
+                    title={section === "user"
+                        ? "Remove from Queue"
+                        : "Play Next"}
+                >
+                    <X size={18} />
+                </Button>
+            </div>
+        </div>
+    {/each}
+{/snippet}
 
 {#if showQueue}
     <div
-        class="absolute bottom-full right-1 mb-4 w-90 bg-card/60 backdrop-blur-lg border-2 border-border/70 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[75vh]"
+        bind:this={containerEl}
+        class="absolute bottom-full right-1 mb-4 w-90 bg-card/60 backdrop-blur-lg border-2 border-border/70 rounded-2xl shadow-2xl flex flex-col max-h-[75vh] {isDragging
+            ? 'select-none'
+            : ''}"
         transition:slide
     >
         <div
@@ -23,7 +225,7 @@
                 <X size={18} />
             </button>
         </div>
-        <div class="overflow-y-auto px-4 pb-4">
+        <div class="px-4 pb-4 overflow-y-scroll">
             <!-- Now Playing -->
             {#if player.currentTrack}
                 <section>
@@ -42,7 +244,7 @@
             {/if}
 
             <!-- Next in Queue -->
-            {#if player.userQueue.length > 0}
+            {#if userQueue.length > 0}
                 <section>
                     <div class="flex items-center justify-between">
                         <h4
@@ -57,14 +259,8 @@
                             Clear Queue
                         </button>
                     </div>
-                    {#each player.userQueue as track, i}
-                        <TrackListSmall
-                            {track}
-                            onclick={() => {
-                                player.contextPosition = i;
-                            }}
-                        />
-                    {/each}
+
+                    {@render DNDTrackList(userQueue, "user")}
                 </section>
             {/if}
 
@@ -75,12 +271,7 @@
                 >
                     {player.nextSectionTitle}
                 </h4>
-                {#each player.playNext.slice(0, 5) as track, i}
-                    <TrackListSmall
-                        {track}
-                        onclick={() => player.playFromContextIndex(i)}
-                    />
-                {/each}
+                {@render DNDTrackList(player.playNext, "context")}
             {/if}
 
             {#if !player.currentTrack && player.userQueue.length === 0 && player.playNext.length === 0}
@@ -89,5 +280,15 @@
                 </p>
             {/if}
         </div>
+    </div>
+{/if}
+
+<!-- Floating drag preview -->
+{#if isDragging && dragItem}
+    <div
+        class="fixed pointer-events-none z-50 w-85 bg-card/95 opacity-50 border border-border/70 rounded-xl shadow-2xl"
+        style="left: {dragX - 170}px; top: {dragY - 20}px;"
+    >
+        <TrackListSmall track={dragItem} onclick={() => {}} styled={false} />
     </div>
 {/if}

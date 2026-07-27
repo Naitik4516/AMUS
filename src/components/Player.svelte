@@ -40,8 +40,7 @@
 {#if player.currentTrack}
     <div class=" fixed bottom-0 left-0 w-full px-4 pb-3 z-15">
         <div
-            class="grid grid-cols-3 items-center justify-between px-6 py-3 rounded-3xl relative player-container"
-            ondblclick={() => player.close()}
+            class="grid grid-cols-3 items-center justify-between px-6 py-3 rounded-3xl relative bg-linear-to-br from-white/10 to-white/3 backdrop-blur-2xl backdrop-brightness-75 backdrop-saturate-150 ring-1 ring-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.25)]"
             role="contentinfo"
         >
             <!-- Track Info -->
@@ -206,7 +205,10 @@
                         {/if}
                     </button>
                     <div class="w-24">
-                        <Slider bind:value={player.volume} />
+                        <Slider
+                            value={player.volume}
+                            onValueChange={(val) => player.setVolume(val)}
+                        />
                     </div>
                 </div>
             </div>
@@ -216,15 +218,3 @@
     </div>
 {/if}
 
-<style>
-    .player-container::before {
-        backdrop-filter: saturate(220%) blur(18px);
-        background: rgb(29, 26, 30, 0.6);
-        border-radius: inherit;
-        box-shadow: 0 10px 40px rgb(0, 0, 0, 0.2);
-        content: "";
-        inset: 0;
-        position: absolute;
-        z-index: var(--z-default);
-    }
-</style>

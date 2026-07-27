@@ -2,12 +2,22 @@
     import { Maximize2, Minimize2, Minus, X } from "@lucide/svelte";
     import { getCurrentWindow } from "@tauri-apps/api/window";
     import GlobalSearch from "./GlobalSearch.svelte";
+    import { onMount } from "svelte";
+    import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
     let { isMaximized = $bindable(false) } = $props();
 
     function toggleMaximize() {
         const appWindow = getCurrentWindow();
         appWindow.toggleMaximize();
+        isMaximized = !isMaximized;
+    }
+
+    function checkMaximize() {
+        const appWindow = getCurrentWindow();
+        appWindow.isMaximized().then((max) => {
+            isMaximized = max;
+        });
     }
 
     function minimize() {
@@ -20,30 +30,21 @@
         appWindow.close();
     }
 
-    $effect(() => {
-        const appWindow = getCurrentWindow();
-        let unlisten: () => void;
-
-        appWindow.isMaximized().then((max) => {
-            isMaximized = max;
+    onMount(() => {
+        checkMaximize();
+        let unlisten: UnlistenFn | undefined;
+        listen<boolean>('window-maximize-changed', (event) => {
+           isMaximized = event.payload;
+        }).then((fn) => {
+            unlisten = fn;
         });
-
-        appWindow
-            .listen("tauri://resize", async () => {
-                isMaximized = await appWindow.isMaximized();
-            })
-            .then((unlistenFn) => {
-                unlisten = unlistenFn;
-            });
-
         return () => {
-            if (unlisten) unlisten();
+            unlisten?.();
         };
     });
 </script>
 
-<header class="fixed top-2 inset-x-0 z-20">
-    <div class="h-2 shrink-0"></div>
+<header class="fixed top-3 inset-x-0 z-20">
     <div
         data-tauri-drag-region
         class="flex items-center px-4 h-12 justify-between select-none text-white cursor-grab"
@@ -103,7 +104,6 @@
         width: 28px;
         height: 28px;
         color: white;
-        background-color: transparent;
         cursor: pointer;
         border-radius: 99px;
         transition: background-color 0.15s ease;
@@ -114,6 +114,6 @@
     }
 
     .controls button.close-btn:hover {
-        background-color: rgba(225, 0, 0, 0.7);
+        background-color: rgba(225, 0, 0, 0.5);
     }
 </style>

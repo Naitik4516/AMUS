@@ -2,7 +2,7 @@
     import { onMount } from "svelte";
     import { gsap } from "gsap";
 
-    let { title, data, Card } = $props();
+    let { title, data, Card, class: className = '' } = $props();
 
     let scrollContainer: HTMLDivElement | null = $state(null);
     let showLeftButton = $state(false);
@@ -97,7 +97,7 @@
     });
 </script>
 
-<section class="relative w-full px-1">
+<section class={"relative w-full px-1 " + className}>
     <h2
         class="text-5xl xl:text-6xl font-extrabold text-white font-switzer mb-4"
     >
@@ -151,8 +151,8 @@
     .mask-container {
         position: relative;
         width: 100%;
-        --mask-left: linear-gradient(to right, transparent, #000 40px);
-        --mask-right: linear-gradient(to left, transparent, #000 40px);
+        --mask-left: linear-gradient(to right, transparent, #000 100px);
+        --mask-right: linear-gradient(to left, transparent, #000 100px);
 
         mask-image: var(--mask-left), var(--mask-right);
         mask-composite: intersect;

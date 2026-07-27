@@ -1,31 +1,16 @@
 <script lang="ts">
-    import { onMount } from "svelte";
     import { Play, Shuffle, FolderInput } from "@lucide/svelte";
     import Button from "$components/ui/button/button.svelte";
-    import { importAudioLibrary, getStatsOverview } from "$lib/commands.svelte";
+    import { importAudioLibrary } from "$lib/commands.svelte";
     import { player } from "$lib/player.svelte";
     import { invoke } from "@tauri-apps/api/core";
-    import { loadSession, clearSession, hasSession } from "$lib/session.svelte";
+    import { loadSession, clearSession } from "$lib/session.svelte";
     import { store } from "$lib/stores.svelte";
-
-    let { hasMusic } = $props();
+    import Odometer from "$lib/animations/odometer.svelte";
 
     let totalTracks = $derived(store.tracks.length);
     let totalArtists = $derived(store.artists.length);
     let totalAlbums = $derived(store.albums.length);
-    let hasSessionState = $state(false);
-
-    onMount(async () => {
-        if (hasMusic) {
-            try {
-                const sessionExists = await hasSession();
-
-                hasSessionState = sessionExists && !player.currentTrack;
-            } catch (e) {
-                console.error("Failed to load stats", e);
-            }
-        }
-    });
 
     async function playAllTracks() {
         if (store.tracks.length > 0) {
@@ -124,7 +109,6 @@
                 shuffle: session.shuffle,
             });
             await clearSession();
-            hasSessionState = false;
         } catch (e) {
             console.error("Failed to restore session", e);
             await resumeFallback();
@@ -150,7 +134,9 @@
     async function randomMix() {
         try {
             if (store.tracks.length > 0) {
-                const randomIndex = Math.floor(Math.random() * store.tracks.length);
+                const randomIndex = Math.floor(
+                    Math.random() * store.tracks.length,
+                );
                 await player.play([store.tracks[randomIndex]]);
             }
         } catch (e) {
@@ -197,31 +183,21 @@
             </div>
         </h1>
         <p class="text md:text-xl text-foreground/80 font-medium mb-8 px-2">
-            • {totalTracks.toLocaleString()} Songs • {totalArtists.toLocaleString()}
-            Artists • {totalAlbums.toLocaleString()} Albums
+            <span> • <Odometer value={totalTracks} /> Songs </span>
+            <span> • <Odometer value={totalArtists} /> Artists </span>
+            <span> • <Odometer value={totalAlbums} /> Albums </span>
         </p>
 
         <div class="flex items-center gap-4">
-            {#if hasMusic}
-                {#if hasSessionState}
-                    <Button
-                        size="xl"
-                        class="font-semibold roounded-full bg-accent text-black hover:bg-accent/80"
-                        onclick={resumeSession}
-                    >
-                        <Play class="w-5 h-5 fill-current" />
-                        Resume Session
-                    </Button>
-                {:else}
-                    <Button
-                        size="xl"
-                        class="font-semibold roounded-full"
-                        onclick={resumeFallback}
-                    >
-                        <Play class="w-5 h-5 fill-current" />
-                        Resume Listening
-                    </Button>
-                {/if}
+            {#if totalTracks > 0}
+                <Button
+                    size="xl"
+                    class="font-semibold roounded-full bg-accent text-black hover:bg-accent/80"
+                    onclick={resumeSession}
+                >
+                    <Play class="w-5 h-5 fill-current" />
+                    Resume Session
+                </Button>
                 <Button
                     size="xl"
                     class="font-semibold roounded-full"

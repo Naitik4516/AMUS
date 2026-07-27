@@ -22,8 +22,8 @@
 </script>
 
 <div
-    class="w-full flex items-center gap-4 px-2 py-2 overflow-hidden {styled
-        ? 'hover:bg-white/5 transition-colors'
+    class="w-full flex items-center gap-4 px-2 py-2 overflow-hidden select-none {styled
+        ? 'hover:bg-white/5 transition-colors rounded-xl'
         : ''}  text-left"
     {...props}
 >
@@ -49,9 +49,14 @@
         {/if}
     </button>
     <div class="flex flex-col min-w-0 flex-1">
-        <a href="/library/track/{track.id}" class="font-semibold truncate {titleColor}">
-            {track.title}
-        </a>
+        <span class="truncate block">
+            <a
+                href="/library/track/{track.id}"
+                class="font-semibold {titleColor}"
+            >
+                {track.title}
+            </a>
+        </span>
         <div class="text-sm text-gray-300 truncate block">
             {#each track.artists as artist, index (artist.id)}
                 <a href="/library/artists/{artist.id}">

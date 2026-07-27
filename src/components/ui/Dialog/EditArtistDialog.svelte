@@ -4,6 +4,7 @@
   import { store } from "$lib/stores.svelte";
   import { ImagePlus, X, LoaderCircle, User } from "@lucide/svelte";
   import Dialog from "$components/Dialog.svelte";
+  import { onMount } from "svelte";
 
   let {
     open = $bindable(false),
@@ -24,7 +25,7 @@
   let editBannerImage = $state<string | null>(null);
   let saving = $state(false);
 
-  $effect(() => {
+  onMount(() => {
     editName = name;
     editProfileImage = profileImage;
     editBannerImage = bannerImage;

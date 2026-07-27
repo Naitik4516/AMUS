@@ -189,7 +189,7 @@
     });
 
     let VListHeight = $derived(
-        Math.min(orderedTracks.length * 74, window.innerHeight),
+        Math.min(orderedTracks.length * 80, window.innerHeight),
     );
 
     function toggleSort(key: ColumnKey) {
@@ -424,7 +424,6 @@
         >
             <Ellipsis size={22} />
         </button>
-
         {#if actionMenuOpen}
             <DropdownMenu
                 position={actionMenuOpen}
@@ -432,6 +431,7 @@
                 onClose={() => (actionMenuOpen = null)}
             />
         {/if}
+
 
         <div class="flex-1"></div>
 
@@ -520,7 +520,7 @@
         <!-- header -->
         <div
             role="row"
-            class="grid border-b border-white/10 px-2 font-medium uppercase tracking-wide text-zinc-300 text-sm sm:px-3"
+            class="grid border-b-2 border-white/10 mx-2 mb-2 font-medium uppercase tracking-wide text-zinc-300 text-sm sm:px-3"
             style="grid-template-columns:{gridTemplate}"
         >
             {#each visibleColumnKeys as key (key)}
@@ -581,14 +581,13 @@
                     {/if}
                 </div>
             {/each}
-            <div></div>
         </div>
 
         <!-- rows -->
-        <div class="mt-1 w-full overflow-x-scroll">
+        <div class="mt-1 w-full overflow-x-scroll px-2">
             {#if orderedTracks.length > 0}
                 <VList
-                    class="vlist"
+                    class="vlist scroll-smooth"
                     data={orderedTracks}
                     style="height: {VListHeight}px;"
                     getKey={(_, i) => i}
@@ -598,7 +597,7 @@
                         <div
                             role="row"
                             tabindex="0"
-                            class="group relative grid items-center rounded-lg px-2 transition-colors text-neutral-300 text-sm hover:bg-white/6 {density ===
+                            class="group relative grid items-center rounded-2xl px-2 transition-colors text-neutral-300 font-satoshi font-medium text-sm hover:bg-neutral-600/15 hover:shadow-lg {density ===
                             'compact'
                                 ? 'py-1.5'
                                 : 'py-3'}"
@@ -635,7 +634,7 @@
                                     {#if key === "index"}
                                         <button
                                             type="button"
-                                            class="relative flex h-8 w-8 items-center justify-center rounded {active
+                                            class="relative flex h-9 w-9 items-center justify-center rounded {active
                                                 ? 'text-emerald-400'
                                                 : ''} {focusRing}"
                                             onclick={() =>
@@ -656,8 +655,8 @@
                                                     >{i + 1}</span
                                                 >
                                                 <Play
-                                                    size={13}
-                                                    class="hidden text-white group-hover:block"
+                                                    size={20}
+                                                    class="hidden text-gray-300 fill-gray-300 group-hover:block"
                                                 />
                                             {/if}
                                         </button>
@@ -672,7 +671,7 @@
                                                             track.cover_art,
                                                         )}
                                                         alt=""
-                                                        class="h-12 w-12 shrink-0 rounded-lg object-cover"
+                                                        class="h-14 w-14 shrink-0 rounded-lg object-cover"
                                                         loading="lazy"
                                                     />
                                                 {:else}
@@ -684,19 +683,14 @@
                                                 {/if}
                                             {/if}
                                             <div class="min-w-0">
-                                                <button
-                                                    type="button"
-                                                    class="block max-w-full truncate rounded text-left text-base {active
+                                                <a
+                                                    class="block max-w-full truncate text-lg {active
                                                         ? 'font-extrabold text-white'
                                                         : 'text-zinc-100  font-medium'} hover:underline {focusRing}"
-                                                    onclick={() =>
-                                                        handleRowActivate(
-                                                            track,
-                                                            i,
-                                                        )}
+                                                    href="/library/track/{track.id}"
                                                 >
                                                     {track.title}
-                                                </button>
+                                                </a>
                                                 <div
                                                     class="truncate text-stone-400"
                                                 >

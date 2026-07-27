@@ -5,7 +5,6 @@
     import { X, LoaderCircle, Pen } from "@lucide/svelte";
     import PlaylistCoverArt from "$components/ui/PlaylistCoverArt.svelte";
     import Dialog from "$components/Dialog.svelte";
-    import { onMount } from "svelte";
 
     let {
         open = $bindable(false),
@@ -19,13 +18,16 @@
         coverArt?: string | null;
     } = $props();
 
-    let editName = $state("");
-    let editCoverArt = $state<string | null>(null);
+    let editName = $state(name);
+    let editCoverArt = $state<string | null>(coverArt);
     let saving = $state(false);
 
-    onMount(() => {
-        editName = name;
-        editCoverArt = coverArt;
+    // sync local state when dialog opens with fresh props
+    $effect(() => {
+        if (open) {
+            editName = name;
+            editCoverArt = coverArt;
+        }
     });
 
     async function pickCover() {

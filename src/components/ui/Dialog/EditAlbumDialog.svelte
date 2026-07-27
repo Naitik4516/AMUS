@@ -4,6 +4,7 @@
     import { store } from "$lib/stores.svelte";
     import { ImagePlus, X, LoaderCircle } from "@lucide/svelte";
     import Dialog from "$components/Dialog.svelte";
+    import { onMount } from "svelte";
 
     let {
         open = $bindable(false),
@@ -17,15 +18,17 @@
         coverArt?: string | null;
     } = $props();
 
-    let editName = $state("");
-    let editCoverArt = $state<string | null>(null);
+    let editName = $state(name);
+    let editCoverArt = $state<string | null>(coverArt);
     let coverChanged = $state(false);
     let saving = $state(false);
 
-    $effect(() => {
-        editName = name;
-        editCoverArt = coverArt;
-        coverChanged = false;
+    onMount(() => {
+        if (open) {
+            editName = name;
+            editCoverArt = coverArt;
+            coverChanged = false;
+        }
     });
 
     async function pickCover() {
