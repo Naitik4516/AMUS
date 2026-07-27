@@ -565,7 +565,7 @@ pub fn update_playlist(conn: &Connection, playlist: Playlist) -> Result<Playlist
 }
 
 pub fn update_artist(conn: &Connection, artist: Artist) -> Result<Artist> {
-    let _ = conn.execute(
+    conn.execute(
         "UPDATE artist SET name = ?, profile_image = ?, banner_image = ? WHERE id = ?",
         params![
             artist.name,
@@ -573,7 +573,8 @@ pub fn update_artist(conn: &Connection, artist: Artist) -> Result<Artist> {
             artist.banner_image,
             artist.id
         ],
-    );
+    )
+    .map_err(Error::Db)?;
     get_artist(conn, artist.id)
 }
 
@@ -1139,6 +1140,7 @@ pub fn prepare_tracks_list<P: Params>(
                     added_at: row.get(11)?,
                     track_number: row.get::<_, Option<i32>>(5)?.map(|n| n as u32),
                     playlist_ids: vec![],
+                    queue_id: None,
                 },
                 album_artist_name,
             })
@@ -1592,6 +1594,7 @@ pub fn get_top_tracks_with_stats(
                 added_at: row.get(11)?,
                 track_number: row.get::<_, Option<i32>>(5)?.map(|n| n as u32),
                 playlist_ids: vec![],
+                queue_id: None,
             };
 
             let play_count: i64 = row.get(12)?;
@@ -2288,6 +2291,7 @@ pub fn get_playback_history_timeline(
                 added_at: row.get(12)?,
                 track_number: row.get::<_, Option<i32>>(6)?.map(|n| n as u32),
                 playlist_ids: vec![],
+                queue_id: None,
             };
 
             Ok(RawEvent {

@@ -35,6 +35,8 @@ pub struct Track {
     pub added_at: DateTime<Utc>,
     pub track_number: Option<u32>,
     pub playlist_ids: Vec<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queue_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

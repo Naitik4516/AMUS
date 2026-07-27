@@ -834,7 +834,8 @@ pub fn scan_files(
     let mut track_album_entries: Vec<(i64, i64, i32)> = Vec::new();
 
     let save_start = Instant::now();
-    let tx = conn.transaction().map_err(Error::Db)?;
+    const BATCH_SIZE: usize = 500;
+    let mut tx = conn.transaction().map_err(Error::Db)?;
     let progress_step = (track_count / 15).max(15);
 
     for (i, (meta, cover_url)) in metadata_with_covers.iter().enumerate() {
@@ -891,6 +892,21 @@ pub fn scan_files(
 
         db::clear_track_album(&tx, track_id)?;
         track_album_entries.push((album_id, track_id, meta.track_number.unwrap_or(1) as i32));
+
+        // Commit periodically so long scans don't starve other write operations
+        if i > 0 && i % BATCH_SIZE == 0 {
+            db::bulk_insert_track_artists(&tx, &track_artist_pairs)?;
+            db::bulk_insert_track_albums(&tx, &track_album_entries)?;
+            for (album_name, album_artist_name) in &album_artists {
+                db::set_album_artist(&tx, album_name, album_artist_name)?;
+            }
+            tx.commit().map_err(Error::Db)?;
+            tx = conn.transaction().map_err(Error::Db)?;
+            track_artist_pairs.clear();
+            track_album_entries.clear();
+            album_artists.clear();
+            // artist_cache and album_cache persist across batches
+        }
 
         if i % progress_step == 0 && i > 0 {
             let pct = PHASE_DB_START + (i * (PHASE_DB_END - PHASE_DB_START) / track_count);
