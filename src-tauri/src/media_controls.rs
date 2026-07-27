@@ -70,7 +70,7 @@ pub fn init(app: AppHandle) -> Result<(), String> {
                     _ => None,
                 };
                 if let Some(cmd) = cmd {
-                    let _ = handle.0.send(cmd);
+                    let _ = handle.0.try_send(cmd);
                 }
             }
         })

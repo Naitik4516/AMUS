@@ -1,7 +1,7 @@
 //! Dispatch CLI commands against the running app state.
 
 use std::path::Path;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::SyncSender;
 
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::oneshot;
@@ -257,7 +257,7 @@ fn pool(app: &AppHandle) -> Result<tauri::State<'_, DbPool>, String> {
         .ok_or_else(|| "database not ready".to_string())
 }
 
-fn player_tx(app: &AppHandle) -> Result<Sender<PlayerCommand>, String> {
+fn player_tx(app: &AppHandle) -> Result<SyncSender<PlayerCommand>, String> {
     let handle = app
         .try_state::<PlayerHandle>()
         .ok_or_else(|| "player not ready".to_string())?;
@@ -266,14 +266,16 @@ fn player_tx(app: &AppHandle) -> Result<Sender<PlayerCommand>, String> {
 
 fn send_player(app: &AppHandle, cmd: PlayerCommand) -> Result<(), String> {
     player_tx(app)?
-        .send(cmd)
-        .map_err(|e| format!("player: {e}"))
+        .try_send(cmd)
+        .map_err(|e| match e {
+            std::sync::mpsc::TrySendError::Full(_) => "player command queue full".into(),
+            std::sync::mpsc::TrySendError::Disconnected(_) => "player disconnected".into(),
+        })
 }
 
 fn get_state(app: &AppHandle) -> Result<crate::player::actor::PlayerStateSnapshot, String> {
     let (tx, rx) = oneshot::channel();
     send_player(app, PlayerCommand::GetState(tx))?;
-    // Block with timeout via recv on blocking context (we're on a worker thread)
     rx.blocking_recv()
         .map_err(|_| "player state channel closed".to_string())
 }

@@ -17,11 +17,11 @@ use r2d2_sqlite::SqliteConnectionManager;
 use std::sync::atomic::{AtomicBool, Ordering};
 use sync::SyncManager;
 use tauri::{
-    Emitter, Manager,
+    Emitter, Manager, WindowEvent,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
-
+use tauri_plugin_window_state::{AppHandleExt, StateFlags, WindowExt};
 
 pub(crate) struct MiniPlayerPinned(AtomicBool);
 
@@ -100,8 +100,8 @@ fn toggle_miniplayer(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_window_state::Builder::new().build());
+    let builder =
+        tauri::Builder::default().plugin(tauri_plugin_window_state::Builder::new().build());
 
     #[cfg(debug_assertions)]
     let builder = builder.plugin(tauri_plugin_devtools::init());
@@ -175,8 +175,9 @@ pub fn run() {
                 app.manage(pool);
 
                 let sync_manager = SyncManager::new();
-                sync_manager.init(app_handle);
+                let sync_manager_clone = sync_manager.clone();
                 app.manage(sync_manager);
+                sync_manager_clone.init(app_handle);
 
                 Ok(())
             })() {
@@ -194,6 +195,8 @@ pub fn run() {
             if sync::get_setting(app_handle, "osMediaControls", true).unwrap_or(true) {
                 let _ = media_controls::init(app_handle.clone());
             }
+
+            app_handle.save_window_state(StateFlags::all());
 
             let tray_menu = build_tray_menu(app_handle)?;
 
@@ -215,17 +218,18 @@ pub fn run() {
                 .on_menu_event(handle_tray_menu)
                 .build(app_handle)?;
 
-            // Mini-player window event handlers 
+            // Mini-player window event handlers
             if let Some(mini_win) = app_handle.get_webview_window("mini-player") {
                 let app_clone = app_handle.clone();
+                mini_win.restore_state(StateFlags::all());
                 mini_win.on_window_event(move |event| match event {
-                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                    WindowEvent::CloseRequested { api, .. } => {
                         api.prevent_close();
                         if let Some(w) = app_clone.get_webview_window("mini-player") {
                             let _ = w.hide();
                         }
                     }
-                    tauri::WindowEvent::Focused(false) => {
+                    WindowEvent::Focused(false) => {
                         if let Some(state) = app_clone.try_state::<MiniPlayerPinned>() {
                             if !state.0.load(Ordering::Relaxed) {
                                 if let Some(w) = app_clone.get_webview_window("mini-player") {
@@ -238,11 +242,14 @@ pub fn run() {
                 });
             }
 
-            // Prevent closing the main window if "keepRunningInBg" is true
             let handle = app_handle.clone();
+
             if let Some(main_win) = app_handle.get_webview_window("main") {
+                let was_maximized = AtomicBool::new(main_win.is_maximized().unwrap_or(false));
+                let win = main_win.clone();
+
                 main_win.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
                         let keep_in_bg =
                             sync::get_setting(&handle, "keepRunningInBg", true).unwrap_or(true);
                         if keep_in_bg {
@@ -250,6 +257,15 @@ pub fn run() {
                             if let Some(w) = handle.get_webview_window("main") {
                                 let _ = w.hide();
                             }
+                        }
+                    }
+                    if let WindowEvent::Resized(_) = event {
+                        let is_maximized = win.is_maximized().unwrap_or(false);
+
+                        let prev_state = was_maximized.swap(is_maximized, Ordering::Relaxed);
+
+                        if is_maximized != prev_state {
+                            let _ = win.emit("window-maximize-changed", is_maximized);
                         }
                     }
                 });
@@ -262,7 +278,8 @@ pub fn run() {
                 let _ = window
                     .state::<commands::PlayerHandle>()
                     .0
-                    .send(PlayerCommand::Shutdown);
+                    .try_send(PlayerCommand::Shutdown)
+                    .ok();
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -270,7 +287,6 @@ pub fn run() {
             commands::get_source_dirs,
             commands::remove_source,
             commands::refresh_watcher,
-            commands::has_music,
             commands::scan_library,
             commands::get_all_tracks,
             commands::get_recently_played,
@@ -305,6 +321,7 @@ pub fn run() {
             commands::remove_from_queue,
             commands::clear_queue,
             commands::reorder_queue,
+            commands::reorder_context,
             commands::set_autoplay,
             commands::play_track_from_context,
             commands::restore_session,

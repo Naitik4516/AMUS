@@ -108,7 +108,7 @@ pub async fn fetch_artist_images(
 
     let client = Client::builder().impersonate(Impersonate::Random).build()?;
 
-    let max_concurrent_downloads = 15;
+    let max_concurrent_downloads = 10;
     let total = artists.len();
     let completed = Arc::new(AtomicUsize::new(0));
 
@@ -143,20 +143,27 @@ pub async fn fetch_artist_images(
                         match process_artist_image(&client, &artist_name, &images_dir).await {
                             Ok(filename) => {
                                 if !filename.is_empty() {
-                                    if let Ok(conn) = pool.get() {
-                                       let _ = conn.execute(
-                                            "UPDATE artist SET profile_image = ?, banner_image = ? WHERE id = ?",
-                                            rusqlite::params![filename, filename, artist_id],
-                                        );
-                                        let _ = db::report_fetch_success(&conn, artist_id);
-                                    }
+                                    let pool = pool.clone();
+                                    let filename = filename.clone();
+                                    let _ = tokio::task::spawn_blocking(move || {
+                                        if let Ok(conn) = pool.get() {
+                                            let _ = conn.execute(
+                                                "UPDATE artist SET profile_image = ?, banner_image = ? WHERE id = ?",
+                                                rusqlite::params![filename, filename, artist_id],
+                                            );
+                                            let _ = db::report_fetch_success(&conn, artist_id);
+                                        }
+                                    }).await;
                                 }
                             }
                             Err(e) => {
                                 println!("❌ Error processing {}: {}", artist_name, e);
-                                if let Ok(conn) = pool.get() {
-                                    let _ = db::report_fetch_failure(&conn, artist_id);
-                                }
+                                let pool = pool.clone();
+                                let _ = tokio::task::spawn_blocking(move || {
+                                    if let Ok(conn) = pool.get() {
+                                        let _ = db::report_fetch_failure(&conn, artist_id);
+                                    }
+                                }).await;
                             }
                         }
                         let idx = completed.fetch_add(1, Ordering::SeqCst) + 1;
