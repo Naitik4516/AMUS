@@ -1,19 +1,35 @@
 <script lang="ts">
-    import type { Track } from "$lib/types";
+    import type { Track, Context } from "$lib/types";
     import { Play } from "@lucide/svelte";
     import { player } from "$lib/player.svelte";
     import { fade, fly } from "svelte/transition";
     import TrackCoverArt from "../TrackCoverArt.svelte";
+    import TrackMenu from "$components/ui/Menu/TrackMenu.svelte";
+    import { openContextMenu } from "$lib/context-menu.svelte";
 
     let { data }: { data: Track } = $props();
 
     let hovering = $state(false);
+
+    let trackContext = $derived<Context>(
+        { type: "Album", id: data.album.id, name: data.album.name, coverArt: data.album.cover_art ?? null },
+    );
+
+    function handleContextMenu(e: MouseEvent) {
+        e.preventDefault();
+        openContextMenu(TrackMenu, {
+            position: { type: "coordinates", x: e.clientX, y: e.clientY },
+            track: data,
+            context: trackContext,
+        });
+    }
 </script>
 
 <div
     class="relative overflow-hidden rounded-4xl bg-secondary shadow-lg hover:shadow-xl transition-shadow duration-300 h-64 w-64"
     onmouseenter={() => (hovering = true)}
     onmouseleave={() => (hovering = false)}
+    oncontextmenu={handleContextMenu}
     role="feed"
 >
     <TrackCoverArt cover_art={data.cover_art} {hovering} />

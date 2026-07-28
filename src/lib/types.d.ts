@@ -65,8 +65,8 @@ export type Context =
       type: "Artist";
       id: number;
       name: string;
-      profileImage: string | null;
-      bannerImage: string | null;
+      profileImage: string | null | undefined;
+      bannerImage: string | null | undefined;
     }
   | { type: "Favorites"; name: "Favorites" };
 

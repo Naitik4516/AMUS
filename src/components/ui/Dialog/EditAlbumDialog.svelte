@@ -2,7 +2,7 @@
     import { Button } from "$components/ui/button/index.js";
     import { selectAndUploadImage } from "$lib/edit-helpers";
     import { store } from "$lib/stores.svelte";
-    import { ImagePlus, X, LoaderCircle } from "@lucide/svelte";
+    import { Pen, X, LoaderCircle, ImagePlus } from "@lucide/svelte";
     import Dialog from "$components/Dialog.svelte";
     import { onMount } from "svelte";
 
@@ -18,8 +18,8 @@
         coverArt?: string | null;
     } = $props();
 
-    let editName = $state(name);
-    let editCoverArt = $state<string | null>(coverArt);
+    let editName = $state("");
+    let editCoverArt = $state<string | null>();
     let coverChanged = $state(false);
     let saving = $state(false);
 
@@ -48,7 +48,11 @@
         saving = true;
         try {
             if (coverChanged) {
-                await store.saveAlbum(albumId, editName.trim(), editCoverArt ?? "");
+                await store.saveAlbum(
+                    albumId,
+                    editName.trim(),
+                    editCoverArt ?? "",
+                );
             } else {
                 await store.saveAlbum(albumId, editName.trim());
             }
@@ -61,47 +65,53 @@
     }
 </script>
 
-<Dialog bind:open title="Edit Album">
-    <div class="flex flex-col gap-5">
+<Dialog bind:open title="Edit Playlist">
+    <div class="flex gap-5 items-center">
         <div class="flex flex-col gap-2">
-            <label for="album-name" class="text-sm font-medium text-zinc-300">Name</label>
-            <input
-                id="album-name"
-                type="text"
-                bind:value={editName}
-                placeholder="Album name"
-                class="w-full px-3 py-2 rounded-xl text-lg font-semibold text-white placeholder-gray-400 focus:outline-2"
-            />
-        </div>
-
-        <div class="flex flex-col gap-2">
-            <label class="text-sm font-medium text-zinc-300">Cover Art</label>
-            <div class="flex items-center gap-3">
+            <div class="relative w-42 h-42 rounded-3xl overflow-clip group">
                 {#if editCoverArt || coverArt}
                     <img
-                        src={store.getImageSrc(editCoverArt ?? coverArt, "cover")}
+                        src={store.getImageSrc(
+                            editCoverArt ?? coverArt,
+                            "cover",
+                        )}
                         alt="Cover preview"
-                        class="h-16 w-16 shrink-0 rounded-lg object-cover"
+                        class="h-full w-full"
                     />
                 {:else}
                     <div
-                        class="h-16 w-16 shrink-0 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-500"
+                        class="h-full w-full shrink-0 bg-zinc-800 flex items-center justify-center text-zinc-500"
                     >
                         <ImagePlus size={20} />
                     </div>
                 {/if}
-                <div class="flex gap-2">
-                    <Button variant="secondary" size="sm" onclick={pickCover}>
-                        {editCoverArt || coverArt ? "Replace" : "Choose"}
+
+                <div
+                    class="absolute bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center inset-0"
+                >
+                    <button onclick={pickCover}>
+                        <Pen size={28} fill="white" />
+                    </button>
+                    <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onclick={removeCover}
+                        class="absolute top-1 right-1"
+                    >
+                        <X />
                     </Button>
-                    {#if editCoverArt || coverArt}
-                        <Button variant="ghost" size="sm" onclick={removeCover}>
-                            <X size={14} />
-                            Remove
-                        </Button>
-                    {/if}
                 </div>
             </div>
+        </div>
+
+        <div class="flex flex-col gap-2">
+            <input
+                id="album-name"
+                type="text"
+                bind:value={editName}
+                placeholder="Album Name"
+                class="w-64 px-3 py-2 rounded-xl text-lg font-semibold text-white placeholder-gray-400 focus:outline-2"
+            />
         </div>
     </div>
 

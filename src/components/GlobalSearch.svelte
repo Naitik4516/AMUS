@@ -2,12 +2,16 @@
     import { goto } from "$app/navigation";
     import { player } from "$lib/player.svelte";
     import { store } from "$lib/stores.svelte";
-    import type { Album, Artist, Playlist, Track } from "$lib/types";
+    import type { Album, Artist, Playlist, Track, Context } from "$lib/types";
     import { Music, Search, X } from "@lucide/svelte";
     import Fuse from "fuse.js";
     import { cubicOut } from "svelte/easing";
     import { slide } from "svelte/transition";
     import { flip } from "svelte/animate";
+    import TrackMenu from "$components/ui/Menu/TrackMenu.svelte";
+    import AlbumMenu from "$components/ui/Menu/AlbumMenu.svelte";
+    import ArtistMenu from "$components/ui/Menu/ArtistMenu.svelte";
+    import { openContextMenu } from "$lib/context-menu.svelte";
 
     type SearchableItem =
         | (Track & { type: "track" })
@@ -191,7 +195,6 @@
     }
 
     function handleResultClick(result: SearchableItem) {
-        console.log("Clicked result:", result);
         if (result.type === "track") {
             player.play([result], { type: "Other" });
         } else if (result.type === "artist") {
@@ -202,6 +205,38 @@
             goto(`/library/playlists/${result.id}`);
         }
         closeDropdown();
+    }
+
+    function handleContextMenu(e: MouseEvent, result: SearchableItem) {
+        e.preventDefault();
+        if (result.type === "track") {
+            const track = result as Track;
+            const context: Context = {
+                type: "Album",
+                id: track.album.id,
+                name: track.album.name,
+                coverArt: track.album.cover_art ?? null,
+            };
+            openContextMenu(TrackMenu, {
+                position: { type: "coordinates", x: e.clientX, y: e.clientY },
+                track,
+                context,
+            });
+        } else if (result.type === "album") {
+            const album = result as Album;
+            openContextMenu(AlbumMenu, {
+                position: { type: "coordinates", x: e.clientX, y: e.clientY },
+                album,
+                onEdit: () => {},
+            });
+        } else if (result.type === "artist") {
+            const artist = result as Artist;
+            openContextMenu(ArtistMenu, {
+                position: { type: "coordinates", x: e.clientX, y: e.clientY },
+                artist,
+                onEdit: () => {},
+            });
+        }
     }
 
     function getCoverUrl(result: SearchableItem): string | null {
@@ -218,8 +253,18 @@
     }
 </script>
 
+<svelte:document
+    onmousedown={(e) => {
+        if (e.button === 2) return;
+        const target = e.target as HTMLElement;
+        if (!target.closest(".search-box")) {
+            closeDropdown();
+        }
+    }}
+/>
+
 <div
-    class="flex flex-col bg-linear-to-br from-white/10 to-white/3 backdrop-blur-2xl backdrop-brightness-80 backdrop-saturate-150 ring-1 ring-white/10 hover:ring-2 shadow-[0_8px_32px_0_rgba(0,0,0,0.25)] mt-auto w-80 focus-within:w-120 {showResults
+    class="search-box flex flex-col bg-linear-to-br from-white/10 to-white/3 backdrop-blur-2xl backdrop-brightness-80 backdrop-saturate-150 ring-1 ring-white/10 hover:ring-2 shadow-[0_8px_32px_0_rgba(0,0,0,0.25)] mt-auto w-80 focus-within:w-120 {showResults
         ? 'rounded-4xl'
         : 'rounded-full transition-all'} "
 >
@@ -236,7 +281,6 @@
                 onkeydown={handleKeyDown}
                 onfocus={() =>
                     searchQuery.trim().length >= 1 && (showResults = true)}
-                onblur={closeDropdown}
                 class="w-full py-4 outline-none bg-transparent text-transparent caret-white placeholder-muted-foreground placeholder:drop-shadow-lg text-sm"
                 autocomplete="off"
                 spellcheck="false"
@@ -284,7 +328,6 @@
         <div
             class="overflow-hidden max-h-[60vh] h-auto overflow-y-auto p-2"
             bind:this={resultsContainer}
-            onblur={() => (showResults = false)}
             role="listbox"
             in:slide
         >
@@ -299,7 +342,8 @@
                         selectedIndex
                             ? 'bg-white/5 shadow-md'
                             : 'hover:bg-white/5'}"
-                        onmousedown={() => handleResultClick(result)}
+                        onclick={() => handleResultClick(result)}
+                        oncontextmenu={(e) => handleContextMenu(e, result)}
                         role="option"
                         aria-selected={i === selectedIndex}
                         animate:flip={{ duration: 200, easing: cubicOut }}

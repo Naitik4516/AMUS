@@ -118,8 +118,8 @@
                     type: "Artist",
                     id: artist.id,
                     name: artist.name,
-                    profileImage: bgUrl,
-                    bannerImage: bgUrl,
+                    profileImage: artist.profile_image,
+                    bannerImage: artist.banner_image,
                 }}
                 accentColor={aColor ? aColor.hex() : "#fff"}
                 {tracks}

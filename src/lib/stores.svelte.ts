@@ -264,7 +264,6 @@ class LibraryStore {
     const updated = await invoke<Playlist>("update_playlist", {
       playlist: { id, name, cover_art },
     });
-    console.log("Updated playlist:", updated);
     this.applyPlaylistUpdate(updated);
     return updated;
   }

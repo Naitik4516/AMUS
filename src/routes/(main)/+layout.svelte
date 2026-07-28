@@ -29,6 +29,7 @@
     import type { Action } from "svelte/action";
     import { slide } from "svelte/transition";
     import type { LayoutProps } from "./$types";
+    import { contextMenu, closeContextMenu } from "$lib/context-menu.svelte";
 
     const SCROLL_THRESHOLD = 400;
 
@@ -39,6 +40,8 @@
 
     let scrollContainer: Element | undefined = $state();
     let lenis: Lenis | undefined;
+
+    let activeContextMenu = $derived(contextMenu.current);
 
     $effect(() => {
         if (flags.ready && player.isReady) {
@@ -289,4 +292,11 @@
 
 {#if player.currentTrack}
     <Player />
+{/if}
+
+{#if activeContextMenu}
+    <activeContextMenu.component
+        {...activeContextMenu.props}
+        onClose={closeContextMenu}
+    />
 {/if}

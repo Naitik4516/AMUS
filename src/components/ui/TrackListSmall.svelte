@@ -1,10 +1,12 @@
 <script lang="ts">
     import { Music, Play } from "@lucide/svelte";
-    import type { Track } from "$lib/types";
+    import type { Track, Context } from "$lib/types";
     import { player } from "$lib/player.svelte";
     import { store } from "$lib/stores.svelte";
     import PlayingVisualizer from "./PlayingVisualizer.svelte";
     import { fade } from "svelte/transition";
+    import TrackMenu from "$components/ui/Menu/TrackMenu.svelte";
+    import { openContextMenu } from "$lib/context-menu.svelte";
 
     let {
         track,
@@ -22,12 +24,26 @@
     } = $props();
 
     let hovering = $state(false);
+
+    let trackContext = $derived<Context>(
+        { type: "Album", id: track.album.id, name: track.album.name, coverArt: track.album.cover_art ?? null },
+    );
+
+    function handleContextMenu(e: MouseEvent) {
+        e.preventDefault();
+        openContextMenu(TrackMenu, {
+            position: { type: "coordinates", x: e.clientX, y: e.clientY },
+            track: track,
+            context: trackContext,
+        });
+    }
 </script>
 
 <div
     class="w-full flex items-center gap-4 px-2 py-2 overflow-hidden select-none {styled
         ? 'hover:bg-white/5 transition-colors rounded-xl'
         : ''}  text-left"
+    oncontextmenu={handleContextMenu}
     {...props}
 >
     <button

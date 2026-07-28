@@ -369,7 +369,6 @@ class PlayerStore {
   }
 
   async removeFromQueue(queueId: number, type: "user" | "context" = "user") {
-    console.log("Removing...");
     await this.#invoke("remove_from_queue", { queueId, queueType: type });
   }
 

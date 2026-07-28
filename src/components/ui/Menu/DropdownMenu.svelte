@@ -35,8 +35,8 @@
 
     let subMenu = $state<MenuItem | null>(null);
 
-    let menuWidth = $state(300);
-    let menuHeight = $state(600);
+    let menuWidth = $state(0);
+    let menuHeight = $state(0);
 
     let { x, y } = $derived.by(() => {
         let x, y;
@@ -47,13 +47,6 @@
             const rect = position.anchor.getBoundingClientRect();
             x = rect.left;
             y = rect.bottom;
-            console.log(
-                "anchor rect",
-                rect,
-                "menu size",
-                menuWidth,
-                menuHeight,
-            );
         }
 
         return {
@@ -70,12 +63,11 @@
             onClose();
         }
     };
-
-    $inspect("DropdownMenu", { x, y });
 </script>
 
 <svelte:document
     onmousedown={(e) => {
+        if (e.button === 2) return;
         const target = e.target as HTMLElement;
         if (
             !target.closest(".dropdown-menu") &&
@@ -139,7 +131,7 @@
 {/snippet}
 
 <div
-    class="dropdown-menu fixed z-50 min-w-55 max-w-75 rounded-2xl border border-white/10 bg-card/40 shadow-lg backdrop-blur-xl"
+    class="dropdown-menu fixed z-100 min-w-55 max-w-75 rounded-2xl border border-white/10 bg-card/40 shadow-lg backdrop-blur-xl"
     role="menu"
     bind:offsetWidth={menuWidth}
     bind:offsetHeight={menuHeight}

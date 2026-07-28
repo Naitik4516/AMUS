@@ -2,12 +2,29 @@
     import { Play } from "@lucide/svelte";
     import { store } from "$lib/stores.svelte";
     import type { Album } from "$lib/types";
+    import AlbumMenu from "$components/ui/Menu/AlbumMenu.svelte";
+    import EditAlbumDialog from "$components/ui/Dialog/EditAlbumDialog.svelte";
+    import { openContextMenu } from "$lib/context-menu.svelte";
 
     let { data }: { data: Album } = $props();
+
+    let editDialogOpen = $state(false);
+
+    function handleContextMenu(e: MouseEvent) {
+        e.preventDefault();
+        openContextMenu(AlbumMenu, {
+            position: { type: "coordinates", x: e.clientX, y: e.clientY },
+            album: data,
+            onEdit: () => {
+                editDialogOpen = true;
+            },
+        });
+    }
 </script>
 
 <a
     href="/library/albums/{data.id}"
+    oncontextmenu={handleContextMenu}
     class="group flex flex-col gap-3 p-4 rounded-2xl hover:bg-zinc-950/20 transition-all duration-300 border border-transparent hover:border-zinc-800 h-auto min-w-64 w-64 group-hover:shadow-xl"
 >
     <div class="aspect-square w-full overflow-hidden rounded-2xl relative">
@@ -46,3 +63,10 @@
         </div>
     </div>
 </a>
+
+<EditAlbumDialog
+    bind:open={editDialogOpen}
+    albumId={data.id}
+    name={data.name}
+    coverArt={data.cover_art}
+/>

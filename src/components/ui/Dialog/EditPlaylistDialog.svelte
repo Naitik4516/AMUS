@@ -18,11 +18,10 @@
         coverArt?: string | null;
     } = $props();
 
-    let editName = $state(name);
-    let editCoverArt = $state<string | null>(coverArt);
+    let editName = $state("");
+    let editCoverArt = $state<string | null>();
     let saving = $state(false);
 
-    // sync local state when dialog opens with fresh props
     $effect(() => {
         if (open) {
             editName = name;
@@ -54,7 +53,6 @@
         }
     }
 
-    $inspect("Cover Art", editCoverArt);
 </script>
 
 <Dialog bind:open title="Edit Playlist">

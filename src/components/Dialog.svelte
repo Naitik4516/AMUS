@@ -16,7 +16,7 @@
             transition:fly={{ y: 600, duration: 300 }}
         >
             <div class="flex justify-between mb-6">
-                <h2 class="text-2xl font-bold font-satoshi">{title}</h2>
+                <h2 class="text-2xl font-bold font-switzer">{title}</h2>
                 <Button
                     variant="outline"
                     size="icon"

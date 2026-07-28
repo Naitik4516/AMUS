@@ -1,12 +1,43 @@
 <script lang="ts">
     import { Play } from "@lucide/svelte";
     import PlaylistCoverArt from "$components/ui/PlaylistCoverArt.svelte";
+    import PlaylistCardMenu from "$components/ui/Menu/PlaylistCardMenu.svelte";
+    import EditPlaylistDialog from "$components/ui/Dialog/EditPlaylistDialog.svelte";
+    import ConfirmDialog from "$components/ui/Dialog/ConfirmDialog.svelte";
+    import { store } from "$lib/stores.svelte";
+    import { openContextMenu } from "$lib/context-menu.svelte";
 
     let { data } = $props();
+
+    let editDialogOpen = $state(false);
+    let deleteDialogOpen = $state(false);
+
+    function handleContextMenu(e: MouseEvent) {
+        e.preventDefault();
+        openContextMenu(PlaylistCardMenu, {
+            position: { type: "coordinates", x: e.clientX, y: e.clientY },
+            playlist: data,
+            onEdit: () => {
+                editDialogOpen = true;
+            },
+            onDelete: () => {
+                deleteDialogOpen = true;
+            },
+        });
+    }
+
+    async function handleDelete() {
+        try {
+            await store.deletePlaylist(data.id);
+        } catch (e) {
+            console.error("Failed to delete playlist", e);
+        }
+    }
 </script>
 
 <a
     href="/library/playlists/{data.id}?data.name={data.name}"
+    oncontextmenu={handleContextMenu}
     class="group flex flex-col gap-3 p-5 rounded-3xl bg-card transition-all duration-300 ring ring-border hover:ring-2 w-60 h-auto shadow-xl hover:shadow-card"
 >
     <div class="aspect-square w-full rounded-3xl overflow-hidden relative">
@@ -27,3 +58,18 @@
         <h3 class="font-bold truncate text-white text-lg">{data.name}</h3>
     </div>
 </a>
+
+<EditPlaylistDialog
+    bind:open={editDialogOpen}
+    playlistId={data.id}
+    name={data.name}
+    coverArt={data.cover_art}
+/>
+
+<ConfirmDialog
+    bind:open={deleteDialogOpen}
+    title="Delete playlist"
+    message={`Are you sure you want to delete "${data.name}"? This action cannot be undone.`}
+    confirmLabel="Delete"
+    onConfirm={handleDelete}
+/>
