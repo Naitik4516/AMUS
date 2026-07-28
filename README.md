@@ -16,6 +16,28 @@ AMUS is built for people who own their music library. It runs completely offline
 
 </div>
 
+## Screenshots
+
+<p align="center">
+  <img src=".github/images/home.webp" width="45%" alt="Home">
+  <img src=".github/images/player+queue+search.webp" width="45%" alt="Player, queue, and search">
+</p>
+
+<p align="center">
+  <img src=".github/images/aritsts.webp" width="45%" alt="Artists">
+  <img src=".github/images/artist_page.webp" width="45%" alt="Artist page">
+</p>
+
+<p align="center">
+  <img src=".github/images/albums.webp" width="45%" alt="Albums">
+  <img src=".github/images/album_page.webp" width="45%" alt="Album page">
+</p>
+
+<p align="center">
+  <img src=".github/images/stats.webp" width="45%" alt="Stats">
+  <img src=".github/images/settings.webp" width="45%" alt="Settings">
+</p>
+
 ## Features
 
 ### Playback
@@ -78,45 +100,45 @@ Open global search and type normally for fuzzy matching, or use these **extended
 
 The `amus` binary doubles as a remote control for the running app. If AMUS isn't running, it's auto-started in the background. Use `amus help` to see everything, or `amus <command> --help` for details on a specific command.
 
-| Command | Description |
-|---------|-------------|
-| `play [paths...]` | Resume playback, or play files/folders/globs |
-| `play -s <query>` | Play the top search result for a query |
-| `pause` | Pause playback |
-| `stop` | Stop playback |
-| `toggle` | Toggle play/pause |
-| `next` | Skip to the next track |
-| `prev` | Go to the previous track |
-| `seek <value>` | Seek to a position (e.g. `90`) or by offset (`+10`, `-5`) |
-| `volume <value>` | Set volume as a percent (e.g. `80`) or adjust (`+5`, `-10`) |
-| `mute` | Toggle mute |
-| `status` | Show current track, playback state, and position |
-| `queue add [paths...]` | Add files/folders/globs to the end of the queue |
-| `queue add -s <query>` | Add search results to the queue |
-| `queue clear` | Clear the user queue |
-| `queue shuffle` | Toggle shuffle on/off |
-| `queue show` | Print the current queue contents |
-| `library rescan` | Rescan all library sources |
-| `search [scope] <query>` | Search the library (`artist:`, `album:`, or bare `track:`) |
-| `playlist [name]` | Show a playlist's contents (omit to list all) |
-| `playlist create <name>` | Create a new playlist |
-| `playlist play <name>` | Play a playlist |
-| `playlist add <name> <path>` | Add a track to a playlist |
-| `playlist remove <name> <path>` | Remove a track from a playlist |
-| `playlist delete <name>` | Delete a playlist |
-| `albums` | List all albums |
-| `artists` | List all artists |
-| `album <id_or_name>` | Show an album's track listing |
-| `artist <id_or_name>` | Show an artist's track listing |
-| `import <path>` | Import a folder as a library source and scan it |
-| `info <path>` | Print local metadata for an audio file (no server needed) |
-| `open` | Show and focus the main window |
-| `hide` | Hide the main window |
-| `close` | Close or hide the main window |
-| `update` | Check for and install updates |
-| `reset` | Reset all app data (DB, settings, cache) and restart |
-| `reset --force` | Skip confirmation prompt |
-| `version` | Print the AMUS version |
+| Command                         | Description                                                 |
+| ------------------------------- | ----------------------------------------------------------- |
+| `play [paths...]`               | Resume playback, or play files/folders/globs                |
+| `play -s <query>`               | Play the top search result for a query                      |
+| `pause`                         | Pause playback                                              |
+| `stop`                          | Stop playback                                               |
+| `toggle`                        | Toggle play/pause                                           |
+| `next`                          | Skip to the next track                                      |
+| `prev`                          | Go to the previous track                                    |
+| `seek <value>`                  | Seek to a position (e.g. `90`) or by offset (`+10`, `-5`)   |
+| `volume <value>`                | Set volume as a percent (e.g. `80`) or adjust (`+5`, `-10`) |
+| `mute`                          | Toggle mute                                                 |
+| `status`                        | Show current track, playback state, and position            |
+| `queue add [paths...]`          | Add files/folders/globs to the end of the queue             |
+| `queue add -s <query>`          | Add search results to the queue                             |
+| `queue clear`                   | Clear the user queue                                        |
+| `queue shuffle`                 | Toggle shuffle on/off                                       |
+| `queue show`                    | Print the current queue contents                            |
+| `library rescan`                | Rescan all library sources                                  |
+| `search [scope] <query>`        | Search the library (`artist:`, `album:`, or bare `track:`)  |
+| `playlist [name]`               | Show a playlist's contents (omit to list all)               |
+| `playlist create <name>`        | Create a new playlist                                       |
+| `playlist play <name>`          | Play a playlist                                             |
+| `playlist add <name> <path>`    | Add a track to a playlist                                   |
+| `playlist remove <name> <path>` | Remove a track from a playlist                              |
+| `playlist delete <name>`        | Delete a playlist                                           |
+| `albums`                        | List all albums                                             |
+| `artists`                       | List all artists                                            |
+| `album <id_or_name>`            | Show an album's track listing                               |
+| `artist <id_or_name>`           | Show an artist's track listing                              |
+| `import <path>`                 | Import a folder as a library source and scan it             |
+| `info <path>`                   | Print local metadata for an audio file (no server needed)   |
+| `open`                          | Show and focus the main window                              |
+| `hide`                          | Hide the main window                                        |
+| `close`                         | Close or hide the main window                               |
+| `update`                        | Check for and install updates                               |
+| `reset`                         | Reset all app data (DB, settings, cache) and restart        |
+| `reset --force`                 | Skip confirmation prompt                                    |
+| `version`                       | Print the AMUS version                                      |
 
 **Examples**
 
@@ -165,27 +187,13 @@ Grab the latest build from **[Releases](https://github.com/Naitik4516/AMUS/relea
 | Linux    | x64                   |
 | macOS    | Intel & Apple Silicon |
 
-## Screenshots
+### AUR (Arch Linux)
 
-<p align="center">
-  <img src=".github/images/home.webp" width="45%" alt="Home">
-  <img src=".github/images/player+queue+search.webp" width="45%" alt="Player, queue, and search">
-</p>
-
-<p align="center">
-  <img src=".github/images/aritsts.webp" width="45%" alt="Artists">
-  <img src=".github/images/artist_page.webp" width="45%" alt="Artist page">
-</p>
-
-<p align="center">
-  <img src=".github/images/albums.webp" width="45%" alt="Albums">
-  <img src=".github/images/album_page.webp" width="45%" alt="Album page">
-</p>
-
-<p align="center">
-  <img src=".github/images/stats.webp" width="45%" alt="Stats">
-  <img src=".github/images/settings.webp" width="45%" alt="Settings">
-</p>
+```bash
+paru -S amus
+# or
+yay -S amus
+```
 
 ## Build & run
 
@@ -201,8 +209,6 @@ cd AMUS
 bun install
 bun tauri dev
 ```
-
-
 
 ## Architecture
 
@@ -312,6 +318,7 @@ No. AMUS is a personal project I designed and built. I use AI tools (including c
 ## Troubleshooting
 
 ### App fails to start
+
 If AMUS crashes or shows a blank window after launch:
 
 - **Try Again** — restart the app from the error page
@@ -320,9 +327,11 @@ If AMUS crashes or shows a blank window after launch:
 - **Downgrade** — install the previous stable version from the [Releases page](https://github.com/Naitik4516/AMUS/releases)
 
 ### CLI not found on Windows
+
 If `amus` is not recognized in Command Prompt or PowerShell after installation, add the AMUS installation directory to your PATH manually, or reinstall using the NSIS installer (it now adds AMUS to PATH automatically).
 
 ### `amus reset` command
+
 Resets all app data and restarts the application. Useful for troubleshooting startup failures or data corruption.
 
 ```
