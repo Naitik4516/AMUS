@@ -3,10 +3,13 @@
     import TrackListSmall from "./ui/TrackListSmall.svelte";
     import { player } from "$lib/player.svelte";
     import { slide } from "svelte/transition";
-    import { fade } from "svelte/transition";
-    import { flip } from "svelte/animate";
     import Button from "./ui/button/button.svelte";
     import type { Track } from "$lib/types";
+    import { VList } from "virtua/svelte";
+    import { gsap } from "gsap";
+    import { Flip } from "gsap/Flip";
+
+    gsap.registerPlugin(Flip);
 
     let { showQueue = $bindable(false) }: { showQueue?: boolean } = $props();
 
@@ -17,19 +20,94 @@
     let dragItem = $state<Track | null>(null);
     let dragFromIndex = $state(0);
     let dragStartY = $state(0);
-    let dragX = $state(0);
-    let dragY = $state(0);
     let dropIndex = $state<number | null>(null);
-    let itemHeight = $state(60);
+    let itemHeight = $state(68);
     let containerEl = $state<HTMLDivElement | null>(null);
-    let autoScrollTimer: ReturnType<typeof setInterval> | null = null;
+    let userVListWrapper = $state<HTMLElement | null>(null);
+    let contextVListWrapper = $state<HTMLElement | null>(null);
+
+    let activeVListScrollEl: HTMLElement | null = null;
+    let lastPointerEvent: PointerEvent | null = null;
+    let scrollSpeed = 0;
+    let autoScrollRafId: number | null = null;
+
+    let lastUserKeys = "";
+    let lastContextKeys = "";
+    let flipUserSnapshot: Flip.FlipState | null = null;
+    let flipContextSnapshot: Flip.FlipState | null = null;
+
+    $effect.pre(() => {
+        const userKeys = userQueue.map((t) => t.queue_id ?? t.id).join(",");
+        const contextKeys = player.playNext.map((t) => t.id).join(",");
+
+        if (userKeys !== lastUserKeys) {
+            if (userVListWrapper && lastUserKeys !== "" && !isDragging) {
+                const els = userVListWrapper.querySelectorAll("[data-flip-id]");
+                if (els.length > 0) {
+                    flipUserSnapshot = Flip.getState(els);
+                }
+            }
+            lastUserKeys = userKeys;
+        }
+
+        if (contextKeys !== lastContextKeys) {
+            if (contextVListWrapper && lastContextKeys !== "" && !isDragging) {
+                const els =
+                    contextVListWrapper.querySelectorAll("[data-flip-id]");
+                if (els.length > 0) {
+                    flipContextSnapshot = Flip.getState(els);
+                }
+            }
+            lastContextKeys = contextKeys;
+        }
+    });
+
+    $effect(() => {
+        // Read reactive dependencies
+        userQueue;
+        player.playNext;
+
+        if (flipUserSnapshot && userVListWrapper) {
+            const els = userVListWrapper.querySelectorAll("[data-flip-id]");
+            if (els.length > 0) {
+                Flip.from(flipUserSnapshot, {
+                    duration: 0.3,
+                    ease: "power2.out",
+                    targets: els,
+                    scale: false,
+                    clearProps: "transform",
+                });
+            }
+            flipUserSnapshot = null;
+        }
+
+        if (flipContextSnapshot && contextVListWrapper) {
+            const els = contextVListWrapper.querySelectorAll("[data-flip-id]");
+            if (els.length > 0) {
+                Flip.from(flipContextSnapshot, {
+                    duration: 0.3,
+                    ease: "power2.out",
+                    targets: els,
+                    scale: false,
+                    clearProps: "transform",
+                });
+            }
+            flipContextSnapshot = null;
+        }
+    });
 
     const DRAG_THRESHOLD = 5;
     const SCROLL_ZONE = 40;
-    const SCROLL_SPEED = 20;
 
     function getTotalItems(section: "user" | "context"): number {
         return section === "user" ? userQueue.length : player.playNext.length;
+    }
+
+    function getVListScrollEl(section: "user" | "context"): HTMLElement | null {
+        const wrapper =
+            section === "user" ? userVListWrapper : contextVListWrapper;
+        if (!wrapper) return null;
+        return (wrapper.querySelector(".vlist") as HTMLElement) || wrapper;
     }
 
     let previewEl: HTMLDivElement | null = null;
@@ -38,7 +116,7 @@
         previewEl = clone.cloneNode(true) as HTMLDivElement;
         previewEl.style.position = "fixed";
         previewEl.style.pointerEvents = "none";
-        previewEl.style.zIndex = "9999";
+        previewEl.style.zIndex = "999";
         previewEl.style.opacity = "0.5";
         previewEl.style.width = "21rem";
         previewEl.style.borderRadius = "0.75rem";
@@ -69,26 +147,88 @@
     ) {
         if (e.button !== 0) return;
         const target = e.currentTarget as HTMLElement;
-        itemHeight = target.offsetHeight || 60;
+        const wrapper =
+            (target.closest(".drag-item-wrapper") as HTMLElement) || target;
+        itemHeight = wrapper.offsetHeight || 72;
 
         dragSection = section;
         dragItem = track;
         dragFromIndex = index;
         dragStartY = e.clientY;
-        dragX = e.clientX;
-        dragY = e.clientY;
         dropIndex = index;
         isDragging = false;
+        activeVListScrollEl = getVListScrollEl(section);
 
         createPreview(target);
 
         document.addEventListener("pointermove", onDocumentMove);
         document.addEventListener("pointerup", onDocumentUp);
         document.addEventListener("pointercancel", onDocumentCancel);
+        document.addEventListener("keydown", onDocumentKeyDown);
+    }
+
+    function updateDropIndexAndAutoScroll(e: PointerEvent) {
+        if (dragSection === null || !activeVListScrollEl) return;
+
+        const rect = activeVListScrollEl.getBoundingClientRect();
+        const relativeY = e.clientY - rect.top;
+        const scrollTop = activeVListScrollEl.scrollTop;
+        const contentY = relativeY + scrollTop;
+
+        const total = getTotalItems(dragSection);
+        const calculatedIndex = Math.floor(
+            (contentY + itemHeight / 2) / itemHeight,
+        );
+        dropIndex = Math.max(0, Math.min(total - 1, calculatedIndex));
+
+        if (relativeY < SCROLL_ZONE) {
+            const distance = SCROLL_ZONE - relativeY;
+            scrollSpeed = -Math.min(25, Math.max(5, distance * 0.5));
+            startAutoScrollLoop();
+        } else if (relativeY > rect.height - SCROLL_ZONE) {
+            const distance = relativeY - (rect.height - SCROLL_ZONE);
+            scrollSpeed = Math.min(25, Math.max(5, distance * 0.5));
+            startAutoScrollLoop();
+        } else {
+            stopAutoScrollLoop();
+        }
+    }
+
+    function startAutoScrollLoop() {
+        if (autoScrollRafId !== null) return;
+        const tick = () => {
+            if (!isDragging || !activeVListScrollEl || scrollSpeed === 0) {
+                autoScrollRafId = null;
+                return;
+            }
+            activeVListScrollEl.scrollTop += scrollSpeed;
+            if (lastPointerEvent && activeVListScrollEl) {
+                const rect = activeVListScrollEl.getBoundingClientRect();
+                const relativeY = lastPointerEvent.clientY - rect.top;
+                const scrollTop = activeVListScrollEl.scrollTop;
+                const contentY = relativeY + scrollTop;
+                const total = getTotalItems(dragSection!);
+                const calculatedIndex = Math.floor(
+                    (contentY + itemHeight / 2) / itemHeight,
+                );
+                dropIndex = Math.max(0, Math.min(total - 1, calculatedIndex));
+            }
+            autoScrollRafId = requestAnimationFrame(tick);
+        };
+        autoScrollRafId = requestAnimationFrame(tick);
+    }
+
+    function stopAutoScrollLoop() {
+        if (autoScrollRafId !== null) {
+            cancelAnimationFrame(autoScrollRafId);
+            autoScrollRafId = null;
+        }
+        scrollSpeed = 0;
     }
 
     function onDocumentMove(e: PointerEvent) {
         if (dragSection === null) return;
+        lastPointerEvent = e;
         const deltaY = e.clientY - dragStartY;
 
         if (!isDragging && Math.abs(deltaY) > DRAG_THRESHOLD) {
@@ -96,28 +236,27 @@
         }
         if (!isDragging) return;
 
-        dragX = e.clientX;
-        dragY = e.clientY;
-
         if (previewEl) {
             previewEl.style.left = `${e.clientX - 168}px`;
             previewEl.style.top = `${e.clientY - 20}px`;
         }
 
-        const total = getTotalItems(dragSection);
-        const deltaItems = Math.round(deltaY / itemHeight);
-        dropIndex = Math.max(
-            0,
-            Math.min(total - 1, dragFromIndex + deltaItems),
-        );
+        updateDropIndexAndAutoScroll(e);
+    }
 
-        handleAutoScroll(e);
+    function onDocumentKeyDown(e: KeyboardEvent) {
+        if (e.key === "Escape") {
+            onDocumentCancel();
+        }
     }
 
     function onDocumentUp(_e: PointerEvent) {
         document.removeEventListener("pointermove", onDocumentMove);
         document.removeEventListener("pointerup", onDocumentUp);
         document.removeEventListener("pointercancel", onDocumentCancel);
+        document.removeEventListener("keydown", onDocumentKeyDown);
+        stopAutoScrollLoop();
+
         if (
             isDragging &&
             dragSection !== null &&
@@ -131,15 +270,15 @@
             }
         }
         resetDragState();
-        stopAutoScroll();
     }
 
     function onDocumentCancel() {
         document.removeEventListener("pointermove", onDocumentMove);
         document.removeEventListener("pointerup", onDocumentUp);
         document.removeEventListener("pointercancel", onDocumentCancel);
+        document.removeEventListener("keydown", onDocumentKeyDown);
+        stopAutoScrollLoop();
         resetDragState();
-        stopAutoScroll();
     }
 
     function resetDragState() {
@@ -147,35 +286,9 @@
         dragSection = null;
         dragItem = null;
         dropIndex = null;
+        activeVListScrollEl = null;
+        lastPointerEvent = null;
         destroyPreview();
-    }
-
-    function handleAutoScroll(e: PointerEvent) {
-        if (!containerEl) return;
-        const rect = containerEl.getBoundingClientRect();
-        const relativeY = e.clientY - rect.top;
-
-        if (relativeY < SCROLL_ZONE) {
-            startAutoScroll(-SCROLL_SPEED);
-        } else if (relativeY > rect.height - SCROLL_ZONE) {
-            startAutoScroll(SCROLL_SPEED);
-        } else {
-            stopAutoScroll();
-        }
-    }
-
-    function startAutoScroll(speed: number) {
-        if (autoScrollTimer) return;
-        autoScrollTimer = setInterval(() => {
-            if (containerEl) containerEl.scrollTop += speed;
-        }, 50);
-    }
-
-    function stopAutoScroll() {
-        if (autoScrollTimer) {
-            clearInterval(autoScrollTimer);
-            autoScrollTimer = null;
-        }
     }
 
     function shouldShowIndicator(
@@ -190,60 +303,73 @@
         );
     }
 
-    $inspect(isDragging, dragItem);
+    const calcHeight = (tracks: number) => {
+        const maxHeight = 360;
+        const totalHeight = tracks * itemHeight + 16;
+        return Math.min(totalHeight, maxHeight);
+    };
+
 </script>
 
 {#snippet DNDTrackList(tracks: Track[], section: "user" | "context")}
-    {#each tracks as track, i (track.queue_id ?? track.id)}
-        <div
-            in:fade={{ duration: 200 }}
-            out:fade={{ duration: 200 }}
-            animate:flip={{ duration: 250 }}
-        >
-            {#if shouldShowIndicator(section, i)}
-                <div class="h-0.75 bg-accent/40 rounded-md mx-2 my-1"></div>
-            {/if}
+    <VList
+        class="vlist pr-1 pt-1 mask-y-from-95% scroll-smooth"
+        data={tracks}
+        style="height: {calcHeight(tracks.length)}px"
+        getKey={(track, _i) => track.queue_id ?? track.id}
+    >
+        {#snippet children(track, i)}
             <div
-                class="flex justify-between items-center rounded-xl h-16 px-1 my-1 gap-1 hover:bg-white/5 transition-colors drag-item group {isDragging &&
-                dragSection === section &&
-                dragFromIndex === i
-                    ? 'invisible'
-                    : isDragging
-                      ? 'cursor-default'
-                      : 'cursor-grab'}"
-                onpointerdown={(e) => startDrag(e, section, i, track)}
-                role="listitem"
+                data-flip-id={track.queue_id ?? track.id}
+                class="relative drag-item-wrapper py-1"
             >
-                <TrackListSmall
-                    {track}
-                    onclick={() => {
-                        if (isDragging) return;
-                        if (section === "user") {
-                            player.contextPosition = i;
-                        } else {
-                            player.playFromContextIndex(i);
-                        }
-                    }}
-                    styled={false}
-                />
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    class="text-gray-400 hover:text-red-600  group-hover:opacity-100 opacity-0"
-                    onclick={() => {
-                        const id =
-                            section === "user" ? track.queue_id! : track.id;
-                        player.removeFromQueue(id, section);
-                    }}
-                    title={section === "user"
-                        ? "Remove from Queue"
-                        : "Play Next"}
+                {#if shouldShowIndicator(section, i)}
+                    <div
+                        class="absolute -top-1 left-2 right-2 h-0.75 bg-zinc-500 rounded z-20 pointer-events-none "
+                    ></div>
+                {/if}
+                <div
+                    class="flex justify-between items-center rounded-xl h-16 px-1 gap-1 hover:bg-white/5 hover:shadow-lg transition-colors duration-300 drag-item group {isDragging &&
+                    dragSection === section &&
+                    dragFromIndex === i
+                        ? 'invisible'
+                        : isDragging
+                          ? 'cursor-default'
+                          : 'cursor-grab'}"
+                    onpointerdown={(e) => startDrag(e, section, i, track)}
+                    role="listitem"
                 >
-                    <X size={28} />
-                </Button>
+                    <TrackListSmall
+                        {track}
+                        onclick={() => {
+                            if (isDragging) return;
+                            if (section === "user") {
+                                player.contextPosition = i;
+                            } else {
+                                player.playFromContextIndex(i);
+                            }
+                        }}
+                        styled={false}
+                    />
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="text-gray-400 hover:text-red-600 group-hover:opacity-100 opacity-0"
+                        onclick={() => {
+                            const id =
+                                section === "user" ? track.queue_id! : track.id;
+                            player.removeFromQueue(id, section);
+                        }}
+                        title={section === "user"
+                            ? "Remove from Queue"
+                            : "Remove from Play Next"}
+                    >
+                        <X size={28} />
+                    </Button>
+                </div>
             </div>
-        </div>
-    {/each}
+        {/snippet}
+    </VList>
 {/snippet}
 
 {#if showQueue}
@@ -265,7 +391,7 @@
                 <X size={18} />
             </button>
         </div>
-        <div class="flex flex-col gap-2 px-3 pb-4 overflow-y-scroll">
+        <div class="flex flex-col gap-1 px-3 pb-4 overflow-y-scroll">
             {#if player.currentTrack}
                 <section>
                     <h4
@@ -283,7 +409,7 @@
             {/if}
 
             {#if userQueue.length > 0}
-                <section>
+                <section bind:this={userVListWrapper}>
                     <div class="flex items-center justify-between">
                         <h4
                             class="py-2 text-[13px] font-bold uppercase tracking-wider text-stone-300"
@@ -303,7 +429,7 @@
             {/if}
 
             {#if player.playNext.length > 0}
-                <section>
+                <section bind:this={contextVListWrapper}>
                     <h4
                         class="py-2 text-[13px] font-bold uppercase tracking-wider text-stone-300 truncate"
                     >
