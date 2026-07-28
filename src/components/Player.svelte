@@ -40,11 +40,14 @@
 {#if player.currentTrack}
     <div class=" fixed bottom-0 left-0 w-full px-4 pb-3 z-15">
         <div
-            class="grid grid-cols-3 items-center justify-between px-6 py-3 rounded-3xl relative bg-linear-to-br from-white/10 to-white/3 backdrop-blur-2xl backdrop-brightness-75 backdrop-saturate-150 ring-1 ring-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.25)]"
-            role="contentinfo"
+            class="grid grid-cols-3 items-center justify-between px-6 py-3 rounded-3xl relative bg-linear-to-br from-white/10 to-white/3 backdrop-blur-2xl backdrop-brightness-75 backdrop-saturate-200 ring-1 ring-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.25)]"
         >
             <!-- Track Info -->
-            <div class="flex items-center gap-4 pr-10 z-1">
+            <div
+                class="flex items-center gap-4 pr-10 z-1"
+                ondblclick={() => player.close()}
+                role="contentinfo"
+            >
                 <div
                     class="w-15 h-15 rounded-lg bg-neutral-800 shadow-md flex items-center justify-center overflow-hidden shrink-0"
                 >
@@ -217,4 +220,3 @@
         </div>
     </div>
 {/if}
-

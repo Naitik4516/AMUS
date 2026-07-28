@@ -220,15 +220,15 @@
         }
     });
 
-   //  afterNavigate(() => {
-   //      if (scrollContainer) {
-   //          if (lenis) {
-   //              lenis.scrollTo(0, { immediate: true });
-   //          } else {
-   //              scrollContainer.scrollTop = 0;
-   //          }
-   //      }
-   // });
+    afterNavigate(() => {
+        if (scrollContainer) {
+            if (lenis) {
+                lenis.scrollTo(0, { immediate: true });
+            } else {
+                scrollContainer.scrollTop = 0;
+            }
+        }
+   });
 </script>
 
 <Sidebar />
@@ -259,7 +259,7 @@
             ? ''
             : 'mb-1.5 '}"
     >
-        <div class="pt-18 pl-30 {player.currentTrack ? 'pb-32' : ''}">
+        <div use:setupSmoothScroll class="pt-18 pl-30 {player.currentTrack ? 'pb-32' : ''}">
             {@render children()}
         </div>
     </div>

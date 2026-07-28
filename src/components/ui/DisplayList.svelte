@@ -24,8 +24,8 @@
         ),
     );
 
-    const cellWidth = 280;
-    const cellHeight = 320;
+    const cellWidth = 265;
+    const cellHeight = 340;
 
     let gridWidth = $state(500);
     let cols = $derived(Math.max(1, Math.floor(gridWidth / cellWidth)));
@@ -74,7 +74,7 @@
         </div>
     {:else}
         <div
-            class="virtualizer mask-y-from-90% pt-8 scroll-smooth w-full h-[84vh] overflow-y-auto"
+            class="virtualizer mask-y-from-90% pt-8 scroll-smooth w-full h-[calc(90vh-120px)] overflow-y-auto"
             bind:clientWidth={gridWidth}
         >
             <Virtualizer
