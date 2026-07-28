@@ -65,7 +65,7 @@ AMUS is built for people who own their music library. It runs completely offline
 - **Context menus** — right-click tracks for play, queue, playlist, favorite, and more
 - **Keyboard shortcuts** — app-wide and optional global media shortcuts (customizable)
 
-### Insights & polish
+### Others
 
 - **Playback history & stats** — play counts, listening time, streaks, library growth, format distribution, hourly/weekday heatmaps, favorite trends
 - **System tray** — play/pause, previous/next, show/hide, quit
@@ -74,7 +74,7 @@ AMUS is built for people who own their music library. It runs completely offline
 - **File associations** — open audio files directly with AMUS
 - **Modern UI** — custom title bar, themes, and a responsive library layout
 
-## Advanced search
+### Advanced search
 
 Open global search and type normally for fuzzy matching, or use these **extended patterns** to refine results (powered by Fuse.js extended search). You can combine them with type filters like `/tracks belver` or `/artists ^Tu`.
 
