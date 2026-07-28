@@ -32,6 +32,35 @@
         return section === "user" ? userQueue.length : player.playNext.length;
     }
 
+    let previewEl: HTMLDivElement | null = null;
+
+    function createPreview(clone: HTMLElement) {
+        previewEl = clone.cloneNode(true) as HTMLDivElement;
+        previewEl.style.position = "fixed";
+        previewEl.style.pointerEvents = "none";
+        previewEl.style.zIndex = "9999";
+        previewEl.style.opacity = "0.5";
+        previewEl.style.width = "21rem";
+        previewEl.style.borderRadius = "0.75rem";
+        previewEl.style.border = "1px solid rgba(255,255,255,0.07)";
+        previewEl.style.boxShadow = "0 25px 50px -12px rgba(0,0,0,0.25)";
+        previewEl.style.background = "rgba(30,30,40,0.95)";
+        previewEl.style.backdropFilter = "blur(8px)";
+        previewEl.classList.remove(
+            "invisible",
+            "cursor-grab",
+            "cursor-default",
+        );
+        document.body.appendChild(previewEl);
+    }
+
+    function destroyPreview() {
+        if (previewEl) {
+            document.body.removeChild(previewEl);
+            previewEl = null;
+        }
+    }
+
     function startDrag(
         e: PointerEvent,
         section: "user" | "context",
@@ -51,6 +80,8 @@
         dropIndex = index;
         isDragging = false;
 
+        createPreview(target);
+
         document.addEventListener("pointermove", onDocumentMove);
         document.addEventListener("pointerup", onDocumentUp);
         document.addEventListener("pointercancel", onDocumentCancel);
@@ -67,6 +98,11 @@
 
         dragX = e.clientX;
         dragY = e.clientY;
+
+        if (previewEl) {
+            previewEl.style.left = `${e.clientX - 168}px`;
+            previewEl.style.top = `${e.clientY - 20}px`;
+        }
 
         const total = getTotalItems(dragSection);
         const deltaItems = Math.round(deltaY / itemHeight);
@@ -111,6 +147,7 @@
         dragSection = null;
         dragItem = null;
         dropIndex = null;
+        destroyPreview();
     }
 
     function handleAutoScroll(e: PointerEvent) {
@@ -152,6 +189,8 @@
             dropIndex !== dragFromIndex
         );
     }
+
+    $inspect(isDragging, dragItem);
 </script>
 
 {#snippet DNDTrackList(tracks: Track[], section: "user" | "context")}
@@ -165,7 +204,7 @@
                 <div class="h-0.75 bg-accent/40 rounded-md mx-2 my-1"></div>
             {/if}
             <div
-                class="flex justify-between items-center rounded-xl h-16 px-1 gap-1 hover:bg-white/5 drag-item group {isDragging &&
+                class="flex justify-between items-center rounded-xl h-16 px-1 my-1 gap-1 hover:bg-white/5 transition-colors drag-item group {isDragging &&
                 dragSection === section &&
                 dragFromIndex === i
                     ? 'invisible'
@@ -189,17 +228,18 @@
                 />
                 <Button
                     variant="ghost"
-                    size="icon-sm"
-                    class="text-gray-400 hover:text-red-400 transition-colors group-hover:opacity-100 opacity-0"
+                    size="icon"
+                    class="text-gray-400 hover:text-red-600  group-hover:opacity-100 opacity-0"
                     onclick={() => {
-                        const id = section === "user" ? track.queue_id! : track.id;
+                        const id =
+                            section === "user" ? track.queue_id! : track.id;
                         player.removeFromQueue(id, section);
                     }}
                     title={section === "user"
                         ? "Remove from Queue"
                         : "Play Next"}
                 >
-                    <X size={18} />
+                    <X size={28} />
                 </Button>
             </div>
         </div>
@@ -209,7 +249,7 @@
 {#if showQueue}
     <div
         bind:this={containerEl}
-        class="absolute bottom-full right-1 mb-4 w-90 bg-card/60 backdrop-blur-lg border-2 border-border/70 rounded-2xl shadow-2xl flex flex-col max-h-[75vh] {isDragging
+        class="absolute bottom-full right-1 mb-4 w-96 bg-card/60 backdrop-blur-2xl border-2 border-border/70 rounded-2xl shadow-2xl flex flex-col max-h-[75vh] overflow-hidden {isDragging
             ? 'select-none'
             : ''}"
         transition:slide
@@ -225,8 +265,7 @@
                 <X size={18} />
             </button>
         </div>
-        <div class="px-4 pb-4 overflow-y-scroll">
-            <!-- Now Playing -->
+        <div class="flex flex-col gap-2 px-3 pb-4 overflow-y-scroll">
             {#if player.currentTrack}
                 <section>
                     <h4
@@ -243,7 +282,6 @@
                 </section>
             {/if}
 
-            <!-- Next in Queue -->
             {#if userQueue.length > 0}
                 <section>
                     <div class="flex items-center justify-between">
@@ -264,14 +302,15 @@
                 </section>
             {/if}
 
-            <!-- Next from Playlist/Album/Artist -->
             {#if player.playNext.length > 0}
-                <h4
-                    class="py-2 text-[13px] font-bold uppercase tracking-wider text-stone-300 truncate"
-                >
-                    {player.nextSectionTitle}
-                </h4>
-                {@render DNDTrackList(player.playNext, "context")}
+                <section>
+                    <h4
+                        class="py-2 text-[13px] font-bold uppercase tracking-wider text-stone-300 truncate"
+                    >
+                        {player.nextSectionTitle}
+                    </h4>
+                    {@render DNDTrackList(player.playNext, "context")}
+                </section>
             {/if}
 
             {#if !player.currentTrack && player.userQueue.length === 0 && player.playNext.length === 0}
@@ -280,15 +319,5 @@
                 </p>
             {/if}
         </div>
-    </div>
-{/if}
-
-<!-- Floating drag preview -->
-{#if isDragging && dragItem}
-    <div
-        class="fixed pointer-events-none z-50 w-85 bg-card/95 opacity-50 border border-border/70 rounded-xl shadow-2xl"
-        style="left: {dragX - 170}px; top: {dragY - 20}px;"
-    >
-        <TrackListSmall track={dragItem} onclick={() => {}} styled={false} />
     </div>
 {/if}
