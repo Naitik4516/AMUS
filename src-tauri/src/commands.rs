@@ -10,6 +10,7 @@ use crate::sync::SyncManager;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::time::Duration;
+use tauri::Emitter;
 use tauri::Manager;
 use tauri::State;
 use tokio::sync::oneshot;
@@ -319,6 +320,33 @@ pub fn remove_from_queue(
 #[tauri::command]
 pub fn clear_queue(handle: State<PlayerHandle>) -> Result<()> {
     send(&handle, PlayerCommand::ClearQueue)
+}
+
+#[tauri::command]
+pub async fn delete_track(
+    id: i64,
+    pool: State<'_, DbPool>,
+    app_handle: tauri::AppHandle,
+) -> Result<()> {
+    let mut conn = pool.get().map_err(Error::Pool)?;
+    let tx = conn.transaction().map_err(Error::Db)?;
+    let path = db::delete_track_by_id(&tx, id)?;
+    db::add_to_scan_blacklist(&tx, &path, -1, "user_deleted")?;
+    tx.commit().map_err(Error::Db)?;
+    let _ = app_handle.emit("library-updated", ());
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_scan_blacklist(pool: State<'_, DbPool>) -> Result<Vec<BlacklistedEntry>> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::get_scan_blacklist(&conn)
+}
+
+#[tauri::command]
+pub async fn unblacklist_path(path: String, pool: State<'_, DbPool>) -> Result<()> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::remove_from_scan_blacklist(&conn, &path)
 }
 
 #[tauri::command]

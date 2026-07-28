@@ -5,6 +5,7 @@
     import { Pen, X, LoaderCircle, ImagePlus } from "@lucide/svelte";
     import Dialog from "$components/Dialog.svelte";
     import { onMount } from "svelte";
+    import EditImage from "../EditImage.svelte";
 
     let {
         open = $bindable(false),
@@ -68,7 +69,11 @@
 <Dialog bind:open title="Edit Playlist">
     <div class="flex gap-5 items-center">
         <div class="flex flex-col gap-2">
-            <div class="relative w-42 h-42 rounded-3xl overflow-clip group">
+            <EditImage
+                onclick={pickCover}
+                {removeCover}
+                class="w-42 h-42 rounded-3xl overflow-clip"
+            >
                 {#if editCoverArt || coverArt}
                     <img
                         src={store.getImageSrc(
@@ -85,23 +90,7 @@
                         <ImagePlus size={20} />
                     </div>
                 {/if}
-
-                <div
-                    class="absolute bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center inset-0"
-                >
-                    <button onclick={pickCover}>
-                        <Pen size={28} fill="white" />
-                    </button>
-                    <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onclick={removeCover}
-                        class="absolute top-1 right-1"
-                    >
-                        <X />
-                    </Button>
-                </div>
-            </div>
+            </EditImage>
         </div>
 
         <div class="flex flex-col gap-2">

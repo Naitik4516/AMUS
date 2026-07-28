@@ -14,6 +14,7 @@ import type {
   HeatmapCell,
   PlaybackEvent,
   FavoriteTrend,
+  BlacklistedEntry,
 } from "./types.d.ts";
 
 export type {
@@ -137,4 +138,16 @@ export async function getPlaybackHistoryTimeline(
 
 export async function setOsMediaControls(enabled: boolean): Promise<void> {
   return invoke("set_os_media_controls", { enabled });
+}
+
+export async function deleteTrack(id: number): Promise<void> {
+  await invoke("delete_track", { id });
+}
+
+export async function getScanBlacklist(): Promise<BlacklistedEntry[]> {
+  return invoke("get_scan_blacklist");
+}
+
+export async function unblacklistPath(path: string): Promise<void> {
+  await invoke("unblacklist_path", { path });
 }

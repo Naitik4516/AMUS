@@ -10,6 +10,7 @@
         ChartNoAxesColumn,
         Folder,
         Info,
+        Trash2,
     } from "@lucide/svelte";
     import Artist from "$components/icons/Artist.svelte";
     import type { PageProps } from "./$types";
@@ -17,6 +18,8 @@
     import { invoke } from "@tauri-apps/api/core";
     import { store } from "$lib/stores.svelte";
     import { invalidate } from "$app/navigation";
+    import { openConfirmDialog } from "$lib/context-menu.svelte";
+    import { toast } from "svelte-sonner";
 
     let { data }: PageProps = $props();
     let track = $derived(data.trackDetails);
@@ -32,7 +35,19 @@
         }
     }
 
-    $inspect(track, "track");
+    function handleDelete() {
+        const id = track.id;
+        const title = track.title;
+        openConfirmDialog({
+            title: "Delete track",
+            message: `Are you sure you want to delete "${title}" from your library? This will also remove it from all playlists.`,
+            confirmLabel: "Delete",
+            onConfirm: async () => {
+                await store.deleteTrack(id);
+                toast.success("Track deleted from library");
+            },
+        });
+    }
 </script>
 
 <div class="p-8 pb-32 max-w-5xl mx-auto">
@@ -123,6 +138,12 @@
                             ? "text-rose-600 fill-rose-600"
                             : "text-gray-300"}
                     />
+                </button>
+                <button
+                    onclick={handleDelete}
+                    class="size-16 rounded-full border bg-white/5 flex items-center justify-center hover:scale-105 transition-transform hover:text-red-400 hover:border-red-400/30 shadow-xl"
+                >
+                    <Trash2 size={24} class="text-gray-400" />
                 </button>
             </div>
         </div>

@@ -257,7 +257,10 @@
     onmousedown={(e) => {
         if (e.button === 2) return;
         const target = e.target as HTMLElement;
-        if (!target.closest(".search-box")) {
+        if (
+            !target.closest(".search-box") &&
+            !target.closest(".dropdown-menu")
+        ) {
             closeDropdown();
         }
     }}

@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS scan_blacklist (
+    path TEXT NOT NULL UNIQUE,
+    mtime INTEGER NOT NULL DEFAULT -1,
+    reason TEXT NOT NULL DEFAULT 'user_deleted',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

@@ -3,6 +3,8 @@ import type { Album, Artist, Playlist, Track } from "$lib/types";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { appDataDir } from "@tauri-apps/api/path";
+import { player } from "$lib/player.svelte";
+import * as commands from "$lib/commands.svelte";
 
 class LibraryStore {
   tracks = $state<Track[]>([]);
@@ -308,6 +310,15 @@ class LibraryStore {
       track.playlist_ids = track.playlist_ids.filter((id) => id !== playlistId);
       this.tracks = this.tracks.map((t) => (t.id === track.id ? track : t));
     }
+  }
+
+  async deleteTrack(trackId: number): Promise<void> {
+    if (player.currentTrack?.id === trackId) {
+      await player.next();
+    }
+    await commands.deleteTrack(trackId);
+    this.tracks = this.tracks.filter((t) => t.id !== trackId);
+    this.tracksById.delete(trackId);
   }
 
   async getTrackPlaylistIds(trackId: number): Promise<number[]> {

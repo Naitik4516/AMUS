@@ -627,7 +627,34 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
         }
     }
 
-    println!("Discovered {} audio files on disk", files_on_disk.len());
+    // Filter out blacklisted files
+    let blacklist_entries = db::get_scan_blacklist(conn)?;
+    let blacklist: std::collections::HashMap<String, (i64, String)> = blacklist_entries
+        .into_iter()
+        .map(|e| (e.path, (e.mtime, e.reason)))
+        .collect();
+
+    files_on_disk.retain(|path| {
+        let path_str = path.to_string_lossy().to_string();
+        if let Some(&(bl_mtime, ref _reason)) = blacklist.get(&path_str) {
+            let mtime = fs::metadata(path)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+
+            if bl_mtime == -1 || bl_mtime == mtime {
+                // User-deleted (never rescan) or corrupted file with unchanged mtime
+                return false;
+            }
+            // File changed since blacklisting — remove from blacklist and allow rescan
+            let _ = db::remove_from_scan_blacklist(conn, &path_str);
+        }
+        true
+    });
+
+    println!("Discovered {} audio files on disk after blacklist filter", files_on_disk.len());
     // 2. Differential Analysis
     let _ = app_handle.emit(
         "scan-progress",
@@ -734,16 +761,27 @@ pub fn scan_files(
     // Phase 1: Parallel metadata extraction
     emit_scan_progress(app_handle, PHASE_META_START, 100, "Reading metadata...");
 
+    let failed_paths = std::sync::Mutex::new(Vec::new());
+
     let metadata_results: Vec<TrackMetadata> = to_scan
         .into_par_iter()
-        .filter_map(|path| match extract_metadata(&path) {
-            Ok(m) => Some(m),
-            Err(e) => {
-                eprintln!("Failed to scan {:?}: {}", path, e);
-                None
+        .filter_map(|path| {
+            let path_str = path.to_string_lossy().to_string();
+            match extract_metadata(&path) {
+                Ok(m) => Some(m),
+                Err(e) => {
+                    eprintln!("Failed to scan {:?}: {}", path, e);
+                    failed_paths
+                        .lock()
+                        .unwrap()
+                        .push((path_str, format!("corrupted: {}", e)));
+                    None
+                }
             }
         })
         .collect();
+
+    let failed_paths = failed_paths.into_inner().unwrap();
 
     emit_scan_progress(app_handle, PHASE_META_END, 100, "Metadata read");
 
@@ -955,6 +993,27 @@ pub fn scan_files(
                 "Scheduled fetch for {} unique artists (pic: {})",
                 n_artists, fetch_pic
             );
+        }
+    }
+
+    // Blacklist failed paths so the scanner skips corrupted files on future runs
+    if !failed_paths.is_empty() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        for (path, reason) in &failed_paths {
+            let mtime = std::fs::metadata(path)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(now);
+
+            if let Err(e) = db::add_to_scan_blacklist(conn, path, mtime, reason) {
+                eprintln!("Failed to blacklist {path}: {e}");
+            }
         }
     }
 

@@ -355,6 +355,9 @@ pub fn run() {
             commands::set_os_media_controls,
             commands::get_startup_status,
             commands::reset_app_data,
+            commands::delete_track,
+            commands::get_scan_blacklist,
+            commands::unblacklist_path,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

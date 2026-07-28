@@ -55,6 +55,7 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
     M::up(include_str!(
         "../migrations/006_alter_playback_history_source_type.sql"
     )),
+    M::up(include_str!("../migrations/007_scan_blacklist.sql")),
 ];
 
 const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);
@@ -180,6 +181,94 @@ pub fn delete_tracks_by_paths(conn: &Connection, paths: &[String]) -> Result<usi
     .map_err(Error::Db)?;
 
     Ok(total_deleted)
+}
+
+pub fn delete_track_by_id(conn: &Connection, id: i64) -> Result<String> {
+    let path: String = conn
+        .query_row("SELECT path FROM track WHERE id = ?1", params![id], |row| {
+            row.get(0)
+        })
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                Error::Unknown(format!("Track {id} not found"))
+            }
+            e => Error::Db(e),
+        })?;
+
+    conn.execute("DELETE FROM track WHERE id = ?1", params![id])
+        .map_err(Error::Db)?;
+
+    conn.execute(
+        "DELETE FROM artist WHERE id NOT IN (SELECT DISTINCT artist_id FROM track_artist);",
+        [],
+    )
+    .map_err(Error::Db)?;
+
+    conn.execute(
+        "DELETE FROM album WHERE id NOT IN (SELECT DISTINCT album_id FROM album_track);",
+        [],
+    )
+    .map_err(Error::Db)?;
+
+    Ok(path)
+}
+
+pub fn add_to_scan_blacklist(
+    conn: &Connection,
+    path: &str,
+    mtime: i64,
+    reason: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO scan_blacklist (path, mtime, reason) VALUES (?1, ?2, ?3)",
+        params![path, mtime, reason],
+    )
+    .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn remove_from_scan_blacklist(conn: &Connection, path: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM scan_blacklist WHERE path = ?1",
+        params![path],
+    )
+    .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn get_scan_blacklist(conn: &Connection) -> Result<Vec<BlacklistedEntry>> {
+    let mut stmt = conn
+        .prepare("SELECT path, mtime, reason, created_at FROM scan_blacklist ORDER BY created_at DESC")
+        .map_err(Error::Db)?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(BlacklistedEntry {
+                path: row.get(0)?,
+                mtime: row.get(1)?,
+                reason: row.get(2)?,
+                created_at: row.get::<_, String>(3)?,
+            })
+        })
+        .map_err(Error::Db)?;
+    let mut entries = Vec::new();
+    for row in rows {
+        entries.push(row.map_err(Error::Db)?);
+    }
+    Ok(entries)
+}
+
+pub fn get_track_path(conn: &Connection, id: i64) -> Result<String> {
+    conn.query_row(
+        "SELECT path FROM track WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => {
+            Error::Unknown(format!("Track {id} not found"))
+        }
+        e => Error::Db(e),
+    })
 }
 
 pub fn get_or_create_artist(conn: &Connection, name: &str) -> Result<i64> {

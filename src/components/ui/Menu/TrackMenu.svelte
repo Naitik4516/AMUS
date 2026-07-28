@@ -7,6 +7,7 @@
     import ArtistsMenu from "./ArtistsMenu.svelte";
     import type { Context } from "$lib/types";
     import { store } from "$lib/stores.svelte";
+    import { openConfirmDialog } from "$lib/context-menu.svelte";
 
     const ALL_OPTIONS = [
         "addToQueue",
@@ -16,6 +17,7 @@
         "goToArtist",
         "goToAlbum",
         "removeFromPlaylist",
+        "deleteFromLibrary",
     ] as const;
 
     type MenuOption = (typeof ALL_OPTIONS)[number];
@@ -32,6 +34,20 @@
 
     function isExcluded(option: MenuOption): boolean {
         return exclude.includes(option);
+    }
+
+    function handleDelete() {
+        const id = track.id;
+        const title = track.title;
+        openConfirmDialog({
+            title: "Delete track",
+            message: `Are you sure you want to delete "${title}" from your library? This will also remove it from all playlists.`,
+            confirmLabel: "Delete",
+            onConfirm: async () => {
+                await store.deleteTrack(id);
+                toast.success("Track deleted from library");
+            },
+        });
     }
 
     function buildItems() {
@@ -119,6 +135,17 @@
                 label: "Go to album",
                 icon: "disc",
                 href: `/library/albums/${track.album.id}`,
+            });
+        }
+
+        items.push({ type: "separator" });
+
+        if (!isExcluded("deleteFromLibrary")) {
+            items.push({
+                label: "Delete from library",
+                icon: "trash",
+                danger: true,
+                onClick: handleDelete,
             });
         }
 

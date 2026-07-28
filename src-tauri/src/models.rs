@@ -152,6 +152,14 @@ pub struct PlaybackEvent {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BlacklistedEntry {
+    pub path: String,
+    pub mtime: i64,
+    pub reason: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FavoriteTrend {
     pub period: String,
     pub top_track_id: Option<i64>,

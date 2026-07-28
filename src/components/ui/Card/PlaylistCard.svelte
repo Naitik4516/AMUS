@@ -38,9 +38,11 @@
 <a
     href="/library/playlists/{data.id}?data.name={data.name}"
     oncontextmenu={handleContextMenu}
-    class="group flex flex-col gap-3 p-5 rounded-3xl bg-card transition-all duration-300 ring ring-border hover:ring-2 w-60 h-auto shadow-xl hover:shadow-card"
+    class="group flex flex-col gap-3 p-6 rounded-3xl bg-card/80 transition-all duration-300 ring-2 ring-zinc-800/70 hover:ring-3 w-64 h-auto shadow-xl hover:shadow-card"
 >
-    <div class="aspect-square w-full rounded-3xl overflow-hidden relative">
+    <div
+        class="aspect-square w-full rounded-3xl overflow-hidden relative inset-shadow-sm"
+    >
         <PlaylistCoverArt playlist={data} />
 
         <div
@@ -54,8 +56,10 @@
         </div>
     </div>
 
-    <div class="flex flex-col">
-        <h3 class="font-bold truncate text-white text-lg">{data.name}</h3>
+    <div class="flex flex-col mt-2">
+        <h3 class="font-bold font-satoshi truncate text-white text-lg">
+            {data.name}
+        </h3>
     </div>
 </a>
 

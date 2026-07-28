@@ -180,7 +180,7 @@ impl SyncManager {
 
                 match event.kind {
                     EventKind::Create(_) | EventKind::Modify(_) => {
-                        let paths_to_scan: Vec<PathBuf> = event
+                        let mut paths_to_scan: Vec<PathBuf> = event
                             .paths
                             .into_iter()
                             .filter(|p| {
@@ -199,6 +199,50 @@ impl SyncManager {
                             let handle_for_scan = app_handle.clone();
                             let _ = tokio::task::spawn_blocking(move || {
                                 if let Ok(mut conn) = pool.get() {
+                                    // Filter out blacklisted paths
+                                    if let Ok(blacklist_entries) =
+                                        db::get_scan_blacklist(&conn)
+                                    {
+                                        let blacklist: std::collections::HashMap<
+                                            String,
+                                            (i64, String),
+                                        > = blacklist_entries
+                                            .into_iter()
+                                            .map(|e| (e.path, (e.mtime, e.reason)))
+                                            .collect();
+
+                                        paths_to_scan.retain(|p| {
+                                            let path_str =
+                                                p.to_string_lossy().to_string();
+                                            if let Some(&(bl_mtime, _)) =
+                                                blacklist.get(&path_str)
+                                            {
+                                                if bl_mtime == -1 {
+                                                    return false;
+                                                }
+                                                let current_mtime = std::fs::metadata(p)
+                                                    .ok()
+                                                    .and_then(|m| m.modified().ok())
+                                                    .and_then(|t| {
+                                                        t.duration_since(
+                                                            std::time::UNIX_EPOCH,
+                                                        )
+                                                        .ok()
+                                                    })
+                                                    .map(|d| d.as_secs() as i64)
+                                                    .unwrap_or(0);
+                                                if current_mtime == bl_mtime {
+                                                    return false;
+                                                }
+                                                let _ = db::remove_from_scan_blacklist(
+                                                    &conn,
+                                                    &path_str,
+                                                );
+                                            }
+                                            true
+                                        });
+                                    }
+
                                     let _ = scanner::scan_files(
                                         &mut conn,
                                         &handle_for_scan,

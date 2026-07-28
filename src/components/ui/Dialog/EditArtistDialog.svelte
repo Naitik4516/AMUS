@@ -2,7 +2,7 @@
     import { Button } from "$components/ui/button/index.js";
     import { selectAndUploadImage } from "$lib/edit-helpers";
     import { store } from "$lib/stores.svelte";
-    import { ImagePlus, X, LoaderCircle, User } from "@lucide/svelte";
+    import { ImagePlus, LoaderCircle, User } from "@lucide/svelte";
     import Dialog from "$components/Dialog.svelte";
     import { onMount } from "svelte";
     import Input from "../input/input.svelte";

@@ -27,6 +27,7 @@
         RefreshCw,
         RotateCcw,
         Settings2,
+        ShieldBan,
         Trash2,
         User,
         Zap,
@@ -118,7 +119,7 @@
                     </button>
                 </div>
             {:else}
-                <div class="space-y-3">
+                <div class="space-y-3 max-h-96 overflow-y-auto">
                     {#each sources as source}
                         <div
                             class="flex items-center justify-between bg-card/50 backdrop-blur-lg border border-border rounded-3xl shadow-lg px-5 py-4 group hover:border-neutral-700 transition-colors"
@@ -134,50 +135,50 @@
                                 >
                                     {source}
                                 </span>
-</div>
+                            </div>
 
-<style>
-    .smooth-scroll-range {
-        -webkit-appearance: none;
-        appearance: none;
-        width: 100%;
-        height: 6px;
-        background: rgba(255, 255, 255, 0.15);
-        border-radius: 999px;
-        outline: none;
-        cursor: pointer;
-    }
+                            <style>
+                                .smooth-scroll-range {
+                                    -webkit-appearance: none;
+                                    appearance: none;
+                                    width: 100%;
+                                    height: 6px;
+                                    background: rgba(255, 255, 255, 0.15);
+                                    border-radius: 999px;
+                                    outline: none;
+                                    cursor: pointer;
+                                }
 
-    .smooth-scroll-range::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        appearance: none;
-        width: 18px;
-        height: 18px;
-        border-radius: 50%;
-        background: white;
-        cursor: pointer;
-        transition: transform 0.15s ease;
-    }
+                                .smooth-scroll-range::-webkit-slider-thumb {
+                                    -webkit-appearance: none;
+                                    appearance: none;
+                                    width: 18px;
+                                    height: 18px;
+                                    border-radius: 50%;
+                                    background: white;
+                                    cursor: pointer;
+                                    transition: transform 0.15s ease;
+                                }
 
-    .smooth-scroll-range::-webkit-slider-thumb:hover {
-        transform: scale(1.15);
-    }
+                                .smooth-scroll-range::-webkit-slider-thumb:hover {
+                                    transform: scale(1.15);
+                                }
 
-    .smooth-scroll-range::-moz-range-thumb {
-        width: 18px;
-        height: 18px;
-        border-radius: 50%;
-        background: white;
-        cursor: pointer;
-        border: none;
-    }
+                                .smooth-scroll-range::-moz-range-thumb {
+                                    width: 18px;
+                                    height: 18px;
+                                    border-radius: 50%;
+                                    background: white;
+                                    cursor: pointer;
+                                    border: none;
+                                }
 
-    .smooth-scroll-range::-moz-range-track {
-        height: 6px;
-        background: rgba(255, 255, 255, 0.15);
-        border-radius: 999px;
-    }
-</style>
+                                .smooth-scroll-range::-moz-range-track {
+                                    height: 6px;
+                                    background: rgba(255, 255, 255, 0.15);
+                                    border-radius: 999px;
+                                }
+                            </style>
                             <button
                                 onclick={() => handleRemoveSource(source)}
                                 class="shrink-0 p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
@@ -342,7 +343,9 @@
                                 Duration
                             </h3>
                             <span class="text-sm text-gray-400 font-mono"
-                                >{settings.smoothScrollDuration.toFixed(1)}s</span
+                                >{settings.smoothScrollDuration.toFixed(
+                                    1,
+                                )}s</span
                             >
                         </div>
                         <input
@@ -380,6 +383,22 @@
                 </div>
                 <span class="text-gray-400 text-sm">Customize</span>
             </button>
+
+            <h3 class="text-lg font-bold text-gray-300 mt-6">
+                Blacklisted Files
+            </h3>
+            <a
+                href="/library/blacklisted"
+                class="flex items-center justify-between w-full px-8 py-4 bg-card/50 backdrop-blur-lg rounded-3xl shadow-lg border border-border cursor-pointer hover:bg-card/70 transition-colors text-left"
+            >
+                <div class="flex items-center gap-3">
+                    <ShieldBan size={20} class="text-zinc-400" />
+                    <Label class="text-xl font-bold text-white"
+                        >Blacklisted Files</Label
+                    >
+                </div>
+                <span class="text-gray-400 text-sm">Manage</span>
+            </a>
 
             <h3 class="text-lg font-bold text-gray-300 mt-6">Updates</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

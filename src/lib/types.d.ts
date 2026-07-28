@@ -75,6 +75,13 @@ type MenuPosition =
   | { type: "coordinates"; x: number; y: number };
 
 // Stats types
+export interface BlacklistedEntry {
+  path: string;
+  mtime: number;
+  reason: string;
+  created_at: string;
+}
+
 export type Timeframe =
   | "today"
   | "this_week"

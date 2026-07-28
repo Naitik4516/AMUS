@@ -9,6 +9,7 @@
         ChevronUp,
         Plus,
         X,
+        Trash,
     } from "@lucide/svelte";
     let { name, size = 16, class: className = "", ...props } = $props();
 
@@ -196,22 +197,16 @@
     </svg>
 {:else if name === "trash"}
     <svg
-        viewBox="0 0 24 24"
-        width={size}
+        xmlns="http://www.w3.org/2000/svg"
         height={size}
-        class={className}
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
+        width={size}
+        viewBox="0 -960 960 960"
+        fill="currentColor"
+        {...properties}
+        ><path
+            d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"
+        /></svg
     >
-        <path
-            d="M5 7h14M9.5 7V5.2c0-.7.5-1.2 1.2-1.2h4.6c.7 0 1.2.5 1.2 1.2V7m-8.7 0 1 12.3c.1.8.7 1.4 1.5 1.4h6.4c.8 0 1.4-.6 1.5-1.4L17.7 7"
-        />
-        <path d="M10.3 11v6M13.7 11v6" />
-    </svg>
 {:else if name === "edit"}
     <svg
         viewBox="0 0 24 24"

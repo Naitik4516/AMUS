@@ -20,7 +20,7 @@
 <div class="relative group {className}">
     {@render children()}
     <div
-        class="absolute bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center inset-0"
+        class="absolute bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center inset-0"
     >
         <button {onclick}>
             <Pen size={28} fill="white" />
