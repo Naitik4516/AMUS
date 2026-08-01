@@ -21,6 +21,20 @@ pub struct TrackDetails {
     pub track_number: Option<u32>,
     pub year: Option<u32>,
     pub playlist_ids: Vec<i64>,
+    pub genres: Vec<Genre>,
+    pub bitrate: Option<u32>,
+    pub sample_rate: u32,
+    pub bit_depth: Option<u8>,
+    pub channels: u8,
+    pub audio_format: String,
+    pub codec: Option<String>,
+    pub bpm: Option<f32>,
+    pub replaygain_track_gain: Option<f32>,
+    pub replaygain_track_peak: Option<f32>,
+    pub replaygain_album_gain: Option<f32>,
+    pub replaygain_album_peak: Option<f32>,
+    pub encoder: Option<String>,
+    pub lyrics: Option<Lyrics>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -35,6 +49,8 @@ pub struct Track {
     pub added_at: DateTime<Utc>,
     pub track_number: Option<u32>,
     pub playlist_ids: Vec<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub genre_ids: Option<Vec<i64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub queue_id: Option<i64>,
 }
@@ -52,6 +68,20 @@ pub struct Artist {
     pub name: String,
     pub profile_image: Option<String>,
     pub banner_image: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct Genre {
+    pub id: i64,
+    pub name: String,
+    pub thumbnail: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Lyrics {
+    pub plain_lyrics: Option<String>,
+    pub synced_lyrics: Option<String>,
+    pub source: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]

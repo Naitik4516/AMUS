@@ -438,6 +438,14 @@ impl PlayerActor {
             return;
         }
         self.engine.play();
+        let (pos, _) = self.engine.state();
+        emit(
+            &self.app,
+            PlayerEvent::Position {
+                pos_sec: pos,
+                at_epoch_ms: now_epoch_ms(),
+            },
+        );
         emit(&self.app, PlayerEvent::StateChanged { is_playing: true });
     }
 

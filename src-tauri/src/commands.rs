@@ -9,6 +9,7 @@ use crate::startup::StartupStatus;
 use crate::sync::SyncManager;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::SyncSender;
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::Emitter;
 use tauri::Manager;
@@ -624,10 +625,11 @@ pub async fn update_track_metadata(
     id: i64,
     title: String,
     year: Option<i32>,
+    genre: Option<String>,
     pool: State<'_, DbPool>,
 ) -> Result<TrackDetails> {
     let conn = pool.get().map_err(Error::Pool)?;
-    db::update_track_partial(&conn, id, title, year)
+    db::update_track_partial(&conn, id, title, year, genre)
 }
 
 #[tauri::command]
@@ -674,8 +676,161 @@ pub(crate) fn toggle_mini_player(app: tauri::AppHandle) -> std::result::Result<(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Lyrics & Genre commands
+// ---------------------------------------------------------------------------
+
 #[tauri::command]
-pub fn get_startup_status(startup: State<'_, StartupStatus>) -> Option<String> {
+pub async fn get_track_lyrics(id: i64, pool: State<'_, DbPool>) -> Result<Option<Lyrics>> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::get_track_lyrics(&conn, id)
+}
+
+#[tauri::command]
+pub async fn update_track_lyrics(
+    track_id: i64,
+    plain_lyrics: Option<String>,
+    synced_lyrics: Option<String>,
+    source: String,
+    pool: State<'_, DbPool>,
+) -> Result<()> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::set_track_lyrics(&conn, track_id, plain_lyrics.as_deref(), synced_lyrics.as_deref(), &source)
+}
+
+#[tauri::command]
+pub async fn fetch_lyrics_from_lrclib(
+    track_id: i64,
+    pool: State<'_, DbPool>,
+) -> Result<bool> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    let track = db::get_track_by_id(&conn, track_id)?;
+
+    let artist_name = track
+        .artists
+        .first()
+        .map(|a| a.name.as_str())
+        .unwrap_or("Unknown Artist");
+
+    let result = crate::lyrics_fetcher::fetch_lyrics(
+        artist_name,
+        &track.title,
+        track.duration_seconds,
+    )
+    .await?;
+
+    match result {
+        Some(lyrics) => {
+            let conn = pool.get().map_err(Error::Pool)?;
+            db::set_track_lyrics(
+                &conn,
+                track_id,
+                lyrics.plain_lyrics.as_deref(),
+                lyrics.synced_lyrics.as_deref(),
+                &lyrics.source,
+            )?;
+            db::report_lyrics_fetch_success(&conn, track_id)?;
+            Ok(true)
+        }
+        None => {
+            let conn = pool.get().map_err(Error::Pool)?;
+            db::report_lyrics_fetch_failure(&conn, track_id)?;
+            Ok(false)
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_genres(pool: State<'_, DbPool>) -> Result<Vec<Genre>> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    let mut stmt = conn
+        .prepare("SELECT id, name, thumbnail FROM genre ORDER BY name COLLATE NOCASE ASC")
+        .map_err(Error::Db)?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(Genre {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                thumbnail: row.get(2)?,
+            })
+        })
+        .map_err(Error::Db)?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Error::Db)
+}
+
+#[tauri::command]
+pub async fn get_tracks_by_genre(
+    genre_id: i64,
+    pool: State<'_, DbPool>,
+) -> Result<Vec<Track>> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::get_tracks_by_genre(&conn, genre_id)
+}
+
+#[tauri::command]
+pub async fn create_genre(
+    name: String,
+    pool: State<'_, DbPool>,
+) -> Result<Genre> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    let id = db::get_or_create_genre(&conn, &name)?;
+    Ok(Genre { id, name, thumbnail: None })
+}
+
+#[tauri::command]
+pub async fn update_genre(
+    id: i64,
+    name: String,
+    thumbnail: Option<String>,
+    pool: State<'_, DbPool>,
+) -> Result<Genre> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::update_genre(&conn, id, &name, thumbnail.as_deref())
+}
+
+#[tauri::command]
+pub async fn set_track_cover_art(
+    track_id: i64,
+    cover_art: Option<String>,
+    pool: State<'_, DbPool>,
+) -> Result<()> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::set_track_cover_art(&conn, track_id, cover_art.as_deref())
+}
+
+#[tauri::command]
+pub async fn set_track_artists(
+    track_id: i64,
+    artist_ids: Vec<i64>,
+    pool: State<'_, DbPool>,
+) -> Result<()> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::set_track_artists(&conn, track_id, &artist_ids)
+}
+
+#[tauri::command]
+pub async fn set_track_album(
+    track_id: i64,
+    album_id: i64,
+    pool: State<'_, DbPool>,
+) -> Result<()> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::set_track_album(&conn, track_id, album_id, 1)
+}
+
+#[tauri::command]
+pub async fn set_track_genre(
+    track_id: i64,
+    genre_name: String,
+    pool: State<'_, DbPool>,
+) -> Result<()> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::set_track_genre(&conn, track_id, &genre_name)
+}
+
+#[tauri::command]
+pub fn get_startup_status(startup: State<'_, Arc<StartupStatus>>) -> Option<String> {
     startup.get()
 }
 

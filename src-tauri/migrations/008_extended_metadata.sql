@@ -1,0 +1,36 @@
+ALTER TABLE track ADD COLUMN genre TEXT;
+ALTER TABLE track ADD COLUMN bitrate INTEGER;
+ALTER TABLE track ADD COLUMN sample_rate INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE track ADD COLUMN bit_depth INTEGER;
+ALTER TABLE track ADD COLUMN channels INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE track ADD COLUMN audio_format TEXT NOT NULL DEFAULT '';
+ALTER TABLE track ADD COLUMN codec TEXT;
+ALTER TABLE track ADD COLUMN bpm REAL;
+ALTER TABLE track ADD COLUMN musical_key TEXT;
+ALTER TABLE track ADD COLUMN replaygain_track_gain REAL;
+ALTER TABLE track ADD COLUMN replaygain_track_peak REAL;
+ALTER TABLE track ADD COLUMN replaygain_album_gain REAL;
+ALTER TABLE track ADD COLUMN replaygain_album_peak REAL;
+ALTER TABLE track ADD COLUMN encoder TEXT;
+
+CREATE TABLE IF NOT EXISTS genre (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS track_genre (
+    track_id INTEGER NOT NULL,
+    genre_id INTEGER NOT NULL,
+    PRIMARY KEY (track_id, genre_id),
+    FOREIGN KEY (track_id) REFERENCES track(id) ON DELETE CASCADE,
+    FOREIGN KEY (genre_id) REFERENCES genre(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS track_lyrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id INTEGER NOT NULL UNIQUE,
+    plain_lyrics TEXT,
+    synced_lyrics TEXT,
+    source TEXT NOT NULL DEFAULT 'embedded',
+    FOREIGN KEY (track_id) REFERENCES track(id) ON DELETE CASCADE
+);

@@ -505,6 +505,7 @@ mod tests {
             added_at: chrono::Utc::now(),
             track_number: Some(id as u32),
             playlist_ids: vec![],
+            genre_ids: None,
             queue_id: None,
         }
     }

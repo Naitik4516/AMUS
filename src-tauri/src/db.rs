@@ -56,6 +56,9 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
         "../migrations/006_alter_playback_history_source_type.sql"
     )),
     M::up(include_str!("../migrations/007_scan_blacklist.sql")),
+    M::up(include_str!("../migrations/008_extended_metadata.sql")),
+    M::up(include_str!("../migrations/009_genre_thumbnail.sql")),
+    M::up(include_str!("../migrations/010_lyrics_fetch_attempts.sql")),
 ];
 
 const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);
@@ -375,6 +378,16 @@ pub fn set_album_artist(conn: &Connection, name: &str, album_artist: &str) -> Re
     Ok(())
 }
 
+pub fn set_album_artist_by_id(conn: &Connection, album_id: i64, album_artist: &str) -> Result<()> {
+    conn.prepare_cached(
+        "UPDATE album SET album_artist = ? WHERE id = ? AND album_artist IS NULL",
+    )
+    .map_err(Error::Db)?
+    .execute(params![album_artist, album_id])
+    .map_err(Error::Db)?;
+    Ok(())
+}
+
 pub fn update_track(
     conn: &Connection,
     path: &str,
@@ -384,22 +397,58 @@ pub fn update_track(
     mtime: i64,
     file_size: i64,
     cover_art: Option<&str>,
+    genre: Option<&str>,
+    bitrate: Option<u32>,
+    sample_rate: u32,
+    bit_depth: Option<u8>,
+    channels: u8,
+    audio_format: &str,
+    codec: Option<&str>,
+    bpm: Option<f32>,
+    replaygain_track_gain: Option<f32>,
+    replaygain_track_peak: Option<f32>,
+    replaygain_album_gain: Option<f32>,
+    replaygain_album_peak: Option<f32>,
+    encoder: Option<&str>,
 ) -> Result<i64> {
     conn.prepare_cached(
-        "INSERT INTO track (path, title, duration_sec, year, mtime, file_size, cover_art)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        "INSERT INTO track (path, title, duration_sec, year, mtime, file_size, cover_art,
+            genre, bitrate, sample_rate, bit_depth, channels, audio_format, codec,
+            bpm, replaygain_track_gain, replaygain_track_peak,
+            replaygain_album_gain, replaygain_album_peak, encoder)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7,
+             ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+             ?15, ?16, ?17, ?18, ?19, ?20)
             ON CONFLICT(path) DO UPDATE SET
             title = excluded.title,
             duration_sec = excluded.duration_sec,
             year = excluded.year,
             mtime = excluded.mtime,
             file_size = excluded.file_size,
-            cover_art = excluded.cover_art
+            cover_art = excluded.cover_art,
+            genre = excluded.genre,
+            bitrate = excluded.bitrate,
+            sample_rate = excluded.sample_rate,
+            bit_depth = excluded.bit_depth,
+            channels = excluded.channels,
+            audio_format = excluded.audio_format,
+            codec = excluded.codec,
+            bpm = excluded.bpm,
+            replaygain_track_gain = excluded.replaygain_track_gain,
+            replaygain_track_peak = excluded.replaygain_track_peak,
+            replaygain_album_gain = excluded.replaygain_album_gain,
+            replaygain_album_peak = excluded.replaygain_album_peak,
+            encoder = excluded.encoder
             RETURNING id",
     )
     .map_err(Error::Db)?
     .query_row(
-        params![path, title, duration_sec, year, mtime, file_size, cover_art],
+        params![
+            path, title, duration_sec, year, mtime, file_size, cover_art,
+            genre, bitrate, sample_rate, bit_depth, channels, audio_format, codec,
+            bpm, replaygain_track_gain, replaygain_track_peak,
+            replaygain_album_gain, replaygain_album_peak, encoder
+        ],
         |row| row.get(0),
     )
     .map_err(Error::Db)
@@ -459,20 +508,254 @@ pub fn bulk_insert_track_artists(conn: &Connection, pairs: &[(i64, i64)]) -> Res
     if pairs.is_empty() {
         return Ok(());
     }
-    let placeholders: Vec<String> = pairs.iter().map(|_| "(?, ?)".to_string()).collect();
-    let sql = format!(
-        "INSERT OR IGNORE INTO track_artist (track_id, artist_id) VALUES {}",
-        placeholders.join(", ")
-    );
-    let mut param_values: Vec<Box<dyn ToSql>> = Vec::with_capacity(pairs.len() * 2);
-    for &(tid, aid) in pairs {
-        param_values.push(Box::new(tid));
-        param_values.push(Box::new(aid));
+    for chunk in pairs.chunks(400) {
+        let placeholders: Vec<String> = chunk.iter().map(|_| "(?, ?)".to_string()).collect();
+        let sql = format!(
+            "INSERT OR IGNORE INTO track_artist (track_id, artist_id) VALUES {}",
+            placeholders.join(", ")
+        );
+        let mut param_values: Vec<Box<dyn ToSql>> = Vec::with_capacity(chunk.len() * 2);
+        for &(tid, aid) in chunk {
+            param_values.push(Box::new(tid));
+            param_values.push(Box::new(aid));
+        }
+        let params_refs: Vec<&dyn ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+        conn.prepare_cached(&sql)
+            .map_err(Error::Db)?
+            .execute(params_refs.as_slice())
+            .map_err(Error::Db)?;
     }
-    let params_refs: Vec<&dyn ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
-    conn.prepare_cached(&sql)
+    Ok(())
+}
+
+pub fn clear_track_genres(conn: &Connection, track_id: i64) -> Result<()> {
+    conn.prepare_cached("DELETE FROM track_genre WHERE track_id = ?")
         .map_err(Error::Db)?
-        .execute(params_refs.as_slice())
+        .execute(params![track_id])
+        .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn get_or_create_genre(conn: &Connection, name: &str) -> Result<i64> {
+    conn.prepare_cached(
+        "INSERT INTO genre (name) VALUES (?1) ON CONFLICT(name) DO UPDATE SET name=?1 RETURNING id",
+    )
+    .map_err(Error::Db)?
+    .query_row(params![name], |row| row.get(0))
+    .map_err(Error::Db)
+}
+
+pub fn bulk_insert_track_genres(conn: &Connection, pairs: &[(i64, i64)]) -> Result<()> {
+    if pairs.is_empty() {
+        return Ok(());
+    }
+    for chunk in pairs.chunks(400) {
+        let placeholders: Vec<String> = chunk.iter().map(|_| "(?, ?)".to_string()).collect();
+        let sql = format!(
+            "INSERT OR IGNORE INTO track_genre (track_id, genre_id) VALUES {}",
+            placeholders.join(", ")
+        );
+        let mut param_values: Vec<Box<dyn ToSql>> = Vec::with_capacity(chunk.len() * 2);
+        for &(tid, gid) in chunk {
+            param_values.push(Box::new(tid));
+            param_values.push(Box::new(gid));
+        }
+        let params_refs: Vec<&dyn ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+        conn.prepare_cached(&sql)
+            .map_err(Error::Db)?
+            .execute(params_refs.as_slice())
+            .map_err(Error::Db)?;
+    }
+    Ok(())
+}
+
+pub fn get_genres_for_tracks(conn: &Connection, track_ids: &[i64]) -> Result<HashMap<i64, Vec<Genre>>> {
+    let mut map = HashMap::new();
+    if track_ids.is_empty() {
+        return Ok(map);
+    }
+
+    for chunk in track_ids.chunks(900) {
+        let placeholders = sql_placeholders(chunk.len());
+        let sql = format!(
+            "SELECT tg.track_id, g.id, g.name, g.thumbnail
+             FROM track_genre tg
+             JOIN genre g ON tg.genre_id = g.id
+             WHERE tg.track_id IN ({})",
+            placeholders
+        );
+        let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(chunk), |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        Genre {
+                            id: row.get(1)?,
+                            name: row.get(2)?,
+                            thumbnail: row.get(3)?,
+                        },
+                    ))
+            })
+            .map_err(Error::Db)?;
+
+        for row in rows {
+            let (track_id, genre) = row.map_err(Error::Db)?;
+            map.entry(track_id).or_insert_with(Vec::new).push(genre);
+        }
+    }
+
+    Ok(map)
+}
+
+pub fn set_track_lyrics(
+    conn: &Connection,
+    track_id: i64,
+    plain_lyrics: Option<&str>,
+    synced_lyrics: Option<&str>,
+    source: &str,
+) -> Result<()> {
+    if plain_lyrics.is_none() && synced_lyrics.is_none() {
+        return Ok(());
+    }
+    conn.prepare_cached(
+        "INSERT INTO track_lyrics (track_id, plain_lyrics, synced_lyrics, source)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(track_id) DO UPDATE SET
+           plain_lyrics = excluded.plain_lyrics,
+           synced_lyrics = excluded.synced_lyrics,
+           source = excluded.source",
+    )
+    .map_err(Error::Db)?
+    .execute(params![track_id, plain_lyrics, synced_lyrics, source])
+    .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn get_track_lyrics(conn: &Connection, track_id: i64) -> Result<Option<Lyrics>> {
+    let result = conn
+        .query_row(
+            "SELECT plain_lyrics, synced_lyrics, source FROM track_lyrics WHERE track_id = ?",
+            params![track_id],
+            |row| {
+                Ok(Lyrics {
+                    plain_lyrics: row.get(0)?,
+                    synced_lyrics: row.get(1)?,
+                    source: row.get(2)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(Error::Db)?;
+    Ok(result)
+}
+
+pub fn get_tracks_needing_lyrics_fetch(conn: &Connection) -> Result<Vec<(i64, String, String, u32)>> {
+    let mut stmt = conn
+        .prepare_cached(
+            "SELECT t.id, ar.name, t.title, t.duration_sec
+             FROM track t
+             JOIN track_artist ta ON ta.track_id = t.id
+             JOIN artist ar ON ar.id = ta.artist_id
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM track_lyrics tl
+                 WHERE tl.track_id = t.id
+                   AND (tl.plain_lyrics IS NOT NULL OR tl.synced_lyrics IS NOT NULL)
+             )
+             AND t.id IN (
+                 SELECT track_id FROM track_lyrics
+                 WHERE fetch_attempts < 3
+                 UNION
+                 SELECT t2.id FROM track t2
+                 WHERE NOT EXISTS (SELECT 1 FROM track_lyrics WHERE track_id = t2.id)
+             )
+             ORDER BY t.id
+             LIMIT 50",
+        )
+        .map_err(Error::Db)?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, u32>(3)?,
+            ))
+        })
+        .map_err(Error::Db)?;
+    let mut tracks = Vec::new();
+    for row in rows {
+        tracks.push(row.map_err(Error::Db)?);
+    }
+    Ok(tracks)
+}
+
+pub fn report_lyrics_fetch_success(conn: &Connection, track_id: i64) -> Result<()> {
+    conn.prepare_cached(
+        "INSERT INTO track_lyrics (track_id, plain_lyrics, synced_lyrics, source, fetch_attempts, last_fetch_attempt)
+         VALUES (?1, NULL, NULL, 'lrclib', 0, datetime('now'))
+         ON CONFLICT(track_id) DO UPDATE SET
+           fetch_attempts = 0,
+           last_fetch_attempt = datetime('now')",
+    )
+    .map_err(Error::Db)?
+    .execute(params![track_id])
+    .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn report_lyrics_fetch_failure(conn: &Connection, track_id: i64) -> Result<()> {
+    conn.prepare_cached(
+        "INSERT INTO track_lyrics (track_id, plain_lyrics, synced_lyrics, source, fetch_attempts, last_fetch_attempt)
+         VALUES (?1, NULL, NULL, 'lrclib', 1, datetime('now'))
+         ON CONFLICT(track_id) DO UPDATE SET
+           fetch_attempts = fetch_attempts + 1,
+           last_fetch_attempt = datetime('now')",
+    )
+    .map_err(Error::Db)?
+    .execute(params![track_id])
+    .map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn set_track_genre(conn: &Connection, track_id: i64, genre_name: &str) -> Result<()> {
+    let genre_id = get_or_create_genre(conn, genre_name)?;
+    clear_track_genres(conn, track_id)?;
+    bulk_insert_track_genres(conn, &[(track_id, genre_id)])?;
+    Ok(())
+}
+
+pub fn get_tracks_by_genre(conn: &Connection, genre_id: i64) -> Result<Vec<Track>> {
+    let sql =
+        "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.cover_art, t.added_at
+        FROM track t
+        JOIN track_genre tg ON t.id = tg.track_id
+        LEFT JOIN album_track alt ON t.id = alt.track_id
+        LEFT JOIN album al ON alt.album_id = al.id
+        WHERE tg.genre_id = ?
+        ORDER BY t.title COLLATE NOCASE ASC";
+
+    prepare_tracks_list(conn, sql, params![genre_id])
+}
+
+pub fn update_genre(conn: &Connection, id: i64, name: &str, thumbnail: Option<&str>) -> Result<Genre> {
+    conn.prepare_cached(
+        "UPDATE genre SET name = ?1, thumbnail = ?2 WHERE id = ?3 RETURNING id, name, thumbnail",
+    )
+    .map_err(Error::Db)?
+    .query_row(params![name, thumbnail, id], |row| {
+        Ok(Genre {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            thumbnail: row.get(2)?,
+        })
+    })
+    .map_err(Error::Db)
+}
+
+pub fn set_track_cover_art(conn: &Connection, track_id: i64, cover_art: Option<&str>) -> Result<()> {
+    conn.prepare_cached("UPDATE track SET cover_art = ?1 WHERE id = ?2")
+        .map_err(Error::Db)?
+        .execute(params![cover_art, track_id])
         .map_err(Error::Db)?;
     Ok(())
 }
@@ -481,22 +764,24 @@ pub fn bulk_insert_track_albums(conn: &Connection, entries: &[(i64, i64, i32)]) 
     if entries.is_empty() {
         return Ok(());
     }
-    let placeholders: Vec<String> = entries.iter().map(|_| "(?, ?, ?)".to_string()).collect();
-    let sql = format!(
-        "INSERT OR IGNORE INTO album_track (album_id, track_id, track_number) VALUES {}",
-        placeholders.join(", ")
-    );
-    let mut param_values: Vec<Box<dyn ToSql>> = Vec::with_capacity(entries.len() * 3);
-    for &(aid, tid, tn) in entries {
-        param_values.push(Box::new(aid));
-        param_values.push(Box::new(tid));
-        param_values.push(Box::new(tn));
+    for chunk in entries.chunks(250) {
+        let placeholders: Vec<String> = chunk.iter().map(|_| "(?, ?, ?)".to_string()).collect();
+        let sql = format!(
+            "INSERT OR IGNORE INTO album_track (album_id, track_id, track_number) VALUES {}",
+            placeholders.join(", ")
+        );
+        let mut param_values: Vec<Box<dyn ToSql>> = Vec::with_capacity(chunk.len() * 3);
+        for &(aid, tid, tn) in chunk {
+            param_values.push(Box::new(aid));
+            param_values.push(Box::new(tid));
+            param_values.push(Box::new(tn));
+        }
+        let params_refs: Vec<&dyn ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+        conn.prepare_cached(&sql)
+            .map_err(Error::Db)?
+            .execute(params_refs.as_slice())
+            .map_err(Error::Db)?;
     }
-    let params_refs: Vec<&dyn ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
-    conn.prepare_cached(&sql)
-        .map_err(Error::Db)?
-        .execute(params_refs.as_slice())
-        .map_err(Error::Db)?;
     Ok(())
 }
 
@@ -692,10 +977,11 @@ pub fn update_track_partial(
     id: i64,
     title: String,
     year: Option<i32>,
+    genre: Option<String>,
 ) -> Result<TrackDetails> {
     conn.execute(
-        "UPDATE track SET title = ?, year = ? WHERE id = ?",
-        params![title, year, id],
+        "UPDATE track SET title = ?, year = ?, genre = COALESCE(?, genre) WHERE id = ?",
+        params![title, year, genre, id],
     )
     .map_err(Error::Db)?;
     get_track_details(conn, id)
@@ -807,8 +1093,12 @@ pub fn get_favorite_tracks(conn: &Connection) -> Result<Vec<Track>> {
 }
 
 pub fn get_track_details(conn: &Connection, track_id: i64) -> Result<TrackDetails> {
-    let sql = "SELECT t.id, t.path, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year, t.duration_sec, t.is_favorite, t.mtime,
-        IFNULL(s.play_count, 0), s.last_played_at, IFNULL(s.skip_count, 0), s.last_skipped_at, t.cover_art, t.added_at
+    let sql = "SELECT t.id, t.path, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year,
+        t.duration_sec, t.is_favorite, t.mtime,
+        IFNULL(s.play_count, 0), s.last_played_at, IFNULL(s.skip_count, 0), s.last_skipped_at, t.cover_art, t.added_at,
+        t.genre, t.bitrate, t.sample_rate, t.bit_depth, t.channels, t.audio_format, t.codec,
+        t.bpm, t.replaygain_track_gain, t.replaygain_track_peak,
+        t.replaygain_album_gain, t.replaygain_album_peak, t.encoder
         FROM track t
         LEFT JOIN album_track alt ON t.id = alt.track_id
         LEFT JOIN album al ON alt.album_id = al.id
@@ -847,6 +1137,20 @@ pub fn get_track_details(conn: &Connection, track_id: i64) -> Result<TrackDetail
                     track_number: row.get::<_, Option<i32>>(6)?.map(|n| n as u32),
                     year: row.get::<_, Option<i32>>(8)?.map(|y| y as u32),
                     playlist_ids: vec![],
+                    genres: vec![],
+                    bitrate: row.get(19)?,
+                    sample_rate: row.get::<_, u32>(20)?,
+                    bit_depth: row.get(21)?,
+                    channels: row.get::<_, u8>(22)?,
+                    audio_format: row.get(23)?,
+                    codec: row.get(24)?,
+                    bpm: row.get(25)?,
+                    replaygain_track_gain: row.get(26)?,
+                    replaygain_track_peak: row.get(27)?,
+                    replaygain_album_gain: row.get(28)?,
+                    replaygain_album_peak: row.get(29)?,
+                    encoder: row.get(30)?,
+                    lyrics: None,
                 },
                 row.get::<_, Option<String>>(7)?,
             ))
@@ -867,6 +1171,14 @@ pub fn get_track_details(conn: &Connection, track_id: i64) -> Result<TrackDetail
     if let Some(ids) = playlist_ids_map.get(&track_id) {
         details.playlist_ids = ids.clone();
     }
+
+    let genres_map = get_genres_for_tracks(conn, &[track_id])?;
+    if let Some(genres) = genres_map.get(&track_id) {
+        details.genres = genres.clone();
+    }
+
+    let lyrics = get_track_lyrics(conn, track_id)?;
+    details.lyrics = lyrics;
 
     Ok(details)
 }
@@ -1229,6 +1541,7 @@ pub fn prepare_tracks_list<P: Params>(
                     added_at: row.get(11)?,
                     track_number: row.get::<_, Option<i32>>(5)?.map(|n| n as u32),
                     playlist_ids: vec![],
+                    genre_ids: None,
                     queue_id: None,
                 },
                 album_artist_name,
@@ -1268,6 +1581,13 @@ pub fn prepare_tracks_list<P: Params>(
         for rt in &mut raw_tracks {
             if let Some(ids) = playlist_ids_map.get(&rt.track.id) {
                 rt.track.playlist_ids = ids.clone();
+            }
+        }
+
+        let genre_ids_map = get_genre_ids_for_tracks(conn, &track_ids)?;
+        for rt in &mut raw_tracks {
+            if let Some(ids) = genre_ids_map.get(&rt.track.id) {
+                rt.track.genre_ids = Some(ids.clone());
             }
         }
     }
@@ -1344,6 +1664,39 @@ fn get_playlist_ids_for_tracks(
             map.entry(track_id)
                 .or_insert_with(Vec::new)
                 .push(playlist_id);
+        }
+    }
+
+    Ok(map)
+}
+
+fn get_genre_ids_for_tracks(
+    conn: &Connection,
+    track_ids: &[i64],
+) -> Result<HashMap<i64, Vec<i64>>> {
+    let mut map = HashMap::new();
+    if track_ids.is_empty() {
+        return Ok(map);
+    }
+
+    for chunk in track_ids.chunks(900) {
+        let placeholders = sql_placeholders(chunk.len());
+        let sql = format!(
+            "SELECT track_id, genre_id FROM track_genre WHERE track_id IN ({})",
+            placeholders
+        );
+        let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(chunk), |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(Error::Db)?;
+
+        for row in rows {
+            let (track_id, genre_id) = row.map_err(Error::Db)?;
+            map.entry(track_id)
+                .or_insert_with(Vec::new)
+                .push(genre_id);
         }
     }
 
@@ -1592,16 +1945,11 @@ pub fn get_format_distribution(conn: &Connection) -> Result<Vec<FormatStat>> {
     let mut stmt = conn
         .prepare(
             "SELECT
-                LOWER(
-                    CASE
-                        WHEN instr(path, '.') > 0 THEN substr(path, instr(path, '.') + 1)
-                        ELSE 'unknown'
-                    END
-                ) as ext,
+                LOWER(audio_format) as fmt,
                 COUNT(*) as cnt,
                 COALESCE(SUM(file_size), 0) as total_bytes
              FROM track
-             GROUP BY ext
+             GROUP BY fmt
              ORDER BY cnt DESC",
         )
         .map_err(Error::Db)?;
@@ -1683,6 +2031,7 @@ pub fn get_top_tracks_with_stats(
                 added_at: row.get(11)?,
                 track_number: row.get::<_, Option<i32>>(5)?.map(|n| n as u32),
                 playlist_ids: vec![],
+                genre_ids: None,
                 queue_id: None,
             };
 
@@ -2380,6 +2729,7 @@ pub fn get_playback_history_timeline(
                 added_at: row.get(12)?,
                 track_number: row.get::<_, Option<i32>>(6)?.map(|n| n as u32),
                 playlist_ids: vec![],
+                genre_ids: None,
                 queue_id: None,
             };
 
@@ -2472,6 +2822,58 @@ pub fn get_data_age(conn: &Connection) -> Result<DataAge> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_set_album_artist_by_id() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+        init_db(&mut conn).unwrap();
+
+        let album_id = get_or_create_album(&conn, "Test Album", None, Some(2024)).unwrap();
+        set_album_artist_by_id(&conn, album_id, "Test Album Artist").unwrap();
+
+        let artist: String = conn
+            .query_row(
+                "SELECT album_artist FROM album WHERE id = ?",
+                params![album_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(artist, "Test Album Artist");
+    }
+
+    #[test]
+    fn test_large_bulk_inserts_chunking() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON").unwrap();
+        init_db(&mut conn).unwrap();
+
+        let artist_id = get_or_create_artist(&conn, "Artist 1").unwrap();
+        let album_id = get_or_create_album(&conn, "Album 1", None, None).unwrap();
+        let genre_id = get_or_create_genre(&conn, "Genre 1").unwrap();
+
+        let mut tracks = Vec::new();
+        for idx in 0..600 {
+            let path = format!("/tmp/track_{idx}.flac");
+            let tid = update_track(
+                &conn, &path, "Title", 180, None, 1000, 1000, None, None,
+                None, 44100, None, 2, "flac", None, None, None, None, None, None, None,
+            ).unwrap();
+            tracks.push(tid);
+        }
+
+        // Test bulk artist insert with 600 pairs (1200 params > 999 limit)
+        let artist_pairs: Vec<(i64, i64)> = tracks.iter().map(|&tid| (tid, artist_id)).collect();
+        assert!(bulk_insert_track_artists(&conn, &artist_pairs).is_ok());
+
+        // Test bulk album insert with 600 entries (1800 params > 999 limit)
+        let album_entries: Vec<(i64, i64, i32)> = tracks.iter().map(|&tid| (album_id, tid, 1)).collect();
+        assert!(bulk_insert_track_albums(&conn, &album_entries).is_ok());
+
+        // Test bulk genre insert with 600 pairs (1200 params > 999 limit)
+        let genre_pairs: Vec<(i64, i64)> = tracks.iter().map(|&tid| (tid, genre_id)).collect();
+        assert!(bulk_insert_track_genres(&conn, &genre_pairs).is_ok());
+    }
 
     #[test]
     fn migrations_validate() {
@@ -2606,16 +3008,9 @@ mod tests {
     fn test_update_and_get_track() {
         let conn = setup_memory_db();
         let track_id = update_track(
-            &conn,
-            "/music/test.mp3",
-            "Test Song",
-            200,
-            Some(2024),
-            1000,
-            5000,
-            None,
-        )
-        .unwrap();
+            &conn, "/music/test.mp3", "Test Song", 200, Some(2024), 1000, 5000,
+            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
+        ).unwrap();
         assert!(track_id > 0);
 
         let artist_id = get_or_create_artist(&conn, "Test Artist").unwrap();
@@ -2634,7 +3029,7 @@ mod tests {
     fn test_toggle_favorite() {
         let conn = setup_memory_db();
         let track_id =
-            update_track(&conn, "/music/test.mp3", "Test", 100, None, 0, 100, None).unwrap();
+            update_track(&conn, "/music/test.mp3", "Test", 100, None, 0, 100, None, None, None, 0, None, 0, "", None, None, None, None, None, None, None).unwrap();
         let artist_id = get_or_create_artist(&conn, "Artist").unwrap();
         set_track_artists(&conn, track_id, &[artist_id]).unwrap();
         let album_id = get_or_create_album(&conn, "Album", None, None).unwrap();
@@ -2711,16 +3106,9 @@ mod tests {
         insert_basic_track(&conn);
         // Second track with different artist/album so it doesn't match "Test"
         let track_id = update_track(
-            &conn,
-            "/music/other.mp3",
-            "Other Song",
-            200,
-            Some(2024),
-            2000,
-            6000,
-            None,
-        )
-        .unwrap();
+            &conn, "/music/other.mp3", "Other Song", 200, Some(2024), 2000, 6000,
+            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
+        ).unwrap();
         let artist_id = get_or_create_artist(&conn, "Other Artist").unwrap();
         set_track_artists(&conn, track_id, &[artist_id]).unwrap();
         let album_id = get_or_create_album(&conn, "Other Album", None, None).unwrap();
@@ -2746,16 +3134,9 @@ mod tests {
         add_source_dir(&conn, "/music/jazz").unwrap();
 
         let track_id = update_track(
-            &conn,
-            "/music/rock/song.mp3",
-            "Song",
-            100,
-            None,
-            0,
-            100,
-            None,
-        )
-        .unwrap();
+            &conn, "/music/rock/song.mp3", "Song", 100, None, 0, 100,
+            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
+        ).unwrap();
         let artist_id = get_or_create_artist(&conn, "Artist").unwrap();
         set_track_artists(&conn, track_id, &[artist_id]).unwrap();
 
@@ -2839,22 +3220,25 @@ mod tests {
         conn
     }
 
+    fn make_track(conn: &Connection, path: &str, title: &str, duration: u32, size: i64) -> i64 {
+        update_track(
+            conn, path, title, duration, None, 0u64 as i64, size, None,
+            None, None, 0, None, 0, "", None, None, None, None, None, None, None,
+        ).unwrap()
+    }
+
     fn insert_basic_track(conn: &Connection) -> i64 {
         insert_basic_track_with_path(conn, "/music/test.mp3", 1)
     }
 
     fn insert_basic_track_with_path(conn: &Connection, path: &str, id_suffix: i64) -> i64 {
-        let track_id = update_track(
+        let track_id = make_track(
             conn,
             path,
             &format!("{} Song", if id_suffix == 1 { "Test" } else { "Other" }),
             200,
-            Some(2024),
-            1000,
             5000,
-            None,
-        )
-        .unwrap();
+        );
         let artist_id = get_or_create_artist(conn, "Test Artist").unwrap();
         set_track_artists(conn, track_id, &[artist_id]).unwrap();
         let album_id = get_or_create_album(conn, "Test Album", None, None).unwrap();
@@ -2944,27 +3328,13 @@ mod tests {
     fn test_stats_overview_file_size() {
         let conn = setup_memory_db();
         update_track(
-            &conn,
-            "/music/small.mp3",
-            "Small",
-            100,
-            None,
-            0,
-            1048576,
-            None,
-        )
-        .unwrap();
+            &conn, "/music/small.mp3", "Small", 100, None, 0, 1048576,
+            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
+        ).unwrap();
         update_track(
-            &conn,
-            "/music/large.flac",
-            "Large",
-            200,
-            None,
-            0,
-            5242880,
-            None,
-        )
-        .unwrap();
+            &conn, "/music/large.flac", "Large", 200, None, 0, 5242880,
+            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
+        ).unwrap();
         let overview = get_stats_overview(&conn, Timeframe::AllTime).unwrap();
         assert_eq!(overview.total_tracks, 2);
         assert_eq!(overview.total_file_size_bytes, 6291456);
@@ -3064,16 +3434,9 @@ mod tests {
         // Track 2 with a different artist
         let t2_path = "/music/other.mp3";
         let t2 = update_track(
-            &conn,
-            t2_path,
-            "Other Song",
-            200,
-            Some(2024),
-            2000,
-            6000,
-            None,
-        )
-        .unwrap();
+            &conn, t2_path, "Other Song", 200, Some(2024), 2000, 6000,
+            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
+        ).unwrap();
         let artist2_id = get_or_create_artist(&conn, "Second Artist").unwrap();
         set_track_artists(&conn, t2, &[artist2_id]).unwrap();
         let album_id = get_or_create_album(&conn, "Other Album", None, None).unwrap();
@@ -3117,16 +3480,9 @@ mod tests {
         let t1 = insert_basic_track(&conn); // "Test Album"
         let t2_path = "/music/other.mp3";
         let t2 = update_track(
-            &conn,
-            t2_path,
-            "Other Song",
-            200,
-            Some(2024),
-            2000,
-            6000,
-            None,
-        )
-        .unwrap();
+            &conn, t2_path, "Other Song", 200, Some(2024), 2000, 6000,
+            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
+        ).unwrap();
         let artist_id = get_or_create_artist(&conn, "Artist").unwrap();
         set_track_artists(&conn, t2, &[artist_id]).unwrap();
         let album2_id = get_or_create_album(&conn, "Other Album", None, None).unwrap();
@@ -3434,27 +3790,13 @@ mod tests {
     fn test_format_distribution_single_format() {
         let conn = setup_memory_db();
         update_track(
-            &conn,
-            "/music/song1.mp3",
-            "Song 1",
-            100,
-            None,
-            0,
-            1000,
-            None,
-        )
-        .unwrap();
+            &conn, "/music/song1.mp3", "Song 1", 100, None, 0, 1000,
+            None, None, None, 0, None, 0, "mp3", None, None, None, None, None, None, None,
+        ).unwrap();
         update_track(
-            &conn,
-            "/music/song2.mp3",
-            "Song 2",
-            200,
-            None,
-            0,
-            2000,
-            None,
-        )
-        .unwrap();
+            &conn, "/music/song2.mp3", "Song 2", 200, None, 0, 2000,
+            None, None, None, 0, None, 0, "mp3", None, None, None, None, None, None, None,
+        ).unwrap();
         let result = get_format_distribution(&conn).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].format, "mp3");
@@ -3467,27 +3809,13 @@ mod tests {
     fn test_format_distribution_multiple_formats() {
         let conn = setup_memory_db();
         update_track(
-            &conn,
-            "/music/song1.mp3",
-            "Song 1",
-            100,
-            None,
-            0,
-            1000,
-            None,
-        )
-        .unwrap();
+            &conn, "/music/song1.mp3", "Song 1", 100, None, 0, 1000,
+            None, None, None, 0, None, 0, "mp3", None, None, None, None, None, None, None,
+        ).unwrap();
         update_track(
-            &conn,
-            "/music/song2.flac",
-            "Song 2",
-            200,
-            None,
-            0,
-            2000,
-            None,
-        )
-        .unwrap();
+            &conn, "/music/song2.flac", "Song 2", 200, None, 0, 2000,
+            None, None, None, 0, None, 0, "flac", None, None, None, None, None, None, None,
+        ).unwrap();
         let result = get_format_distribution(&conn).unwrap();
         assert_eq!(result.len(), 2);
         for stat in &result {
@@ -3499,7 +3827,7 @@ mod tests {
     #[test]
     fn test_format_distribution_uppercase_extension() {
         let conn = setup_memory_db();
-        update_track(&conn, "/music/song.MP3", "Song", 100, None, 0, 1000, None).unwrap();
+        update_track(&conn, "/music/song.MP3", "Song", 100, None, 0, 1000, None, None, None, 0, None, 0, "mp3", None, None, None, None, None, None, None).unwrap();
         let result = get_format_distribution(&conn).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].format, "mp3");

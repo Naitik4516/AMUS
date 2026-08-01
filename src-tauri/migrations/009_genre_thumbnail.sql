@@ -1,0 +1,1 @@
+ALTER TABLE genre ADD COLUMN thumbnail TEXT;

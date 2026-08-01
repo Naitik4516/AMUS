@@ -3,6 +3,7 @@ pub mod cli;
 pub mod commands;
 pub mod db;
 pub mod error;
+pub mod lyrics_fetcher;
 pub mod media_controls;
 pub mod models;
 pub mod player;
@@ -14,6 +15,7 @@ use crate::player::actor::PlayerCommand;
 
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use sync::SyncManager;
 use tauri::{
@@ -21,7 +23,7 @@ use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
-use tauri_plugin_window_state::{AppHandleExt, StateFlags, WindowExt};
+// use tauri_plugin_window_state::{AppHandleExt, StateFlags, WindowExt};
 
 pub(crate) struct MiniPlayerPinned(AtomicBool);
 
@@ -106,6 +108,9 @@ pub fn run() {
     #[cfg(debug_assertions)]
     let builder = builder.plugin(tauri_plugin_devtools::init());
 
+    let startup_status = Arc::new(startup::StartupStatus::new());
+    let startup_status_clone = startup_status.clone();
+
     let app = builder
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let w = app.get_webview_window("main").expect("no main window");
@@ -136,9 +141,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .setup(|app| {
+        .manage(startup_status)
+        .setup(move |app| {
             let app_handle = app.handle();
-            let startup_status = startup::StartupStatus::new();
 
             if let Err(e) = (|| -> Result<(), String> {
                 let app_dir = app_handle
@@ -181,13 +186,12 @@ pub fn run() {
 
                 Ok(())
             })() {
-                startup_status.fail(&e);
+                startup_status_clone.fail(&e);
                 eprintln!("Startup error: {e}");
             } else {
-                startup_status.succeed();
+                startup_status_clone.succeed();
             }
 
-            app.manage(startup_status);
             app.manage(MiniPlayerPinned(AtomicBool::new(true)));
 
             cli::start_server(app_handle.clone());
@@ -196,7 +200,7 @@ pub fn run() {
                 let _ = media_controls::init(app_handle.clone());
             }
 
-            app_handle.save_window_state(StateFlags::all());
+            // app_handle.save_window_state(StateFlags::all());
 
             let tray_menu = build_tray_menu(app_handle)?;
 
@@ -221,7 +225,7 @@ pub fn run() {
             // Mini-player window event handlers
             if let Some(mini_win) = app_handle.get_webview_window("mini-player") {
                 let app_clone = app_handle.clone();
-                mini_win.restore_state(StateFlags::all());
+                // mini_win.restore_state(StateFlags::all());
                 mini_win.on_window_event(move |event| match event {
                     WindowEvent::CloseRequested { api, .. } => {
                         api.prevent_close();
@@ -355,6 +359,18 @@ pub fn run() {
             commands::set_os_media_controls,
             commands::get_startup_status,
             commands::reset_app_data,
+            commands::update_track_metadata,
+            commands::get_track_lyrics,
+            commands::update_track_lyrics,
+            commands::fetch_lyrics_from_lrclib,
+            commands::get_genres,
+            commands::get_tracks_by_genre,
+            commands::create_genre,
+            commands::update_genre,
+            commands::set_track_cover_art,
+            commands::set_track_artists,
+            commands::set_track_album,
+            commands::set_track_genre,
             commands::delete_track,
             commands::get_scan_blacklist,
             commands::unblacklist_path,

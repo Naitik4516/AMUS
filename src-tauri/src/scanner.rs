@@ -47,6 +47,867 @@ pub(crate) struct TrackMetadata {
     pub(crate) file_size: u64,
     pub(crate) picture: Option<Picture>,
     pub(crate) track_number: Option<u32>,
+    pub(crate) genre: Option<String>,
+    pub(crate) bitrate: Option<u32>,
+    pub(crate) sample_rate: u32,
+    pub(crate) bit_depth: Option<u8>,
+    pub(crate) channels: u8,
+    pub(crate) audio_format: String,
+    pub(crate) codec: Option<String>,
+    pub(crate) bpm: Option<f32>,
+    pub(crate) replaygain_track_gain: Option<f32>,
+    pub(crate) replaygain_track_peak: Option<f32>,
+    pub(crate) replaygain_album_gain: Option<f32>,
+    pub(crate) replaygain_album_peak: Option<f32>,
+    pub(crate) encoder: Option<String>,
+    pub(crate) plain_lyrics: Option<String>,
+    pub(crate) synced_lyrics: Option<String>,
+    pub(crate) lyrics_source: String,
+}
+
+
+fn split_artists(input: &str) -> Vec<String> {
+    let normalized = input
+        .replace(" feat. ", ", ")
+        .replace(" ft. ", ", ")
+        .replace(" featuring ", ", ")
+        .replace("; ", ", ")
+        .replace(";", ", ");
+    normalized
+        .split(", ")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
+    let tagged_file = Probe::open(path)?.read()?;
+
+    let properties = tagged_file.properties();
+    let duration = properties.duration().as_secs() as u32;
+    let sample_rate = properties.sample_rate().unwrap_or(0);
+    let bit_depth = properties.bit_depth();
+    let channels = properties.channels().unwrap_or(0);
+    let bitrate = properties.audio_bitrate();
+    let audio_format = format!("{:?}", tagged_file.file_type());
+
+    let tag = tagged_file
+        .primary_tag()
+        .or_else(|| tagged_file.first_tag());
+
+    let meta = fs::metadata(path)?;
+    let mtime = meta
+        .modified()?
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs() as i64;
+    let file_size = meta.len();
+
+    // LRC sidecar: look for a .lrc file with same stem
+    let lrc_path = path.with_extension("lrc");
+    let lrc_content = if lrc_path.exists() {
+        fs::read_to_string(&lrc_path).ok()
+    } else {
+        None
+    };
+
+    let (title, artists, album, album_artist, release_year, picture, track_number,
+         genre, bpm, rg_track_gain, rg_track_peak,
+         rg_album_gain, rg_album_peak, encoder,
+         plain_lyrics, synced_lyrics, lyrics_source) =
+        if let Some(t) = tag {
+            let embedded_plain = t.get_string(&ItemKey::Lyrics).map(|s| s.to_owned());
+
+            let tag_bpm = t.get_string(&ItemKey::Bpm)
+                .or_else(|| t.get_string(&ItemKey::IntegerBpm))
+                .and_then(|s| s.parse::<f32>().ok());
+            let tag_rg_track_gain = t.get_string(&ItemKey::ReplayGainTrackGain).and_then(|s| s.parse::<f32>().ok());
+            let tag_rg_track_peak = t.get_string(&ItemKey::ReplayGainTrackPeak).and_then(|s| s.parse::<f32>().ok());
+            let tag_rg_album_gain = t.get_string(&ItemKey::ReplayGainAlbumGain).and_then(|s| s.parse::<f32>().ok());
+            let tag_rg_album_peak = t.get_string(&ItemKey::ReplayGainAlbumPeak).and_then(|s| s.parse::<f32>().ok());
+
+            let lyrics_src;
+            let (tag_plain, tag_synced) = match (&embedded_plain, &lrc_content) {
+                (Some(p), Some(lrc)) => {
+                    lyrics_src = "embedded+lrc";
+                    (Some(p.clone()), Some(lrc.clone()))
+                }
+                (Some(p), None) => {
+                    lyrics_src = "embedded";
+                    (Some(p.clone()), None)
+                }
+                (None, Some(lrc)) => {
+                    lyrics_src = "lrc_file";
+                    (None, Some(lrc.clone()))
+                }
+                (None, None) => {
+                    lyrics_src = "embedded";
+                    (None, None)
+                }
+            };
+
+            (
+                t.title().map(|s| s.into_owned()).unwrap_or_else(|| {
+                    path.file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("Unknown")
+                        .to_string()
+                }),
+                split_artists(
+                    t.artist()
+                        .map(|s| s.into_owned())
+                        .unwrap_or_else(|| "Unknown Artist".to_string())
+                        .as_str(),
+                ),
+                t.album()
+                    .map(|s| s.into_owned())
+                    .unwrap_or_else(|| "Unknown Album".to_string()),
+                t.get_string(&ItemKey::AlbumArtist)
+                    .map(|s| s.to_owned())
+                    .or_else(|| t.artist().map(|s| s.into_owned())),
+                t.get_string(&ItemKey::RecordingDate)
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .or_else(|| t.year().map(|y| y as u32)),
+                t.pictures().first().cloned(),
+                t.track(),
+                t.get_string(&ItemKey::Genre).map(|s| s.to_owned()),
+                tag_bpm,
+                tag_rg_track_gain,
+                tag_rg_track_peak,
+                tag_rg_album_gain,
+                tag_rg_album_peak,
+                t.get_string(&ItemKey::EncoderSoftware).map(|s| s.to_owned()),
+                tag_plain,
+                tag_synced,
+                lyrics_src.to_string(),
+            )
+        } else {
+            let lyrics_src;
+            let (tag_plain, tag_synced) = match &lrc_content {
+                Some(lrc) => {
+                    lyrics_src = "lrc_file";
+                    (None, Some(lrc.clone()))
+                }
+                None => {
+                    lyrics_src = "embedded";
+                    (None, None)
+                }
+            };
+
+            (
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("Unknown")
+                    .to_string(),
+                vec!["Unknown Artist".to_string()],
+                "Unknown Album".to_string(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                tag_plain,
+                tag_synced,
+                lyrics_src.to_string(),
+            )
+        };
+
+    Ok(TrackMetadata {
+        path: path.to_string_lossy().to_string(),
+        title,
+        artists,
+        album,
+        album_artist,
+        release_year,
+        duration,
+        mtime,
+        file_size,
+        picture,
+        track_number,
+        genre,
+        bitrate,
+        sample_rate,
+        bit_depth,
+        channels,
+        audio_format,
+        codec: None,
+        bpm,
+        replaygain_track_gain: rg_track_gain,
+        replaygain_track_peak: rg_track_peak,
+        replaygain_album_gain: rg_album_gain,
+        replaygain_album_peak: rg_album_peak,
+        encoder,
+        plain_lyrics,
+        synced_lyrics,
+        lyrics_source,
+    })
+}
+
+fn picture_content_hash(picture: &Picture) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(picture.data());
+    hex::encode(hasher.finalize())
+}
+
+fn encode_and_save_cover(covers_dir: &Path, hash: &str, picture: &Picture) -> anyhow::Result<()> {
+    let dest_path = covers_dir.join(format!("{hash}.webp"));
+    if dest_path.exists() {
+        return Ok(());
+    }
+
+    let img = image::load_from_memory(picture.data())?.thumbnail(500, 500);
+
+    let tmp_id = COVER_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp_path = covers_dir.join(format!(".{hash}.{tmp_id}.tmp.webp"));
+
+    img.save_with_format(&tmp_path, ImageFormat::WebP)?;
+
+    match fs::rename(&tmp_path, &dest_path) {
+        Ok(()) => Ok(()),
+        Err(_) if dest_path.exists() => {
+            let _ = fs::remove_file(&tmp_path);
+            Ok(())
+        }
+        Err(e) => {
+            let _ = fs::remove_file(&tmp_path);
+            Err(e.into())
+        }
+    }
+}
+
+pub fn save_image_to_app_dir(app_dir: &Path, source_path: &str, subdir: &str) -> Result<String> {
+    let data = std::fs::read(source_path).map_err(Error::Io)?;
+    let mut hasher = Sha256::new();
+    hasher.update(&data);
+    let hash = hex::encode(hasher.finalize());
+
+    let filename = format!("{hash}.webp");
+    let dest_dir = app_dir.join(subdir);
+    if !dest_dir.exists() {
+        std::fs::create_dir_all(&dest_dir).map_err(Error::Io)?;
+    }
+
+    let dest_path = dest_dir.join(&filename);
+    if dest_path.exists() {
+        return Ok(filename);
+    }
+
+    let img = image::load_from_memory(&data)
+        .map_err(|e| Error::Unknown(format!("Failed to open image: {e}")))?;
+
+    let tmp_id = COVER_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp_path = dest_dir.join(format!(".{hash}.{tmp_id}.tmp.webp"));
+    img.save_with_format(&tmp_path, ImageFormat::WebP)
+        .map_err(|e| Error::Unknown(format!("Failed to save image: {e}")))?;
+
+    match std::fs::rename(&tmp_path, &dest_path) {
+        Ok(()) => {}
+        Err(_) if dest_path.exists() => {
+            let _ = std::fs::remove_file(&tmp_path);
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(Error::Io(e));
+        }
+    }
+
+    Ok(filename)
+}
+
+fn save_picture(app_dir: &Path, picture: &Picture) -> anyhow::Result<String> {
+    let hash = picture_content_hash(picture);
+    let filename = format!("{hash}.webp");
+    let covers_dir = app_dir.join("covers");
+
+    if covers_dir.join(&filename).exists() {
+        return Ok(filename);
+    }
+
+    fs::create_dir_all(&covers_dir)?;
+    if covers_dir.join(&filename).exists() {
+        return Ok(filename);
+    }
+
+    encode_and_save_cover(&covers_dir, &hash, picture)?;
+    Ok(filename)
+}
+
+pub fn ensure_track_in_db(conn: &Connection, path: &Path, app_dir: &Path) -> Result<i64> {
+    let meta = extract_metadata(path).map_err(|e| Error::Unknown(e.to_string()))?;
+
+    let mut artist_ids = Vec::new();
+    for name in &meta.artists {
+        let id = db::get_or_create_artist(conn, name)?;
+        artist_ids.push(id);
+    }
+
+    let album_id =
+        db::get_or_create_album(conn, &meta.album, None, meta.release_year.map(|y| y as i32))?;
+
+    if let Some(ref aa) = meta.album_artist {
+        db::set_album_artist_by_id(conn, album_id, aa)?;
+    }
+
+    let track_id = db::update_track(
+        conn,
+        &meta.path,
+        &meta.title,
+        meta.duration,
+        meta.release_year.map(|y| y as i32),
+        meta.mtime,
+        meta.file_size as i64,
+        None,
+        meta.genre.as_deref(),
+        meta.bitrate,
+        meta.sample_rate,
+        meta.bit_depth,
+        meta.channels,
+        &meta.audio_format,
+        meta.codec.as_deref(),
+        meta.bpm,
+        meta.replaygain_track_gain,
+        meta.replaygain_track_peak,
+        meta.replaygain_album_gain,
+        meta.replaygain_album_peak,
+        meta.encoder.as_deref(),
+    )?;
+
+    let cover_url = meta.picture.as_ref().and_then(|pic| {
+        save_picture(app_dir, pic)
+            .inspect_err(|e| eprintln!("Failed to save picture for {}: {e}", path.display()))
+            .ok()
+    });
+    if let Some(ref url) = cover_url {
+        let _ = conn.execute(
+            "UPDATE track SET cover_art = ?1 WHERE id = ?2",
+            rusqlite::params![url, track_id],
+        );
+        let _ = conn.execute(
+            "UPDATE album SET cover_art = COALESCE(album.cover_art, ?1) WHERE id = ?2",
+            rusqlite::params![url, album_id],
+        );
+    }
+
+    db::clear_track_artists(conn, track_id)?;
+    for &aid in &artist_ids {
+        db::bulk_insert_track_artists(conn, &[(track_id, aid)])?;
+    }
+    db::clear_track_album(conn, track_id)?;
+    db::bulk_insert_track_albums(
+        conn,
+        &[(album_id, track_id, meta.track_number.unwrap_or(1) as i32)],
+    )?;
+
+    if let Some(ref genre_str) = meta.genre {
+        let genre_names: Vec<&str> = genre_str.split(['/', ','].as_ref())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !genre_names.is_empty() {
+            db::clear_track_genres(conn, track_id)?;
+            for name in &genre_names {
+                let gid = db::get_or_create_genre(conn, name)?;
+                db::bulk_insert_track_genres(conn, &[(track_id, gid)])?;
+            }
+        }
+    }
+
+    db::set_track_lyrics(
+        conn,
+        track_id,
+        meta.plain_lyrics.as_deref(),
+        meta.synced_lyrics.as_deref(),
+        &meta.lyrics_source,
+    )?;
+
+    Ok(track_id)
+}
+
+pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result<()> {
+    // Pause realtime file watcher while scanning to avoid redundant processing
+    if let Some(sync_manager) = app_handle.try_state::<SyncManager>() {
+        sync_manager.set_scanning(true);
+    }
+
+    let source_dirs = db::get_source_dirs(conn)?;
+    let audio_extensions = ["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];
+
+    let _ = app_handle.emit(
+        "scan-progress",
+        ScanProgress {
+            current: 0,
+            total: 100,
+            message: "Starting scan...".to_string(),
+        },
+    );
+
+    println!("Starting scan of source directories: {:?}", source_dirs);
+    // 1. Discovery
+    let mut files_on_disk = Vec::new();
+    for dir in &source_dirs {
+        let root = Path::new(dir);
+        if !root.exists() {
+            continue;
+        }
+
+        let _ = app_handle.emit(
+            "scan-progress",
+            ScanProgress {
+                current: 10,
+                total: 100,
+                message: format!("Searching: {}", dir),
+            },
+        );
+
+        for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if audio_extensions.contains(&ext.as_ref()) {
+                files_on_disk.push(path.to_path_buf());
+            }
+        }
+    }
+
+    // Filter out blacklisted files
+    let blacklist_entries = db::get_scan_blacklist(conn)?;
+    let blacklist: std::collections::HashMap<String, (i64, String)> = blacklist_entries
+        .into_iter()
+        .map(|e| (e.path, (e.mtime, e.reason)))
+        .collect();
+
+    files_on_disk.retain(|path| {
+        let path_str = path.to_string_lossy().to_string();
+        if let Some(&(bl_mtime, ref _reason)) = blacklist.get(&path_str) {
+            let mtime = fs::metadata(path)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+
+            if bl_mtime == -1 || bl_mtime == mtime {
+                // User-deleted (never rescan) or corrupted file with unchanged mtime
+                return false;
+            }
+            // File changed since blacklisting — remove from blacklist and allow rescan
+            let _ = db::remove_from_scan_blacklist(conn, &path_str);
+        }
+        true
+    });
+
+    println!("Discovered {} audio files on disk after blacklist filter", files_on_disk.len());
+    // 2. Differential Analysis
+    let _ = app_handle.emit(
+        "scan-progress",
+        ScanProgress {
+            current: 20,
+            total: 100,
+            message: "Analyzing changes...".to_string(),
+        },
+    );
+
+    let db_tracks = db::get_all_track_paths_and_mtimes(conn)?;
+
+    let mut to_scan = Vec::new();
+    let mut disk_paths_set = HashMap::new();
+
+    for path in files_on_disk {
+        let path_str = path.to_string_lossy().to_string();
+        let mtime = fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .map(|t| {
+                t.duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0)
+            })
+            .unwrap_or(0);
+
+        disk_paths_set.insert(path_str.clone(), mtime);
+
+        match db_tracks.get(&path_str) {
+            Some(&db_mtime) if db_mtime >= mtime => continue,
+            _ => to_scan.push(path),
+        }
+    }
+
+    // Identify removed tracks
+    let mut removed_paths = Vec::new();
+    for path in db_tracks.keys() {
+        let is_in_source = source_dirs.iter().any(|d| path.starts_with(d));
+        if is_in_source && !disk_paths_set.contains_key(path) {
+            removed_paths.push(path.clone());
+        }
+    }
+
+    if !removed_paths.is_empty() {
+        let _ = app_handle.emit(
+            "scan-progress",
+            ScanProgress {
+                current: 25,
+                total: 100,
+                message: format!("Cleaning up {} removed tracks...", removed_paths.len()),
+            },
+        );
+        let tx = conn.transaction().map_err(Error::Db)?;
+        db::delete_tracks_by_paths(&tx, &removed_paths)?;
+        tx.commit().map_err(Error::Db)?;
+    }
+
+    scan_files(conn, app_handle, to_scan)?;
+
+    let _ = app_handle.emit(
+        "scan-progress",
+        ScanProgress {
+            current: 100,
+            total: 100,
+            message: "Scan complete!".to_string(),
+        },
+    );
+    let _ = app_handle.emit("library-updated", ());
+
+    // Resume realtime file watcher after scan completes
+    if let Some(sync_manager) = app_handle.try_state::<SyncManager>() {
+        sync_manager.set_scanning(false);
+    }
+
+    Ok(())
+}
+
+fn emit_scan_progress(app_handle: &AppHandle, current: usize, total: usize, message: &str) {
+    let _ = app_handle.emit(
+        "scan-progress",
+        ScanProgress {
+            current,
+            total,
+            message: message.to_string(),
+        },
+    );
+}
+
+pub fn scan_files(
+    conn: &mut Connection,
+    app_handle: &AppHandle,
+    to_scan: Vec<std::path::PathBuf>,
+) -> Result<()> {
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| Error::Unknown(e.to_string()))?;
+
+    let total = to_scan.len();
+    if total == 0 {
+        return Ok(());
+    }
+
+    emit_scan_progress(app_handle, PHASE_META_START, 100, "Reading metadata...");
+
+    let failed_paths = std::sync::Mutex::new(Vec::new());
+
+    let metadata_results: Vec<TrackMetadata> = to_scan
+        .into_par_iter()
+        .filter_map(|path| {
+            let path_str = path.to_string_lossy().to_string();
+            match extract_metadata(&path) {
+                Ok(m) => Some(m),
+                Err(e) => {
+                    eprintln!("Failed to scan {:?}: {}", path, e);
+                    failed_paths
+                        .lock()
+                        .unwrap()
+                        .push((path_str, format!("corrupted: {}", e)));
+                    None
+                }
+            }
+        })
+        .collect();
+
+    let failed_paths = failed_paths.into_inner().unwrap();
+
+    emit_scan_progress(app_handle, PHASE_META_END, 100, "Metadata read");
+
+    let track_count = metadata_results.len();
+    if track_count == 0 {
+        return Ok(());
+    }
+
+    emit_scan_progress(app_handle, PHASE_COVER_START, 100, "Saving cover art...");
+    let cover_start = Instant::now();
+
+    let covers_dir = app_dir.join("covers");
+    fs::create_dir_all(&covers_dir).map_err(Error::Io)?;
+
+    let mut stripped_metadata: Vec<TrackMetadata> = Vec::with_capacity(track_count);
+    let mut track_cover_hashes: Vec<Option<String>> = Vec::with_capacity(track_count);
+    let mut unique_pictures: HashMap<String, Picture> = HashMap::new();
+
+    for mut meta in metadata_results {
+        if let Some(pic) = meta.picture.take() {
+            let hash = picture_content_hash(&pic);
+            unique_pictures.entry(hash.clone()).or_insert(pic);
+            track_cover_hashes.push(Some(hash));
+        } else {
+            track_cover_hashes.push(None);
+        }
+        stripped_metadata.push(meta);
+    }
+
+    // Only encode covers that are not already on disk.
+    let to_encode: Vec<(String, Picture)> = unique_pictures
+        .into_iter()
+        .filter(|(hash, _)| !covers_dir.join(format!("{hash}.webp")).exists())
+        .collect();
+
+    let encode_total = to_encode.len();
+    if encode_total > 0 {
+        let progress = AtomicUsize::new(0);
+        let progress_step = (encode_total / 20).max(1);
+        let range = PHASE_COVER_END - PHASE_COVER_START;
+
+        to_encode.into_par_iter().for_each(|(hash, pic)| {
+            if let Err(e) = encode_and_save_cover(&covers_dir, &hash, &pic) {
+                eprintln!("Failed to save picture {hash}: {e}");
+            }
+            let n = progress.fetch_add(1, Ordering::Relaxed) + 1;
+            if n == 1 || n % progress_step == 0 || n == encode_total {
+                let pct = PHASE_COVER_START + (n * range / encode_total);
+                emit_scan_progress(
+                    app_handle,
+                    pct,
+                    100,
+                    &format!("Saving cover art ({n}/{encode_total})"),
+                );
+            }
+        });
+    }
+
+    // Map each track to its cover filename (hash.webp); pictures already freed.
+    let metadata_with_covers: Vec<(TrackMetadata, Option<String>)> = stripped_metadata
+        .into_iter()
+        .zip(track_cover_hashes)
+        .map(|(meta, hash)| {
+            let cover_url = hash.map(|h| format!("{h}.webp"));
+            (meta, cover_url)
+        })
+        .collect();
+
+    println!(
+        "Cover art phase: {} unique encodes for {} tracks in {:?}",
+        encode_total,
+        track_count,
+        cover_start.elapsed()
+    );
+    emit_scan_progress(app_handle, PHASE_COVER_END, 100, "Cover art saved");
+
+    let mut artist_cache = HashMap::new();
+    let mut unique_artists_to_fetch = HashMap::new();
+    let mut album_cache = HashMap::new();
+    let mut album_artists: HashMap<i64, String> = HashMap::new();
+
+    let mut track_artist_pairs: Vec<(i64, i64)> = Vec::new();
+    let mut track_album_entries: Vec<(i64, i64, i32)> = Vec::new();
+
+    let save_start = Instant::now();
+    const BATCH_SIZE: usize = 100;
+    let mut tx = conn.transaction().map_err(Error::Db)?;
+    let progress_step = (track_count / 20).max(1);
+
+    for (i, (meta, cover_url)) in metadata_with_covers.iter().enumerate() {
+        let artist_names: Vec<String> = meta.artists.clone();
+        let mut artist_ids = Vec::new();
+
+        for name in &artist_names {
+            let cache_key = name.to_lowercase();
+            let id = if let Some(&id) = artist_cache.get(&cache_key) {
+                id
+            } else {
+                let id = db::get_or_create_artist(&tx, name)?;
+                artist_cache.insert(cache_key, id);
+                unique_artists_to_fetch.insert(id, name.clone());
+                id
+            };
+            artist_ids.push(id);
+        }
+
+        let album_key = meta.album.to_lowercase();
+        let album_id = if let Some(&id) = album_cache.get(&album_key) {
+            id
+        } else {
+            let id = db::get_or_create_album(
+                &tx,
+                &meta.album,
+                cover_url.as_deref(),
+                meta.release_year.map(|y| y as i32),
+            )?;
+            album_cache.insert(album_key, id);
+            id
+        };
+
+        if let Some(ref aa) = meta.album_artist {
+            album_artists
+                .entry(album_id)
+                .or_insert_with(|| aa.clone());
+        }
+
+        let track_id = match db::update_track(
+            &tx,
+            &meta.path,
+            &meta.title,
+            meta.duration,
+            meta.release_year.map(|y| y as i32),
+            meta.mtime,
+            meta.file_size as i64,
+            cover_url.as_deref(),
+            meta.genre.as_deref(),
+            meta.bitrate,
+            meta.sample_rate,
+            meta.bit_depth,
+            meta.channels,
+            &meta.audio_format,
+            meta.codec.as_deref(),
+            meta.bpm,
+            meta.replaygain_track_gain,
+            meta.replaygain_track_peak,
+            meta.replaygain_album_gain,
+            meta.replaygain_album_peak,
+            meta.encoder.as_deref(),
+        ) {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("Error writing track to DB for {}: {e}", meta.path);
+                continue;
+            }
+        };
+
+        db::clear_track_artists(&tx, track_id)?;
+        for &artist_id in &artist_ids {
+            track_artist_pairs.push((track_id, artist_id));
+        }
+
+        db::clear_track_album(&tx, track_id)?;
+        track_album_entries.push((album_id, track_id, meta.track_number.unwrap_or(1) as i32));
+
+        if let Some(ref genre_str) = meta.genre {
+            let genre_names: Vec<&str> = genre_str.split(['/', ','].as_ref())
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !genre_names.is_empty() {
+                db::clear_track_genres(&tx, track_id)?;
+                for name in &genre_names {
+                    if let Ok(gid) = db::get_or_create_genre(&tx, name) {
+                        let _ = db::bulk_insert_track_genres(&tx, &[(track_id, gid)]);
+                    }
+                }
+            }
+        }
+
+        let _ = db::set_track_lyrics(
+            &tx,
+            track_id,
+            meta.plain_lyrics.as_deref(),
+            meta.synced_lyrics.as_deref(),
+            &meta.lyrics_source,
+        );
+
+        // Commit periodically so long scans don't starve other write operations
+        if i > 0 && i % BATCH_SIZE == 0 {
+            let _ = db::bulk_insert_track_artists(&tx, &track_artist_pairs);
+            let _ = db::bulk_insert_track_albums(&tx, &track_album_entries);
+            for (&album_id, album_artist_name) in &album_artists {
+                let _ = db::set_album_artist_by_id(&tx, album_id, album_artist_name);
+            }
+            tx.commit().map_err(Error::Db)?;
+            tx = conn.transaction().map_err(Error::Db)?;
+            track_artist_pairs.clear();
+            track_album_entries.clear();
+            album_artists.clear();
+        }
+
+        if i % progress_step == 0 || i == track_count - 1 {
+            let pct = PHASE_DB_START + (i * (PHASE_DB_END - PHASE_DB_START) / track_count);
+            emit_scan_progress(
+                app_handle,
+                pct,
+                100,
+                &format!("Saving to database ({}/{})", i + 1, track_count),
+            );
+        }
+    }
+
+    db::bulk_insert_track_artists(&tx, &track_artist_pairs)?;
+    db::bulk_insert_track_albums(&tx, &track_album_entries)?;
+
+    for (&album_id, album_artist_name) in &album_artists {
+        db::set_album_artist_by_id(&tx, album_id, album_artist_name)?;
+    }
+
+    tx.commit().map_err(Error::Db)?;
+    println!("DB save completed in {:?}", save_start.elapsed());
+
+    emit_scan_progress(app_handle, 100, 100, "Updates saved");
+    let _ = app_handle.emit("library-updated", ());
+
+    if !unique_artists_to_fetch.is_empty() {
+        let fetch_pic = sync::get_setting(app_handle, "autoFetchArtistPic", true).unwrap_or(true);
+
+        if fetch_pic {
+            let n_artists = unique_artists_to_fetch.len();
+            let pool = app_handle.state::<db::DbPool>();
+            let app_handle_clone = app_handle.clone();
+            let app_dir_clone = app_dir.clone();
+            let pool_clone = pool.inner().clone();
+
+            tokio::spawn(async move {
+                let _ = artist_pic_fetcher::fetch_artist_images(
+                    &unique_artists_to_fetch,
+                    &app_dir_clone,
+                    pool_clone,
+                    &app_handle_clone,
+                )
+                .await;
+            });
+            println!(
+                "Scheduled fetch for {} unique artists (pic: {})",
+                n_artists, fetch_pic
+            );
+        }
+    }
+
+    // Blacklist failed paths so the scanner skips corrupted files on future runs
+    if !failed_paths.is_empty() {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        for (path, reason) in &failed_paths {
+            let mtime = std::fs::metadata(path)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(now);
+
+            if let Err(e) = db::add_to_scan_blacklist(conn, path, mtime, reason) {
+                eprintln!("Failed to blacklist {path}: {e}");
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -324,698 +1185,4 @@ mod tests {
         create_test_png(&path);
         fs::read(&path).unwrap()
     }
-}
-
-fn split_artists(input: &str) -> Vec<String> {
-    let normalized = input
-        .replace(" feat. ", ", ")
-        .replace(" ft. ", ", ")
-        .replace(" featuring ", ", ")
-        .replace("; ", ", ")
-        .replace(";", ", ");
-    normalized
-        .split(", ")
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
-pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
-    let tagged_file = Probe::open(path)?.read()?;
-
-    let properties = tagged_file.properties();
-    let duration = properties.duration().as_secs() as u32;
-
-    let tag = tagged_file
-        .primary_tag()
-        .or_else(|| tagged_file.first_tag());
-
-    let meta = fs::metadata(path)?;
-    let mtime = meta
-        .modified()?
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_secs() as i64;
-    let file_size = meta.len();
-
-    let (title, artists, album, album_artist, release_year, picture, track_number) =
-        if let Some(t) = tag {
-            (
-                t.title().map(|s| s.into_owned()).unwrap_or_else(|| {
-                    path.file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("Unknown")
-                        .to_string()
-                }),
-                split_artists(
-                    t.artist()
-                        .map(|s| s.into_owned())
-                        .unwrap_or_else(|| "Unknown Artist".to_string())
-                        .as_str(),
-                ),
-                t.album()
-                    .map(|s| s.into_owned())
-                    .unwrap_or_else(|| "Unknown Album".to_string()),
-                t.get_string(&ItemKey::AlbumArtist)
-                    .map(|s| s.to_owned())
-                    .or_else(|| t.artist().map(|s| s.into_owned())),
-                t.get_string(&ItemKey::RecordingDate)
-                    .and_then(|s| s.parse::<u32>().ok())
-                    .or_else(|| t.year().map(|y| y as u32)),
-                t.pictures().first().cloned(),
-                t.track(),
-            )
-        } else {
-            (
-                path.file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("Unknown")
-                    .to_string(),
-                vec!["Unknown Artist".to_string()],
-                "Unknown Album".to_string(),
-                None,
-                None,
-                None,
-                None,
-            )
-        };
-
-    Ok(TrackMetadata {
-        path: path.to_string_lossy().to_string(),
-        title,
-        artists,
-        album,
-        album_artist,
-        release_year,
-        duration,
-        mtime,
-        file_size,
-        picture,
-        track_number,
-    })
-}
-
-/// SHA-256 of embedded picture bytes — used as the cover filename stem.
-fn picture_content_hash(picture: &Picture) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(picture.data());
-    hex::encode(hasher.finalize())
-}
-
-/// Decode, thumbnail, and write a cover as WebP using a temp file + rename so
-/// concurrent writers for the same hash cannot leave a half-written dest file.
-fn encode_and_save_cover(covers_dir: &Path, hash: &str, picture: &Picture) -> anyhow::Result<()> {
-    let dest_path = covers_dir.join(format!("{hash}.webp"));
-    if dest_path.exists() {
-        return Ok(());
-    }
-
-    let img = image::load_from_memory(picture.data())?.thumbnail(500, 500);
-
-    let tmp_id = COVER_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let tmp_path = covers_dir.join(format!(".{hash}.{tmp_id}.tmp.webp"));
-
-    img.save_with_format(&tmp_path, ImageFormat::WebP)?;
-
-    match fs::rename(&tmp_path, &dest_path) {
-        Ok(()) => Ok(()),
-        Err(_) if dest_path.exists() => {
-            // Another writer finished first — drop our temp and treat as success.
-            let _ = fs::remove_file(&tmp_path);
-            Ok(())
-        }
-        Err(e) => {
-            let _ = fs::remove_file(&tmp_path);
-            Err(e.into())
-        }
-    }
-}
-
-pub fn save_image_to_app_dir(app_dir: &Path, source_path: &str, subdir: &str) -> Result<String> {
-    let data = std::fs::read(source_path).map_err(Error::Io)?;
-    let mut hasher = Sha256::new();
-    hasher.update(&data);
-    let hash = hex::encode(hasher.finalize());
-
-    let filename = format!("{hash}.webp");
-    let dest_dir = app_dir.join(subdir);
-    if !dest_dir.exists() {
-        std::fs::create_dir_all(&dest_dir).map_err(Error::Io)?;
-    }
-
-    let dest_path = dest_dir.join(&filename);
-    // Skip decode/encode when the hashed file is already on disk.
-    if dest_path.exists() {
-        return Ok(filename);
-    }
-
-    let img = image::load_from_memory(&data)
-        .map_err(|e| Error::Unknown(format!("Failed to open image: {e}")))?;
-
-    let tmp_id = COVER_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let tmp_path = dest_dir.join(format!(".{hash}.{tmp_id}.tmp.webp"));
-    img.save_with_format(&tmp_path, ImageFormat::WebP)
-        .map_err(|e| Error::Unknown(format!("Failed to save image: {e}")))?;
-
-    match std::fs::rename(&tmp_path, &dest_path) {
-        Ok(()) => {}
-        Err(_) if dest_path.exists() => {
-            let _ = std::fs::remove_file(&tmp_path);
-        }
-        Err(e) => {
-            let _ = std::fs::remove_file(&tmp_path);
-            return Err(Error::Io(e));
-        }
-    }
-
-    Ok(filename)
-}
-
-fn save_picture(app_dir: &Path, picture: &Picture) -> anyhow::Result<String> {
-    let hash = picture_content_hash(picture);
-    let filename = format!("{hash}.webp");
-    let covers_dir = app_dir.join("covers");
-
-    // Fast path: hash + existence check only (no decode/thumbnail).
-    if covers_dir.join(&filename).exists() {
-        return Ok(filename);
-    }
-
-    fs::create_dir_all(&covers_dir)?;
-    // Re-check after create — another thread may have written it.
-    if covers_dir.join(&filename).exists() {
-        return Ok(filename);
-    }
-
-    encode_and_save_cover(&covers_dir, &hash, picture)?;
-    Ok(filename)
-}
-
-/// Ensure a single track is in the database without a full rescan.
-/// Extracts metadata, upserts the track, and links artist/album.
-/// Returns the track id.
-pub fn ensure_track_in_db(conn: &Connection, path: &Path, app_dir: &Path) -> Result<i64> {
-    let meta = extract_metadata(path).map_err(|e| Error::Unknown(e.to_string()))?;
-
-    // upsert artist(s)
-    let mut artist_ids = Vec::new();
-    for name in &meta.artists {
-        let id = db::get_or_create_artist(conn, name)?;
-        artist_ids.push(id);
-    }
-
-    // upsert album
-    let album_id =
-        db::get_or_create_album(conn, &meta.album, None, meta.release_year.map(|y| y as i32))?;
-
-    if let Some(ref aa) = meta.album_artist {
-        db::set_album_artist(conn, &meta.album, aa)?;
-    }
-
-    // upsert track
-    let track_id = db::update_track(
-        conn,
-        &meta.path,
-        &meta.title,
-        meta.duration,
-        meta.release_year.map(|y| y as i32),
-        meta.mtime,
-        meta.file_size as i64,
-        None,
-    )?;
-
-    // save cover art if present
-    let cover_url = meta.picture.as_ref().and_then(|pic| {
-        save_picture(app_dir, pic)
-            .inspect_err(|e| eprintln!("Failed to save picture for {}: {e}", path.display()))
-            .ok()
-    });
-    if let Some(ref url) = cover_url {
-        let _ = conn.execute(
-            "UPDATE track SET cover_art = ?1 WHERE id = ?2",
-            rusqlite::params![url, track_id],
-        );
-        let _ = conn.execute(
-            "UPDATE album SET cover_art = COALESCE(album.cover_art, ?1) WHERE id = ?2",
-            rusqlite::params![url, album_id],
-        );
-    }
-
-    // link artist(s) and album
-    db::clear_track_artists(conn, track_id)?;
-    for &aid in &artist_ids {
-        db::bulk_insert_track_artists(conn, &[(track_id, aid)])?;
-    }
-    db::clear_track_album(conn, track_id)?;
-    db::bulk_insert_track_albums(
-        conn,
-        &[(album_id, track_id, meta.track_number.unwrap_or(1) as i32)],
-    )?;
-
-    Ok(track_id)
-}
-
-pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result<()> {
-    // Pause realtime file watcher while scanning to avoid redundant processing
-    if let Some(sync_manager) = app_handle.try_state::<SyncManager>() {
-        sync_manager.set_scanning(true);
-    }
-
-    let source_dirs = db::get_source_dirs(conn)?;
-    let audio_extensions = ["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];
-
-    let _ = app_handle.emit(
-        "scan-progress",
-        ScanProgress {
-            current: 0,
-            total: 100,
-            message: "Starting scan...".to_string(),
-        },
-    );
-
-    println!("Starting scan of source directories: {:?}", source_dirs);
-    // 1. Discovery
-    let mut files_on_disk = Vec::new();
-    for dir in &source_dirs {
-        let root = Path::new(dir);
-        if !root.exists() {
-            continue;
-        }
-
-        let _ = app_handle.emit(
-            "scan-progress",
-            ScanProgress {
-                current: 10,
-                total: 100,
-                message: format!("Searching: {}", dir),
-            },
-        );
-
-        for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-                .to_lowercase();
-            if audio_extensions.contains(&ext.as_ref()) {
-                files_on_disk.push(path.to_path_buf());
-            }
-        }
-    }
-
-    // Filter out blacklisted files
-    let blacklist_entries = db::get_scan_blacklist(conn)?;
-    let blacklist: std::collections::HashMap<String, (i64, String)> = blacklist_entries
-        .into_iter()
-        .map(|e| (e.path, (e.mtime, e.reason)))
-        .collect();
-
-    files_on_disk.retain(|path| {
-        let path_str = path.to_string_lossy().to_string();
-        if let Some(&(bl_mtime, ref _reason)) = blacklist.get(&path_str) {
-            let mtime = fs::metadata(path)
-                .ok()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0);
-
-            if bl_mtime == -1 || bl_mtime == mtime {
-                // User-deleted (never rescan) or corrupted file with unchanged mtime
-                return false;
-            }
-            // File changed since blacklisting — remove from blacklist and allow rescan
-            let _ = db::remove_from_scan_blacklist(conn, &path_str);
-        }
-        true
-    });
-
-    println!("Discovered {} audio files on disk after blacklist filter", files_on_disk.len());
-    // 2. Differential Analysis
-    let _ = app_handle.emit(
-        "scan-progress",
-        ScanProgress {
-            current: 20,
-            total: 100,
-            message: "Analyzing changes...".to_string(),
-        },
-    );
-
-    let db_tracks = db::get_all_track_paths_and_mtimes(conn)?;
-
-    let mut to_scan = Vec::new();
-    let mut disk_paths_set = HashMap::new();
-
-    for path in files_on_disk {
-        let path_str = path.to_string_lossy().to_string();
-        let mtime = fs::metadata(&path)
-            .and_then(|m| m.modified())
-            .map(|t| {
-                t.duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs() as i64)
-                    .unwrap_or(0)
-            })
-            .unwrap_or(0);
-
-        disk_paths_set.insert(path_str.clone(), mtime);
-
-        match db_tracks.get(&path_str) {
-            Some(&db_mtime) if db_mtime >= mtime => continue,
-            _ => to_scan.push(path),
-        }
-    }
-
-    // Identify removed tracks
-    let mut removed_paths = Vec::new();
-    for path in db_tracks.keys() {
-        let is_in_source = source_dirs.iter().any(|d| path.starts_with(d));
-        if is_in_source && !disk_paths_set.contains_key(path) {
-            removed_paths.push(path.clone());
-        }
-    }
-
-    if !removed_paths.is_empty() {
-        let _ = app_handle.emit(
-            "scan-progress",
-            ScanProgress {
-                current: 25,
-                total: 100,
-                message: format!("Cleaning up {} removed tracks...", removed_paths.len()),
-            },
-        );
-        let tx = conn.transaction().map_err(Error::Db)?;
-        db::delete_tracks_by_paths(&tx, &removed_paths)?;
-        tx.commit().map_err(Error::Db)?;
-    }
-
-    scan_files(conn, app_handle, to_scan)?;
-
-    let _ = app_handle.emit(
-        "scan-progress",
-        ScanProgress {
-            current: 100,
-            total: 100,
-            message: "Scan complete!".to_string(),
-        },
-    );
-    let _ = app_handle.emit("library-updated", ());
-
-    // Resume realtime file watcher after scan completes
-    if let Some(sync_manager) = app_handle.try_state::<SyncManager>() {
-        sync_manager.set_scanning(false);
-    }
-
-    Ok(())
-}
-
-fn emit_scan_progress(app_handle: &AppHandle, current: usize, total: usize, message: &str) {
-    let _ = app_handle.emit(
-        "scan-progress",
-        ScanProgress {
-            current,
-            total,
-            message: message.to_string(),
-        },
-    );
-}
-
-pub fn scan_files(
-    conn: &mut Connection,
-    app_handle: &AppHandle,
-    to_scan: Vec<std::path::PathBuf>,
-) -> Result<()> {
-    let app_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| Error::Unknown(e.to_string()))?;
-
-    let total = to_scan.len();
-    if total == 0 {
-        return Ok(());
-    }
-
-    // Phase 1: Parallel metadata extraction
-    emit_scan_progress(app_handle, PHASE_META_START, 100, "Reading metadata...");
-
-    let failed_paths = std::sync::Mutex::new(Vec::new());
-
-    let metadata_results: Vec<TrackMetadata> = to_scan
-        .into_par_iter()
-        .filter_map(|path| {
-            let path_str = path.to_string_lossy().to_string();
-            match extract_metadata(&path) {
-                Ok(m) => Some(m),
-                Err(e) => {
-                    eprintln!("Failed to scan {:?}: {}", path, e);
-                    failed_paths
-                        .lock()
-                        .unwrap()
-                        .push((path_str, format!("corrupted: {}", e)));
-                    None
-                }
-            }
-        })
-        .collect();
-
-    let failed_paths = failed_paths.into_inner().unwrap();
-
-    emit_scan_progress(app_handle, PHASE_META_END, 100, "Metadata read");
-
-    let track_count = metadata_results.len();
-    if track_count == 0 {
-        return Ok(());
-    }
-
-    // Phase 2: Cover art — dedupe by content hash, encode each unique image once.
-    // Previously every track re-decoded/thumbnailed its embedded art even when
-    // dozens of tracks shared the same cover, which froze the UI and raced on disk.
-    emit_scan_progress(app_handle, PHASE_COVER_START, 100, "Saving cover art...");
-    let cover_start = Instant::now();
-
-    let covers_dir = app_dir.join("covers");
-    fs::create_dir_all(&covers_dir).map_err(Error::Io)?;
-
-    // Take pictures out of metadata, keep one owned copy per content hash.
-    let mut stripped_metadata: Vec<TrackMetadata> = Vec::with_capacity(track_count);
-    let mut track_cover_hashes: Vec<Option<String>> = Vec::with_capacity(track_count);
-    let mut unique_pictures: HashMap<String, Picture> = HashMap::new();
-
-    for mut meta in metadata_results {
-        if let Some(pic) = meta.picture.take() {
-            let hash = picture_content_hash(&pic);
-            unique_pictures.entry(hash.clone()).or_insert(pic);
-            track_cover_hashes.push(Some(hash));
-        } else {
-            track_cover_hashes.push(None);
-        }
-        stripped_metadata.push(meta);
-    }
-
-    // Only encode covers that are not already on disk.
-    let to_encode: Vec<(String, Picture)> = unique_pictures
-        .into_iter()
-        .filter(|(hash, _)| !covers_dir.join(format!("{hash}.webp")).exists())
-        .collect();
-
-    let encode_total = to_encode.len();
-    if encode_total > 0 {
-        let progress = AtomicUsize::new(0);
-        let progress_step = (encode_total / 20).max(1);
-        let range = PHASE_COVER_END - PHASE_COVER_START;
-
-        to_encode.into_par_iter().for_each(|(hash, pic)| {
-            if let Err(e) = encode_and_save_cover(&covers_dir, &hash, &pic) {
-                eprintln!("Failed to save picture {hash}: {e}");
-            }
-            let n = progress.fetch_add(1, Ordering::Relaxed) + 1;
-            if n == 1 || n % progress_step == 0 || n == encode_total {
-                let pct = PHASE_COVER_START + (n * range / encode_total);
-                emit_scan_progress(
-                    app_handle,
-                    pct,
-                    100,
-                    &format!("Saving cover art ({n}/{encode_total})"),
-                );
-            }
-        });
-    }
-
-    // Map each track to its cover filename (hash.webp); pictures already freed.
-    let metadata_with_covers: Vec<(TrackMetadata, Option<String>)> = stripped_metadata
-        .into_iter()
-        .zip(track_cover_hashes)
-        .map(|(meta, hash)| {
-            let cover_url = hash.map(|h| format!("{h}.webp"));
-            (meta, cover_url)
-        })
-        .collect();
-
-    println!(
-        "Cover art phase: {} unique encodes for {} tracks in {:?}",
-        encode_total,
-        track_count,
-        cover_start.elapsed()
-    );
-    emit_scan_progress(app_handle, PHASE_COVER_END, 100, "Cover art saved");
-
-    // Phase 3: DB writes — batch artist, album, track; collect relationships for bulk insert
-    let mut artist_cache = HashMap::new();
-    let mut unique_artists_to_fetch = HashMap::new();
-    let mut album_cache = HashMap::new();
-    let mut album_artists: HashMap<String, String> = HashMap::new();
-
-    let mut track_artist_pairs: Vec<(i64, i64)> = Vec::new();
-    let mut track_album_entries: Vec<(i64, i64, i32)> = Vec::new();
-
-    let save_start = Instant::now();
-    const BATCH_SIZE: usize = 500;
-    let mut tx = conn.transaction().map_err(Error::Db)?;
-    let progress_step = (track_count / 15).max(15);
-
-    for (i, (meta, cover_url)) in metadata_with_covers.iter().enumerate() {
-        let artist_names: Vec<String> = meta.artists.clone();
-        let mut artist_ids = Vec::new();
-
-        for name in &artist_names {
-            let cache_key = name.to_lowercase();
-            let id = if let Some(&id) = artist_cache.get(&cache_key) {
-                id
-            } else {
-                let id = db::get_or_create_artist(&tx, name)?;
-                artist_cache.insert(cache_key, id);
-                unique_artists_to_fetch.insert(id, name.clone());
-                id
-            };
-            artist_ids.push(id);
-        }
-
-        let album_key = meta.album.to_lowercase();
-        let album_id = if let Some(&id) = album_cache.get(&album_key) {
-            id
-        } else {
-            let id = db::get_or_create_album(
-                &tx,
-                &meta.album,
-                cover_url.as_deref(),
-                meta.release_year.map(|y| y as i32),
-            )?;
-            if let Some(ref aa) = meta.album_artist {
-                album_artists
-                    .entry(album_key.clone())
-                    .or_insert_with(|| aa.clone());
-            }
-            album_cache.insert(album_key, id);
-            id
-        };
-
-        let track_id = db::update_track(
-            &tx,
-            &meta.path,
-            &meta.title,
-            meta.duration,
-            meta.release_year.map(|y| y as i32),
-            meta.mtime,
-            meta.file_size as i64,
-            cover_url.as_deref(),
-        )?;
-
-        db::clear_track_artists(&tx, track_id)?;
-        for &artist_id in &artist_ids {
-            track_artist_pairs.push((track_id, artist_id));
-        }
-
-        db::clear_track_album(&tx, track_id)?;
-        track_album_entries.push((album_id, track_id, meta.track_number.unwrap_or(1) as i32));
-
-        // Commit periodically so long scans don't starve other write operations
-        if i > 0 && i % BATCH_SIZE == 0 {
-            db::bulk_insert_track_artists(&tx, &track_artist_pairs)?;
-            db::bulk_insert_track_albums(&tx, &track_album_entries)?;
-            for (album_name, album_artist_name) in &album_artists {
-                db::set_album_artist(&tx, album_name, album_artist_name)?;
-            }
-            tx.commit().map_err(Error::Db)?;
-            tx = conn.transaction().map_err(Error::Db)?;
-            track_artist_pairs.clear();
-            track_album_entries.clear();
-            album_artists.clear();
-            // artist_cache and album_cache persist across batches
-        }
-
-        if i % progress_step == 0 && i > 0 {
-            let pct = PHASE_DB_START + (i * (PHASE_DB_END - PHASE_DB_START) / track_count);
-            emit_scan_progress(
-                app_handle,
-                pct,
-                100,
-                &format!("Saving to database ({}/{})", i, track_count),
-            );
-        }
-    }
-
-    db::bulk_insert_track_artists(&tx, &track_artist_pairs)?;
-    db::bulk_insert_track_albums(&tx, &track_album_entries)?;
-
-    for (album_name, album_artist_name) in &album_artists {
-        db::set_album_artist(&tx, album_name, album_artist_name)?;
-    }
-
-    tx.commit().map_err(Error::Db)?;
-    println!("DB save completed in {:?}", save_start.elapsed());
-
-    emit_scan_progress(app_handle, 100, 100, "Updates saved");
-    let _ = app_handle.emit("library-updated", ());
-
-    if !unique_artists_to_fetch.is_empty() {
-        let fetch_pic = sync::get_setting(app_handle, "autoFetchArtistPic", true).unwrap_or(true);
-
-        if fetch_pic {
-            let n_artists = unique_artists_to_fetch.len();
-            let pool = app_handle.state::<db::DbPool>();
-            let app_handle_clone = app_handle.clone();
-            let app_dir_clone = app_dir.clone();
-            let pool_clone = pool.inner().clone();
-
-            tokio::spawn(async move {
-                let _ = artist_pic_fetcher::fetch_artist_images(
-                    &unique_artists_to_fetch,
-                    &app_dir_clone,
-                    pool_clone,
-                    &app_handle_clone,
-                )
-                .await;
-            });
-            println!(
-                "Scheduled fetch for {} unique artists (pic: {})",
-                n_artists, fetch_pic
-            );
-        }
-    }
-
-    // Blacklist failed paths so the scanner skips corrupted files on future runs
-    if !failed_paths.is_empty() {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-
-        for (path, reason) in &failed_paths {
-            let mtime = std::fs::metadata(path)
-                .ok()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(now);
-
-            if let Err(e) = db::add_to_scan_blacklist(conn, path, mtime, reason) {
-                eprintln!("Failed to blacklist {path}: {e}");
-            }
-        }
-    }
-
-    Ok(())
 }
