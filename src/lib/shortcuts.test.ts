@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import * as shortcuts from "./shortcuts.svelte";
 import type { ShortcutBinding, ShortcutAction } from "./shortcuts.svelte";
 import { load as storeLoad } from "@tauri-apps/plugin-store";
@@ -7,8 +7,23 @@ function binding(k: string, mods?: Partial<ShortcutBinding>): ShortcutBinding {
   return { key: k, ...mods };
 }
 
-function event(key: string, mods?: Record<string, boolean>): Record<string, unknown> {
-  return { key, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false, ...mods };
+function event(key: string, mods?: Record<string, boolean>): KeyboardEvent {
+  return {
+    key,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    metaKey: false,
+    ...mods,
+  } as KeyboardEvent;
+}
+
+function setActiveElement(el: Element | null) {
+  Object.defineProperty(document, "activeElement", {
+    value: el,
+    configurable: true,
+    writable: true,
+  });
 }
 
 function resetState() {
@@ -27,7 +42,7 @@ function resetState() {
 beforeEach(() => {
   resetState();
   vi.clearAllMocks();
-  document.activeElement = null;
+  setActiveElement(null);
 });
 
 // ── Pure helpers ──────────────────────────────────────────────
@@ -96,27 +111,27 @@ describe("matchBinding", () => {
 
 describe("isInputFocused", () => {
   it("returns false when no element is focused", () => {
-    document.activeElement = null;
+    setActiveElement(null);
     expect(shortcuts.isInputFocused()).toBe(false);
   });
 
   it("returns true when input is focused", () => {
-    document.activeElement = { tagName: "INPUT" } as any;
+    setActiveElement({ tagName: "INPUT" } as any);
     expect(shortcuts.isInputFocused()).toBe(true);
   });
 
   it("returns true when textarea is focused", () => {
-    document.activeElement = { tagName: "TEXTAREA" } as any;
+    setActiveElement({ tagName: "TEXTAREA" } as any);
     expect(shortcuts.isInputFocused()).toBe(true);
   });
 
   it("returns true for contentEditable elements", () => {
-    document.activeElement = { tagName: "DIV", isContentEditable: true } as any;
+    setActiveElement({ tagName: "DIV", isContentEditable: true } as any);
     expect(shortcuts.isInputFocused()).toBe(true);
   });
 
   it("returns true for role=textbox elements", () => {
-    document.activeElement = { tagName: "DIV", getAttribute: () => "textbox" } as any;
+    setActiveElement({ tagName: "DIV", getAttribute: () => "textbox" } as any);
     expect(shortcuts.isInputFocused()).toBe(true);
   });
 });
@@ -226,9 +241,9 @@ describe("findAction", () => {
   });
 
   it("returns null when input is focused", () => {
-    document.activeElement = { tagName: "INPUT" } as any;
+    setActiveElement({ tagName: "INPUT" } as any);
     expect(shortcuts.findAction(event(" "))).toBeNull();
-    document.activeElement = null;
+    setActiveElement(null);
   });
 
   it("skips disabled actions", () => {

@@ -1,12 +1,13 @@
 <script lang="ts">
     import { page } from "$app/state";
+    import Artist from "$components/icons/Artist.svelte";
     import TrackList from "$components/ui/TrackList.svelte";
+    import { store } from "$lib/stores.svelte";
     import { formatDuration } from "$lib/utils";
     import { Disc } from "@lucide/svelte";
-    import { getSwatchesSync, type HSL, type Color } from "colorthief";
+    import { getSwatchesSync, type Color } from "colorthief";
     import type { Attachment } from "svelte/attachments";
-    import Artist from "$components/icons/Artist.svelte";
-    import { store } from "$lib/stores.svelte";
+    import { fade } from "svelte/transition";
 
     let albumId = $derived(Number(page.params.id));
     let tracks = $derived(store.tracksByAlbum(albumId));
@@ -52,7 +53,10 @@
 <div
     class="relative flex flex-col h-full w-full overflow-y-scroll px-6 pb-10 z-1"
 >
-    <div class="flex gap-15 items-end p-5 pb-6">
+    <div
+        class="flex gap-15 items-end p-5 pb-6"
+        transition:fade={{ duration: 500, delay: 100 }}
+    >
         <img
             src={coverArt ? coverArt : "/PhonographRecord.webp"}
             alt={name}
@@ -122,13 +126,16 @@
 <div
     class="fixed w-100 h-100 blur-[180px] -bottom-40 left-30 rounded-full"
     style:background="{color1?.hex()}4D"
+    transition:fade={{ duration: 300 }}
 ></div>
 <div
     class="absolute w-90 h-90 blur-[150px] bottom-10 right-20 rounded-full"
     style:background="{color2?.hex()}99"
+    transition:fade={{ duration: 300 }}
 ></div>
 
 <div
     class="fixed w-[80vw] h-50 top-30 right-5 blur-[150px]"
     style:background={dominantColor?.css()}
+    transition:fade={{ duration: 300 }}
 ></div>

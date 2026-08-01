@@ -6,4 +6,13 @@
     let albums = $derived(store.albums);
 </script>
 
-<DisplayList listItems={albums} title="Albums" Card={AlbumCard} />
+{#snippet Fallback()}
+    <p class="text-gray-500 text-sm mb-4">No albums found.</p>
+{/snippet}
+
+<DisplayList
+    listItems={albums}
+    title="Albums"
+    Card={AlbumCard}
+    fallBack={Fallback}
+/>

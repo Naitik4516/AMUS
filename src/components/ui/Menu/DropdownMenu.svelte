@@ -5,7 +5,6 @@
     import type { Component } from "svelte";
     import { ArrowLeft } from "@lucide/svelte";
     import type { Track, MenuPosition, Context } from "$lib/types";
-    import { on } from "svelte/events";
 
     interface MenuItem {
         label?: string;
@@ -131,7 +130,7 @@
 {/snippet}
 
 <div
-    class="dropdown-menu fixed z-100 min-w-55 max-w-75 rounded-2xl border border-white/10 bg-card/40 shadow-lg backdrop-blur-xl"
+    class="dropdown-menu fixed z-100 min-w-55 max-w-75 rounded-2xl border border-white/10 bg-white/5  shadow-lg backdrop-blur-xl"
     role="menu"
     bind:offsetWidth={menuWidth}
     bind:offsetHeight={menuHeight}

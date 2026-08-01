@@ -14,7 +14,7 @@
     import { onMount } from "svelte";
     import { flip } from "svelte/animate";
     import type { Attachment } from "svelte/attachments";
-    import { slide } from "svelte/transition";
+    import { fade, slide } from "svelte/transition";
 
     let playlistId = $derived(Number(page.params.id));
     let playlist: Playlist = $derived(
@@ -118,14 +118,16 @@
 <div
     class="fixed w-60 h-60 blur-[180px] -bottom-20 left-1/4 rounded-full"
     style:background={colorPalette[1]}
+    transition:fade={{ delay: 250 }}
 ></div>
 
 <div
     class="fixed w-[90vw] h-80 top-30 px-100 pt-50 right-20 blur-[150px]"
     style:background={colorPalette[2]}
+    transition:fade={{ delay: 250 }}
 ></div>
 
-<div class="flex flex-col p-5 z-1 isolate">
+<div class="flex flex-col p-5 z-1 isolate" transition:slide={{ duration: 250 }}>
     <div class="flex gap-4 mb-4">
         <button
             class="w-42 lg:w-58 h-42 lg:h-58 rounded-2xl shadow-xl shadow-black/40 overflow-clip"
@@ -175,18 +177,14 @@
             }}
         />
     {:else}
-        <div class="mt-12 lg:mt-24">
-            <span
-                transition:slide={{ duration: 600 }}
-                class="flex items-center justify-center gap-4"
-            >
+        <div class="mt-12 lg:mt-24" transition:fade={{ delay: 200 }}>
+            <span class="flex items-center justify-center gap-4">
                 <Music2 strokeWidth={3} size={30} />
                 <h3 class="text-2xl lg:text-4xl font-bold text-gray-200">
                     Silence isn't a playlist.
                 </h3>
             </span>
             <h4
-                transition:slide={{ duration: 600 }}
                 class="text-sm lg:text-lg font-medium text-gray-300 text-center"
             >
                 Search your library to add your first track.
@@ -195,7 +193,10 @@
     {/if}
 
     {#if showAddMore}
-        <div class="flex justify-between items-center w-full pr-10">
+        <div
+            class="flex justify-between items-center w-full pr-10 mt-5"
+            transition:fade
+        >
             <div
                 class="flex items-center gap-2 bg-white/5 backdrop-blur-xl shadow-lg px-4 py-1 border-2 rounded-full w-1/4"
             >

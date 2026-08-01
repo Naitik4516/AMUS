@@ -28,11 +28,11 @@
 </script>
 
 <div class="pr-6">
-    <div>
+    <div class="mb-5" >
         <HeroSection />
     </div>
 
-    <div class="flex flex-col gap-16 py-10">
+    <div class="flex flex-col gap-10 pb-5">
         {#each trackSections as section}
             <div>
                 <TracksSection

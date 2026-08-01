@@ -53,16 +53,52 @@ async fn get_lastfm_image_url(
     Ok(None)
 }
 
+async fn get_deezer_image_url(
+    client: &Client,
+    artist: &str,
+) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
+    let encoded_name = urlencoding::encode(artist);
+    let target_url = format!("https://api.deezer.com/search/artist?q={}", encoded_name);
+
+    let response = client
+        .get(&target_url)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        return Ok(None);
+    }
+
+    let text = response.text().await?;
+    let json: serde_json::Value = serde_json::from_str(&text)?;
+
+    if let Some(data) = json["data"].as_array() {
+        if let Some(artist_data) = data.first() {
+            if let Some(picture_xl) = artist_data["picture_xl"].as_str() {
+                return Ok(Some(picture_xl.to_string()));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
 async fn process_artist_image(
     client: &Client,
     artist: &str,
     images_dir: &Path,
 ) -> Result<String, Box<dyn Error + Send + Sync>> {
-    let Some(img_url) = get_lastfm_image_url(client, artist).await? else {
-        return Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("No image found for: {}", artist),
-        )));
+    let img_url = match get_lastfm_image_url(client, artist).await? {
+        Some(url) => url,
+        None => match get_deezer_image_url(client, artist).await? {
+            Some(url) => url,
+            None => {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("No image found for: {}", artist),
+                )));
+            }
+        },
     };
 
     let image_bytes = client

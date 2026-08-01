@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { Track, Context } from "$lib/types";
+    import type { Track } from "$lib/types";
     import { Play } from "@lucide/svelte";
     import { player } from "$lib/player.svelte";
     import { fade, fly } from "svelte/transition";
@@ -11,16 +11,12 @@
 
     let hovering = $state(false);
 
-    let trackContext = $derived<Context>(
-        { type: "Album", id: data.album.id, name: data.album.name, coverArt: data.album.cover_art ?? null },
-    );
-
     function handleContextMenu(e: MouseEvent) {
         e.preventDefault();
         openContextMenu(TrackMenu, {
             position: { type: "coordinates", x: e.clientX, y: e.clientY },
             track: data,
-            context: trackContext,
+            context: null
         });
     }
 </script>

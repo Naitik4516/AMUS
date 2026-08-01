@@ -48,22 +48,38 @@ beforeEach(() => {
 describe("StatsState", () => {
   describe("availableTimeframes", () => {
     it("returns all when data age > 5 years", () => {
-      statsMod.stats.dataAge = { data_age_days: 2000 };
+      statsMod.stats.dataAge = {
+        min_track_added_at: null,
+        min_played_at: null,
+        data_age_days: 2000,
+      };
       expect(statsMod.stats.availableTimeframes).toHaveLength(8);
     });
 
     it("returns [today, this_week] when data age < 7 days", () => {
-      statsMod.stats.dataAge = { data_age_days: 3 };
+      statsMod.stats.dataAge = {
+        min_track_added_at: null,
+        min_played_at: null,
+        data_age_days: 3,
+      };
       expect(statsMod.stats.availableTimeframes).toEqual(["today", "this_week"]);
     });
 
     it("includes this_month when data age < 30 days", () => {
-      statsMod.stats.dataAge = { data_age_days: 15 };
+      statsMod.stats.dataAge = {
+        min_track_added_at: null,
+        min_played_at: null,
+        data_age_days: 15,
+      };
       expect(statsMod.stats.availableTimeframes).toEqual(["today", "this_week", "this_month"]);
     });
 
     it("returns [today, this_week] when data age is 0", () => {
-      statsMod.stats.dataAge = { data_age_days: 0 };
+      statsMod.stats.dataAge = {
+        min_track_added_at: null,
+        min_played_at: null,
+        data_age_days: 0,
+      };
       expect(statsMod.stats.availableTimeframes).toEqual(["today", "this_week"]);
     });
   });

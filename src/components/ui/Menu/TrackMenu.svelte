@@ -53,7 +53,7 @@
     function buildItems() {
         const items: any[] = [];
 
-        if (!isExcluded("removeFromPlaylist") && context.type === "Playlist") {
+        if (!isExcluded("removeFromPlaylist") && context?.type === "Playlist") {
             items.push({
                 label: "Remove from this playlist",
                 icon: "circle-minus",
@@ -128,7 +128,7 @@
         // Album link
         if (
             !isExcluded("goToAlbum") &&
-            context.type !== "Album" &&
+            context?.type !== "Album" &&
             track.album
         ) {
             items.push({

@@ -10,6 +10,8 @@
     import { ScrollTrigger } from "gsap/ScrollTrigger";
     import { getSwatches, type Color } from "colorthief";
     import type { Attachment } from "svelte/attachments";
+    import { blur, fade, fly, slide } from "svelte/transition";
+    import { cubicIn, cubicOut } from "svelte/easing";
 
     let artistId = $derived(Number(page.params.id));
     let artist = $derived(
@@ -78,8 +80,14 @@
 </script>
 
 <div
-    id="smooth-content"
     class="relative flex flex-col h-full w-full pb-10 overflow-hidden"
+    in:fade={{
+        duration: 500,
+        easing: cubicIn,
+    }}
+    out:fade={{
+        duration: 300,
+    }}
 >
     <div
         class="sticky artist-image z-0 top-0 flex justify-between px-2 mask-b-from-80% mask-r-from-90% mask-t-from-80%"
@@ -94,7 +102,7 @@
                 src={bgUrl}
                 {@attach ArtistImage}
                 alt={artist.name}
-                class="h-full object-cover ml-auto aspect-auto z-1 mask-l-from-70% "
+                class="h-full object-cover ml-auto aspect-auto z-1 mask-l-from-70%"
                 crossorigin="anonymous"
             />
         </div>
@@ -112,7 +120,7 @@
     </div>
 
     {#if tracks.length > 0}
-        <div class="mt-10 px-4 pr-8">
+        <div class="mt-10 px-4 pr-8" transition:fade>
             <TrackList
                 context={{
                     type: "Artist",

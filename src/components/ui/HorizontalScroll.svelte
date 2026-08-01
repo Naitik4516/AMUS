@@ -118,15 +118,27 @@
             </button>
         {/if}
 
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_no_noninteractive_tabindex -->
         <div
             bind:this={scrollContainer}
             class="scroll-container pl-2"
+            tabindex="0"
+            role="region"
+            aria-label={title}
             onscroll={updateScrollState}
             onmousedown={handleMouseDown}
             onmouseleave={handleMouseLeaveOrUp}
             onmouseup={handleMouseLeaveOrUp}
             onmousemove={handleMouseMove}
-            role="region"
+            onkeydown={(e) => {
+                if (!scrollContainer) return;
+                const offset = Math.min(scrollContainer.clientWidth * 0.75, 1200);
+                if (e.key === "ArrowLeft") {
+                    scrollContainer.scrollBy({ left: -offset, behavior: "smooth" });
+                } else if (e.key === "ArrowRight") {
+                    scrollContainer.scrollBy({ left: offset, behavior: "smooth" });
+                }
+            }}
         >
             {#each data as item (item.id)}
                 <div class="scroll-item" role="listitem">

@@ -202,18 +202,8 @@ fn dispatch(app: &AppHandle, cmd: CliCommand) -> Result<CliData, String> {
             Ok(msg("Window hidden"))
         }
         CliCommand::Close => {
-            if let Some(w) = app.get_webview_window("main") {
-                let keep = crate::sync::get_setting(app, "keepRunningInBg", true).unwrap_or(true);
-                if keep {
-                    let _ = w.hide();
-                    Ok(msg("Window hidden (running in background)"))
-                } else {
-                    app.exit(0);
-                    Ok(msg("Closing"))
-                }
-            } else {
-                Ok(msg("No window"))
-            }
+            app.exit(0);
+            Ok(msg("Application closed"))
         }
         CliCommand::Update => run_update(app),
         CliCommand::Version => Ok(CliData::Version {
@@ -236,7 +226,6 @@ fn dispatch(app: &AppHandle, cmd: CliCommand) -> Result<CliData, String> {
                 let _ = std::fs::remove_dir_all(app_dir.join(dir));
             }
 
-            // Spawn a fresh instance before exiting
             if let Ok(exe) = std::env::current_exe() {
                 let _ = std::process::Command::new(exe).spawn();
             }
@@ -265,12 +254,10 @@ fn player_tx(app: &AppHandle) -> Result<SyncSender<PlayerCommand>, String> {
 }
 
 fn send_player(app: &AppHandle, cmd: PlayerCommand) -> Result<(), String> {
-    player_tx(app)?
-        .try_send(cmd)
-        .map_err(|e| match e {
-            std::sync::mpsc::TrySendError::Full(_) => "player command queue full".into(),
-            std::sync::mpsc::TrySendError::Disconnected(_) => "player disconnected".into(),
-        })
+    player_tx(app)?.try_send(cmd).map_err(|e| match e {
+        std::sync::mpsc::TrySendError::Full(_) => "player command queue full".into(),
+        std::sync::mpsc::TrySendError::Disconnected(_) => "player disconnected".into(),
+    })
 }
 
 fn get_state(app: &AppHandle) -> Result<crate::player::actor::PlayerStateSnapshot, String> {
@@ -631,7 +618,6 @@ fn show_artist(app: &AppHandle, id_or_name: &str) -> Result<CliData, String> {
 }
 
 fn run_update(app: &AppHandle) -> Result<CliData, String> {
-    // Updater requires async; spawn and wait.
     let handle = app.clone();
     let result = std::thread::spawn(move || {
         tauri::async_runtime::block_on(async move {

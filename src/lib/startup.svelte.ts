@@ -5,14 +5,21 @@ class StartupStore {
   checked = $state(false);
 
   async check() {
-    try {
-      const err = await invoke<string | null>("get_startup_status");
-      this.error = err;
-    } catch (e) {
-      this.error = `Failed to communicate with backend: ${e}`;
-    } finally {
-      this.checked = true;
+    const maxAttempts = 10;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const err = await invoke<string | null>("get_startup_status");
+        this.error = err;
+        break;
+      } catch (e) {
+        if (attempt === maxAttempts - 1) {
+          this.error = `Failed to communicate with backend: ${e}`;
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 200 + attempt * 100));
+        }
+      }
     }
+    this.checked = true;
   }
 }
 

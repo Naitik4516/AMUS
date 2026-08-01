@@ -33,7 +33,7 @@
     }
 </script>
 
-<div class="fixed inset-0 z-50 flex flex-col items-center justify-center p-8 bg-background">
+<div class="fixed inset-0 z-50 flex flex-col items-center justify-center p-8 bg-gray-900">
     <div class="flex flex-col items-center text-center max-w-xl gap-6">
         <div class="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center">
             <Icon name="triangle-alert" class="w-8 h-8 text-red-400" />

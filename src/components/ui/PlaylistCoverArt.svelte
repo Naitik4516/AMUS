@@ -21,8 +21,8 @@
             }
         }
 
-        if (coverArts.length === 1) return coverArts[0];
         if (coverArts.length === 4) return coverArts;
+        if (coverArts.length >= 1) return coverArts[0];
         return null;
     });
 </script>

@@ -20,7 +20,6 @@
 | `bun run test`    | Vitest frontend tests (159 tests across 6 files)       |
 | `cargo test`      | Rust backend tests (165 tests across 5 files)          |
 
-**⚠️ Always `bun run test`, never `bun test`.** Bun's native test runner (`bun test`) does not use the Vite pipeline; it cannot resolve `$lib` aliases or compile Svelte 5 `$state` runes. `bun run test` invokes Vitest, which uses Vite plugins and handles `.svelte.ts` files correctly.
 
 ## Project Map
 
@@ -72,10 +71,8 @@ amus/
 - **Events flow one-way:** Rust backend emits events on the `"player://event"` channel. The frontend `player.svelte.ts` listens with `listen("player://event", ...)` and updates `$state` runes.
 - **DB pool** (`r2d2::Pool<SqliteConnectionManager>` at `$APPDATA/music.db`) is managed as Tauri state. All commands access it via `State<'_, DbPool>`.
 - **SQLite pragmas:** `foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`, `temp_store=MEMORY`, `busy_timeout=5000`
-- **3 migrations** in `src-tauri/migrations/` using `rusqlite_migration`.
 - **Settings** stored via `tauri-plugin-store` (a JSON file). Defaults are hardcoded in `settings.svelte.ts`.
 - **Frontend alias:** `$components` -> `src/components` (configured in `svelte.config.js` and `tsconfig.json`).
-- **Vite dev server** always on port 1420 (strict), HMR on port 1421 if `TAURI_DEV_HOST` is set. `src-tauri/` is excluded from Vite watch.
 - **Tauri window:** 1000x700 default, min 700x700, no decorations, transparent, macOS private API enabled.
 - **CI:** Triggers on `v*` tags. Matrix: macOS (aarch64 + x86_64), ubuntu-24.04, windows-latest. Uses `tauri-apps/tauri-action@v1`.
 - **Auto-updater** configured via GitHub releases (pubkey in `tauri.conf.json`). Only Windows has `passive` install mode.
@@ -85,7 +82,6 @@ amus/
 - **Svelte 5 runes** ($state, $derived, $effect) are used throughout. Do not use Svelte 4 `store` patterns (no `writable`, `derived`, etc.).
 - **No SSR.** SvelteKit is in SPA mode (`adapter-static` with `fallback: "index.html"`). `$page`, `$app/environment`, and server-side code patterns do not apply.
 - **Bun is required.** The `beforeDevCommand` and `beforeBuildCommand` in `tauri.conf.json` use `bun run`.
-- **Known bug:** The file watcher in `sync.rs` does not handle `Modify(ModifyKind::Name(_))` events on Linux (files moved to Trash). See `.opencode/plans/fix-syncer-deletions.md` for the planned fix.
 - **Tray icon** uses `toggle_popup()` on left-click, which shows/hides the mini-player webview window at `/miniplayer`.
 
 ## Installed OpenCode Skills
