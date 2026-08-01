@@ -271,7 +271,7 @@ amus/
 
 ### Recently completed
 
-- [x] OS media controls (MPRIS/SMTC/Now Playing)
+- [x] OS media controls
 - [x] Command-line interface for remote control
 - [x] File associations (open audio files with AMUS)
 - [x] Mini player with always-on-top option
@@ -282,6 +282,9 @@ amus/
 - [x] Startup library cache for snappier UI
 - [x] Comprehensive frontend test coverage (Vitest)
 - [x] Player subsystem refactor for better architecture
+- [x] Lyrics support
+- [x] Improved UI animations
+- [x] Better OS integration
 
 ### Library & playback
 
@@ -297,13 +300,10 @@ amus/
 ### Library management
 
 - [ ] Automatic metadata tagging
-- [ ] Lyrics support
 
 ### User experience
 
 - [ ] Dynamic theming
-- [ ] Improved UI animations
-- [ ] Better OS integration
 - [ ] Auto-start and scheduled playback
 
 ### Media
