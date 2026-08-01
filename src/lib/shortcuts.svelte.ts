@@ -261,6 +261,13 @@ export const ALL_SHORTCUTS: ShortcutAction[] = [
     defaultKeys: [{ key: "q", ctrl: true }],
     enabled: true,
   },
+  {
+    id: "toggle_fullscreen",
+    label: "Toggle Fullscreen",
+    category: "window",
+    defaultKeys: [{ key: "F11" }],
+    enabled: true,
+  },
 ];
 
 export interface GlobalShortcutAction {

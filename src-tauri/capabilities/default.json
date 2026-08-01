@@ -24,6 +24,7 @@
     "fs:scope-appdata",
     "fs:allow-appdata-read-recursive",
     "store:default",
-    "updater:default"
+    "updater:default",
+    "core:window:allow-set-fullscreen"
   ]
 }

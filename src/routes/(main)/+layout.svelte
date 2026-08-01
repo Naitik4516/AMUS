@@ -18,6 +18,8 @@
     } from "$lib/shortcuts.svelte";
     import { store } from "$lib/stores.svelte";
     import { updater } from "$lib/update.svelte";
+    import { fullscreen } from "$lib/fullscreen.svelte";
+    import FullscreenPlayer from "$components/FullscreenPlayer.svelte";
     import { MoveUp } from "@lucide/svelte";
     import { listen } from "@tauri-apps/api/event";
     import { gsap } from "gsap";
@@ -29,7 +31,12 @@
     import type { Action } from "svelte/action";
     import { slide } from "svelte/transition";
     import type { LayoutProps } from "./$types";
-    import { contextMenu, closeContextMenu, confirmDialog, closeConfirmDialog } from "$lib/context-menu.svelte";
+    import {
+        contextMenu,
+        closeContextMenu,
+        confirmDialog,
+        closeConfirmDialog,
+    } from "$lib/context-menu.svelte";
     import ConfirmDialog from "$components/ui/Dialog/ConfirmDialog.svelte";
 
     const SCROLL_THRESHOLD = 400;
@@ -67,7 +74,12 @@
                 lerp,
                 duration,
                 prevent: (node) => {
-                    return node.classList.contains("vlist") || node.classList.contains("virtualizer");
+                    return (
+                        node.classList.contains("vlist") ||
+                        node.classList.contains("virtualizer") ||
+                        node.tagName === "INPUT" ||
+                        node.tagName === "TEXTAREA"
+                    );
                 },
             });
             lenis = newLenis;
@@ -230,7 +242,7 @@
                 scrollContainer.scrollTop = 0;
             }
         }
-   });
+    });
 </script>
 
 <Sidebar />
@@ -261,7 +273,10 @@
             ? ''
             : 'mb-1.5 '}"
     >
-        <div use:setupSmoothScroll class="pt-18 pl-30 {player.currentTrack ? 'pb-32' : ''}">
+        <div
+            use:setupSmoothScroll
+            class="pt-18 pl-30 {player.currentTrack ? 'pb-32' : ''}"
+        >
             {@render children()}
         </div>
     </div>
@@ -291,6 +306,10 @@
 
 {#if player.currentTrack}
     <Player />
+{/if}
+
+{#if fullscreen.active}
+    <FullscreenPlayer onExit={() => (fullscreen.active = false)} />
 {/if}
 
 {#if contextMenu.current}

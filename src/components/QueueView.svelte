@@ -308,7 +308,6 @@
         const totalHeight = tracks * itemHeight + 16;
         return Math.min(totalHeight, maxHeight);
     };
-
 </script>
 
 {#snippet DNDTrackList(tracks: Track[], section: "user" | "context")}
@@ -325,7 +324,7 @@
             >
                 {#if shouldShowIndicator(section, i)}
                     <div
-                        class="absolute -top-1 left-2 right-2 h-0.75 bg-zinc-500 rounded z-20 pointer-events-none "
+                        class="absolute -top-1 left-2 right-2 h-0.75 bg-zinc-500 rounded z-20 pointer-events-none"
                     ></div>
                 {/if}
                 <div
@@ -372,78 +371,67 @@
     </VList>
 {/snippet}
 
-{#if showQueue}
-    <div
-        bind:this={containerEl}
-        class="absolute bottom-full right-1 mb-4 w-96 bg-card/60 backdrop-blur-2xl border-2 border-border/70 rounded-2xl shadow-2xl flex flex-col max-h-[75vh] overflow-hidden {isDragging
-            ? 'select-none'
-            : ''}"
-        transition:slide
+<div class="flex flex-col" bind:this={containerEl}>
+    <Button
+        onclick={() => (showQueue = false)}
+        class="text-gray-300 hover:text-white absolute top-2 right-2 "
+        variant="ghost"
+        size="icon"
     >
-        <div
-            class="p-4 border-b border-neutral-800 flex justify-between items-center bg-neutral-900/50"
-        >
-            <h3 class="font-bold text-white text-lg">Queue</h3>
-            <button
-                onclick={() => (showQueue = false)}
-                class="text-gray-300 hover:text-white"
-            >
-                <X size={18} />
-            </button>
-        </div>
-        <div class="flex flex-col gap-1 px-3 pb-4 overflow-y-scroll">
-            {#if player.currentTrack}
-                <section>
+        <X size={18} />
+    </Button>
+    <div class="flex flex-col gap-1 px-3 pb-4 pt-4 overflow-y-scroll">
+        {#if player.currentTrack}
+            <section>
+                <h4
+                    class="py-2 text-[13px] font-switzer font-bold uppercase tracking-wider text-stone-300"
+                >
+                    Now Playing
+                </h4>
+
+                <TrackListSmall
+                    track={player.currentTrack}
+                    styled={true}
+                    onclick={() => {}}
+                />
+            </section>
+        {/if}
+
+        {#if userQueue.length > 0}
+            <section bind:this={userVListWrapper}>
+                <div class="flex items-center justify-between">
                     <h4
-                        class="py-2 text-[13px] font-switzer font-bold uppercase tracking-wider text-stone-300"
+                        class="py-2 text-[13px] font-bold uppercase tracking-wider text-stone-300"
                     >
-                        Now Playing
+                        Next in Queue
                     </h4>
-
-                    <TrackListSmall
-                        track={player.currentTrack}
-                        styled={true}
-                        onclick={() => {}}
-                    />
-                </section>
-            {/if}
-
-            {#if userQueue.length > 0}
-                <section bind:this={userVListWrapper}>
-                    <div class="flex items-center justify-between">
-                        <h4
-                            class="py-2 text-[13px] font-bold uppercase tracking-wider text-stone-300"
-                        >
-                            Next in Queue
-                        </h4>
-                        <button
-                            onclick={() => player.clearQueue()}
-                            class="text-sm font-semibold text-gray-400 hover:text-red-400 transition-colors font-switzer"
-                        >
-                            Clear Queue
-                        </button>
-                    </div>
-
-                    {@render DNDTrackList(userQueue, "user")}
-                </section>
-            {/if}
-
-            {#if player.playNext.length > 0}
-                <section bind:this={contextVListWrapper}>
-                    <h4
-                        class="py-2 text-[13px] font-bold uppercase tracking-wider text-stone-300 truncate"
+                    <button
+                        onclick={() => player.clearQueue()}
+                        class="text-sm font-semibold text-gray-400 hover:text-red-400 transition-colors font-switzer"
                     >
-                        {player.nextSectionTitle}
-                    </h4>
-                    {@render DNDTrackList(player.playNext, "context")}
-                </section>
-            {/if}
+                        Clear Queue
+                    </button>
+                </div>
 
-            {#if !player.currentTrack && player.userQueue.length === 0 && player.playNext.length === 0}
-                <p class="px-4 py-8 text-center text-sm text-zinc-500">
-                    No tracks in queue
-                </p>
-            {/if}
-        </div>
+                {@render DNDTrackList(userQueue, "user")}
+            </section>
+        {/if}
+
+        {#if player.playNext.length > 0}
+            <section bind:this={contextVListWrapper}>
+                <h4
+                    class="py-2 text-[13px] font-bold uppercase tracking-wider text-stone-300 truncate"
+                >
+                    {player.nextSectionTitle}
+                </h4>
+                {@render DNDTrackList(player.playNext, "context")}
+            </section>
+        {/if}
+
+        {#if !player.currentTrack && player.userQueue.length === 0 && player.playNext.length === 0}
+            <p class="px-4 py-8 text-center text-sm text-zinc-500">
+                No tracks in queue
+            </p>
+        {/if}
     </div>
-{/if}
+</div>

@@ -4,6 +4,7 @@ import { goto } from "$app/navigation";
 import { player } from "./player.svelte";
 import { handlerMap } from "./shortcuts.svelte";
 import { scanLibrary } from "./commands.svelte";
+import { fullscreen } from "./fullscreen.svelte";
 
 export const ui = $state({ queueVisible: false });
 export function toggleQueue() {
@@ -109,5 +110,9 @@ export function installHandlers() {
   });
   handlerMap.set("global_show_miniplayer", async () => {
     await invoke("toggle_mini_player");
+  });
+
+  handlerMap.set("toggle_fullscreen", () => {
+    fullscreen.active = !fullscreen.active;
   });
 }
