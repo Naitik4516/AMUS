@@ -68,3 +68,8 @@ a {
 ::-webkit-scrollbar-thumb:active {
   background: rgb(62, 64, 69);
 }
+
+.select-text {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}

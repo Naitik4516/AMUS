@@ -20,6 +20,7 @@
         FolderOpen,
         Image,
         Keyboard,
+        MicVocal,
         Minimize2,
         Mouse,
         Plus,
@@ -238,23 +239,25 @@
                 </Button>
             </div>
 
-            <h3 class="text-lg font-bold text-gray-300 mt-6">Artist Images</h3>
+            <h3 class="text-lg font-bold text-gray-300 mt-6">
+                Online Enhancements
+            </h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <ToggleCard
-                    title="Auto-fetch Profile Pictures"
-                    description="Automatically fetch artist profile pictures from the web when scanning your library."
+                    title="Auto Fetch Artist Pictures"
+                    description="Automatically fetch artist pictures from the web when scanning your library."
                     bind:checked={settings.autoFetchArtistPic}
                     onchange={(v) => setSetting("autoFetchArtistPic", v)}
                     icon={User}
                     iconActiveClass="text-purple-400"
                 />
                 <ToggleCard
-                    title="Auto-fetch Banner Images"
-                    description="Automatically fetch artist banner images from the web when scanning your library."
-                    bind:checked={settings.autoFetchArtistBanner}
-                    onchange={(v) => setSetting("autoFetchArtistBanner", v)}
-                    icon={Image}
-                    iconActiveClass="text-sky-400"
+                    title="Auto Fetch Lyrics"
+                    description="Automatically fetch lyrics from lrclib.net when no lyrics are available for the current track."
+                    bind:checked={settings.autoFetchLyrics}
+                    onchange={(v) => setSetting("autoFetchLyrics", v)}
+                    icon={MicVocal}
+                    iconActiveClass="text-pink-400"
                 />
             </div>
 
