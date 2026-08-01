@@ -9,6 +9,7 @@ export function mockTrack(id: number, overrides?: Partial<Track>): Track {
     added_at: "2024-01-01T00:00:00Z",
     track_number: 1,
     playlist_ids: [],
+    genre_ids: [],
     cover_art: undefined,
     artists: [{ id: 1, name: "Artist 1" }],
     album: { id: 1, name: "Album 1" },
@@ -25,8 +26,7 @@ export function mockArtist(id: number, overrides?: Partial<Artist>): Artist {
 }
 
 export function mockSource(type: PlaybackSource["type"] = "Direct", id?: number): PlaybackSource {
-  if (type === "Album" && id) return { type, id };
-  if (type === "Playlist" && id) return { type, id };
-  if (type === "Artist" && id) return { type, id };
-  return { type };
+  if ((type === "Album" || type === "Playlist" || type === "Artist" || type === "Genre") && id)
+    return { type, id } as PlaybackSource;
+  return { type } as PlaybackSource;
 }

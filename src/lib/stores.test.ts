@@ -14,6 +14,7 @@ describe("LibraryStore derived data and methods", () => {
         added_at: "2024-06-01T00:00:00Z",
         track_number: 1,
         playlist_ids: [10],
+        genre_ids: [],
         artists: [{ id: 1, name: "Artist X" }],
         album: { id: 1, name: "Album 1" },
       },
@@ -25,6 +26,7 @@ describe("LibraryStore derived data and methods", () => {
         added_at: "2024-05-01T00:00:00Z",
         track_number: 2,
         playlist_ids: [],
+        genre_ids: [],
         artists: [
           { id: 1, name: "Artist X" },
           { id: 2, name: "Artist Y" },
@@ -39,6 +41,7 @@ describe("LibraryStore derived data and methods", () => {
         added_at: "2024-07-01T00:00:00Z",
         track_number: 1,
         playlist_ids: [11],
+        genre_ids: [],
         artists: [{ id: 2, name: "Artist Y" }],
         album: { id: 2, name: "Album 2" },
       },
@@ -143,6 +146,7 @@ const testTrack: Track = {
   added_at: "2025-01-01T00:00:00Z",
   track_number: 1,
   playlist_ids: [],
+  genre_ids: [],
   artists: [{ id: 1, name: "Artist" }],
   album: { id: 1, name: "Album" },
 };

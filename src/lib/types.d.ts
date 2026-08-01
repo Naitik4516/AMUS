@@ -21,6 +21,18 @@ export interface Playlist {
   cover_art?: string | null;
 }
 
+export interface Genre {
+  id: number;
+  name: string;
+  thumbnail?: string;
+}
+
+export interface Lyrics {
+  plain_lyrics?: string;
+  synced_lyrics?: string;
+  source: string;
+}
+
 export interface Track {
   id: number;
   title: string;
@@ -32,6 +44,7 @@ export interface Track {
   added_at: string;
   track_number?: number;
   playlist_ids: number[];
+  genre_ids?: number[];
   queue_id?: number;
 }
 
@@ -43,6 +56,20 @@ export interface TrackDetails extends Track {
   skipped_count: number;
   last_skipped_at?: string;
   year: number;
+  genres: Genre[];
+  bitrate?: number;
+  sample_rate: number;
+  bit_depth?: number;
+  channels: number;
+  audio_format: string;
+  codec?: string;
+  bpm?: number;
+  replaygain_track_gain?: number;
+  replaygain_track_peak?: number;
+  replaygain_album_gain?: number;
+  replaygain_album_peak?: number;
+  encoder?: string;
+  lyrics?: Lyrics;
 }
 
 export type SortBy = "title" | "artist" | "album" | "duration" | "recently_added";
@@ -53,6 +80,7 @@ export type PlaybackSource =
   | { type: "Album"; id: number }
   | { type: "Playlist"; id: number }
   | { type: "Artist"; id: number }
+  | { type: "Genre"; id: number }
   | { type: "Favorites" }
   | { type: "Direct" }
   | { type: "Queue" }
@@ -68,7 +96,9 @@ export type Context =
       profileImage: string | null | undefined;
       bannerImage: string | null | undefined;
     }
-  | { type: "Favorites"; name: "Favorites" };
+  | { type: "Favorites"; name: "Favorites" }
+  | { type: "Genre"; id: number; name: string; thumbnail: string | null }
+  | null;
 
 type MenuPosition =
   | { type: "anchor"; anchor: HTMLElement }

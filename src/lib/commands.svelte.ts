@@ -15,6 +15,10 @@ import type {
   PlaybackEvent,
   FavoriteTrend,
   BlacklistedEntry,
+  Genre,
+  Track,
+  TrackDetails,
+  Lyrics,
 } from "./types.d.ts";
 
 export type {
@@ -150,4 +154,74 @@ export async function getScanBlacklist(): Promise<BlacklistedEntry[]> {
 
 export async function unblacklistPath(path: string): Promise<void> {
   await invoke("unblacklist_path", { path });
+}
+
+// ---------------------------------------------------------------------------
+// Lyrics commands
+// ---------------------------------------------------------------------------
+
+export async function getTrackLyrics(id: number): Promise<Lyrics | null> {
+  return invoke("get_track_lyrics", { id });
+}
+
+export async function updateTrackLyrics(
+  trackId: number,
+  plainLyrics: string | null,
+  syncedLyrics: string | null,
+  source: string,
+): Promise<void> {
+  await invoke("update_track_lyrics", {
+    trackId,
+    plainLyrics,
+    syncedLyrics,
+    source,
+  });
+}
+
+export async function fetchLyricsFromLrclib(trackId: number): Promise<boolean> {
+  return invoke("fetch_lyrics_from_lrclib", { trackId });
+}
+
+// ---------------------------------------------------------------------------
+// Genre commands
+// ---------------------------------------------------------------------------
+
+export async function getGenres(): Promise<Genre[]> {
+  return invoke("get_genres");
+}
+
+export async function getTracksByGenre(genreId: number): Promise<Track[]> {
+  return invoke("get_tracks_by_genre", { genreId });
+}
+
+export async function updateGenre(
+  id: number,
+  name: string,
+  thumbnail?: string | null,
+): Promise<Genre> {
+  return invoke("update_genre", { id, name, thumbnail });
+}
+
+export async function createGenre(name: string): Promise<Genre> {
+  return invoke("create_genre", { name });
+}
+
+export async function setTrackGenre(trackId: number, genreName: string): Promise<void> {
+  await invoke("set_track_genre", { trackId, genreName });
+}
+
+// ---------------------------------------------------------------------------
+// Track editing commands
+// ---------------------------------------------------------------------------
+
+export async function setTrackCoverArt(trackId: number, coverArt: string | null): Promise<void> {
+  await invoke("set_track_cover_art", { trackId, coverArt });
+}
+
+export async function setTrackArtists(trackId: number, artistIds: number[]): Promise<void> {
+  await invoke("set_track_artists", { trackId, artistIds });
+}
+
+export async function setTrackAlbum(trackId: number, albumId: number): Promise<void> {
+  await invoke("set_track_album", { trackId, albumId });
 }

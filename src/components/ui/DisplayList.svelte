@@ -1,31 +1,39 @@
 <script lang="ts">
-    import { User, Search } from "@lucide/svelte";
+    import { Search } from "@lucide/svelte";
     import type { Album, Artist, Playlist } from "$lib/types";
-    import { Virtualizer } from "virtua/svelte";
+    import { Virtualizer, type VirtualizerHandle } from "virtua/svelte";
     import Button from "./button/button.svelte";
-    import {  fade, fly } from "svelte/transition";
+    import { fade, fly } from "svelte/transition";
     import { MoveUp } from "@lucide/svelte";
+    import type { Snippet } from "svelte";
 
     interface DisplayListProps {
         listItems: (Album | Artist | Playlist)[];
         title: string;
         Card: any;
+        fallBack: Snippet;
+        cellHeight?: number;
+        cellWidth?: number;
     }
 
-    let { listItems, title, Card }: DisplayListProps = $props();
+    let {
+        listItems,
+        title,
+        Card,
+        fallBack,
+        cellHeight = 340,
+        cellWidth = 265,
+    }: DisplayListProps = $props();
 
     let searchQuery = $state("");
     let showFAB = $state(false);
-    let grid: Element | null = $state(null);
+    let grid: VirtualizerHandle | null = $state(null);
 
     let filteredItems = $derived(
         listItems.filter((a) =>
             a.name.toLowerCase().includes(searchQuery.toLowerCase()),
         ),
     );
-
-    const cellWidth = 265;
-    const cellHeight = 340;
 
     let gridWidth = $state(500);
     let cols = $derived(Math.max(1, Math.floor(gridWidth / cellWidth)));
@@ -60,9 +68,7 @@
         <div
             class="flex flex-col items-center justify-center py-20 text-gray-500"
         >
-            <User size={64} class="mb-4 opacity-20" />
-            <p class="text-xl font-medium">No artists found</p>
-            <p class="text-sm">Scan your music library to see artists here.</p>
+            {@render fallBack()}
         </div>
     {:else if filteredItems.length === 0}
         <div
@@ -114,8 +120,7 @@
     >
         <Button
             variant="outline"
-            onclick={() =>
-                grid && grid.scrollTo({ top: 0, behavior: "smooth" })}
+            onclick={() => grid && grid.scrollTo(0)}
             size="icon-xl"
             class="backdrop-blur-md tooltip"
             title="Scroll to top"

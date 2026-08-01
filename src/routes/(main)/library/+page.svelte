@@ -6,12 +6,15 @@
         ChartNoAxesColumn,
         Music2,
         Disc,
+        Tag,
     } from "@lucide/svelte";
     import ArtistIcon from "$components/icons/Artist.svelte";
+    import { fade } from "svelte/transition";
 </script>
 
 <div
     class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 w-full p-8 h-fit"
+    in:fade
 >
     <LibraryCard
         label="All Tracks"
@@ -21,6 +24,7 @@
     <LibraryCard label="Artists" Icon={ArtistIcon} href="/library/artists" />
     <LibraryCard label="Albums" Icon={Disc} href="/library/albums" />
     <LibraryCard label="Playlists" Icon={ListMusic} href="/library/playlists" />
+    <LibraryCard label="Genres" Icon={Tag} href="/library/genres" />
     <LibraryCard label="Favorites" Icon={Heart} href="/library/favourites" />
     <LibraryCard label="Stats" Icon={ChartNoAxesColumn} href="/library/stats" />
 </div>

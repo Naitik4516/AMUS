@@ -1,5 +1,5 @@
 import { initSettings } from "$lib/settings.svelte";
-import type { Album, Artist, Playlist, Track } from "$lib/types";
+import type { Album, Artist, Genre, Playlist, Track } from "$lib/types";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { appDataDir } from "@tauri-apps/api/path";
@@ -11,6 +11,7 @@ class LibraryStore {
   albums = $state<Album[]>([]);
   artists = $state<Artist[]>([]);
   playlists = $state<Playlist[]>([]);
+  genres = $state<Genre[]>([]);
   ready = $state(false);
   loading = $state(false);
   error = $state<string | null>(null);
@@ -23,6 +24,7 @@ class LibraryStore {
   albumsById = new Map<number, Album>();
   artistsById = new Map<number, Artist>();
   playlistsById = new Map<number, Playlist>();
+  genresById = new Map<number, Genre>();
 
   // Derived data
   favoriteTracks = $derived(this.tracks.filter((t) => t.is_favorite));
@@ -43,6 +45,10 @@ class LibraryStore {
 
   tracksByPlaylist(playlistId: number): Track[] {
     return this.tracks.filter((t) => t.playlist_ids.includes(playlistId));
+  }
+
+  tracksByGenre(genreId: number): Track[] {
+    return this.tracks.filter((t) => t.genre_ids?.includes(genreId) ?? false);
   }
 
   albumsByArtist(artistId: number): Album[] {
@@ -102,6 +108,7 @@ class LibraryStore {
         this.#loadAlbums(),
         this.#loadArtists(),
         this.#loadPlaylists(),
+        this.#loadGenres(),
       ]);
       this.#preprocess();
 
@@ -127,6 +134,7 @@ class LibraryStore {
         this.#loadAlbums(),
         this.#loadArtists(),
         this.#loadPlaylists(),
+        this.#loadGenres(),
       ]);
       this.#preprocess();
     } catch (e) {
@@ -154,6 +162,11 @@ class LibraryStore {
     this.playlists = result || [];
   }
 
+  async #loadGenres() {
+    const result = await commands.getGenres();
+    this.genres = result || [];
+  }
+
   #preprocess() {
     this.tracksById = new Map();
     this.albumsById = new Map();
@@ -174,6 +187,11 @@ class LibraryStore {
 
     for (const playlist of this.playlists) {
       this.playlistsById.set(playlist.id, playlist);
+    }
+
+    this.genresById = new Map();
+    for (const genre of this.genres) {
+      this.genresById.set(genre.id, genre);
     }
   }
 
@@ -270,14 +288,30 @@ class LibraryStore {
     return updated;
   }
 
-  async updateTrackMetadata(trackId: number, title: string, year?: number): Promise<Track> {
+  async saveGenre(id: number, name: string, thumbnail?: string | null): Promise<Genre> {
+    const updated = await commands.updateGenre(id, name, thumbnail);
+    this.genresById.set(updated.id, updated);
+    const idx = this.genres.findIndex((g) => g.id === id);
+    if (idx !== -1) {
+      this.genres[idx] = updated;
+    }
+    return updated;
+  }
+
+  async updateTrackMetadata(
+    trackId: number,
+    title: string,
+    year?: number | null,
+    genre?: string | null,
+  ): Promise<Track> {
     if (title.trim().length === 0) {
       throw new Error("Track title cannot be empty");
     }
     const updated = await invoke<Track>("update_track_metadata", {
-      trackId,
-      title: title ?? null,
+      id: trackId,
+      title: title,
       year: year ?? null,
+      genre: genre ?? null,
     });
     this.applyTrackUpdate(updated);
     return updated;
@@ -319,6 +353,15 @@ class LibraryStore {
     await commands.deleteTrack(trackId);
     this.tracks = this.tracks.filter((t) => t.id !== trackId);
     this.tracksById.delete(trackId);
+
+    for (const t of player.userQueue.filter((t) => t.id === trackId)) {
+      if (t.queue_id != null) {
+        await player.removeFromQueue(t.queue_id, "user");
+      }
+    }
+    if (player.playNext.some((t) => t.id === trackId)) {
+      await player.removeFromQueue(trackId, "context");
+    }
   }
 
   async getTrackPlaylistIds(trackId: number): Promise<number[]> {

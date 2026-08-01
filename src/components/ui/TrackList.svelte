@@ -19,7 +19,7 @@
     import EditPlaylistDialog from "./Dialog/EditPlaylistDialog.svelte";
     import EditAlbumDialog from "./Dialog/EditAlbumDialog.svelte";
     import EditArtistDialog from "./Dialog/EditArtistDialog.svelte";
-    import type { Context, MenuPosition } from "$lib/types";
+    import type { Context, MenuPosition, PlaybackSource } from "$lib/types";
     import PlayingVisualizer from "./PlayingVisualizer.svelte";
     import { toast } from "svelte-sonner";
     import { invoke } from "@tauri-apps/api/core";
@@ -28,6 +28,8 @@
     import { VList } from "virtua/svelte";
 
     type ColumnKey = (typeof COLUMN_ORDER)[number];
+
+    type NonNullContext = Exclude<Context, null>;
 
     const COLUMN_ORDER = [
         "index",
@@ -39,7 +41,7 @@
 
     interface TrackTableProps {
         tracks: Track[];
-        context: Context;
+        context: NonNullContext;
         visibleColumns?: ColumnKey[] | null;
         canEdit?: boolean;
         canSort?: boolean;
@@ -124,6 +126,7 @@
         },
     };
 
+    
     const CONTEXT_DEFAULT_COLUMNS: Record<string, ColumnKey[]> = {
         Playlist: ["index", "title", "album", "dateAdded", "duration"],
         Favorites: ["index", "title", "album", "dateAdded", "duration"],
@@ -138,7 +141,7 @@
                 {
                     visible: (
                         visibleColumns ??
-                        CONTEXT_DEFAULT_COLUMNS[context.type] ??
+                         CONTEXT_DEFAULT_COLUMNS[context.type] ??
                         COLUMN_ORDER
                     ).includes(key),
                     width: COLUMN_META[key].width,
@@ -297,6 +300,18 @@
         });
     }
 
+    function contextToSource(ctx: NonNullContext): PlaybackSource {
+        switch (ctx.type) {
+            case "Album":
+            case "Playlist":
+            case "Artist":
+            case "Genre":
+                return { type: ctx.type, id: ctx.id };
+            case "Favorites":
+                return { type: "Favorites" };
+        }
+    }
+
     function handleMainPlay() {
         if (!orderedTracks) return;
         if (
@@ -304,13 +319,25 @@
             orderedTracks.some((x) => player.currentTrack?.id === x.id)
         )
             player.playPause();
-        else player.play(orderedTracks, context, 0, context.name);
+        else
+            player.play(
+                orderedTracks,
+                contextToSource(context),
+                0,
+                context.name,
+            );
     }
 
     function handleRowActivate(track: Track, index: number) {
         if (player.currentTrack?.id === track.id && player.isPlaying)
             player.playPause();
-        else player.play(orderedTracks, context, index, context.name);
+        else
+            player.play(
+                orderedTracks,
+                contextToSource(context),
+                index,
+                context.name,
+            );
     }
 
     async function toggleFavorite(track: Track) {
