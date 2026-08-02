@@ -6,7 +6,7 @@ pkgdesc="A fast, privacy-focused local music player built for users who own thei
 arch=('x86_64')
 url="https://github.com/Naitik4516/AMUS"
 license=('MPL-2.0')
-depends=('gtk3' 'webkit2gtk-4.1' 'alsa-lib' 'hicolor-icon-theme')
+depends=('gtk3' 'webkit2gtk-4.1' 'alsa-lib' 'hicolor-icon-theme' 'gtk-layer-shell')
 options=('!strip' '!debug')
 
 source_x86_64=("${url}/releases/download/v${pkgver}/${pkgname}_${pkgver}_amd64.deb")
