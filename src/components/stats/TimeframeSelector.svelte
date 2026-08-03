@@ -31,6 +31,8 @@
       onclick={() => onchange(opt.value)}
       class="px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors
         {value === opt.value ? 'bg-accent text-black' : 'text-gray-400 hover:text-white hover:bg-neutral-700/50'}"
+      aria-pressed={value === opt.value}
+      aria-label={opt.label}
     >
       {opt.label}
     </button>

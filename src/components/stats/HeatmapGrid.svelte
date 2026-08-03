@@ -36,7 +36,11 @@
   {#if data.length === 0}
     <div class="flex items-center justify-center text-gray-500 text-sm py-4">No data</div>
   {:else}
-    <div class="flex flex-wrap gap-1">
+    <div
+      class="grid gap-1"
+      class:grid-cols-24={type === "hourly"}
+      class:grid-cols-7={type === "weekday"}
+    >
       {#each data as cell}
         <div
           class={cn("size-6 rounded tooltip", opacity(cell.value))}
@@ -45,15 +49,15 @@
       {/each}
     </div>
     {#if type === "hourly"}
-      <div class="flex flex-wrap gap-1 mt-1 text-[10px] text-gray-500">
+      <div class="grid grid-cols-24 gap-1 mt-1 text-[10px] text-gray-500">
         {#each labels as l}
-          <span class="size-6 text-center">{l}</span>
+          <span class="text-center">{l}</span>
         {/each}
       </div>
     {:else}
-      <div class="flex gap-2 mt-2 text-xs text-gray-500">
+      <div class="grid grid-cols-7 gap-1 mt-2 text-xs text-gray-500">
         {#each labels as l}
-          <span>{l}</span>
+          <span class="text-center">{l}</span>
         {/each}
       </div>
     {/if}
