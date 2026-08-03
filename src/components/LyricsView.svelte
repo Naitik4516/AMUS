@@ -14,21 +14,9 @@
         position = $bindable(0),
         isPlaying = $bindable(false),
         onSeek = (sec: number) => {},
-        fontSize = 24,
-        durationSec = 0,
     } = $props();
 
-    const graphemeSegmenter =
-        typeof Intl.Segmenter !== "undefined"
-            ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-            : null;
-
-    function toGraphemes(text: string): string[] {
-        if (graphemeSegmenter) {
-            return [...graphemeSegmenter.segment(text)].map((s) => s.segment);
-        }
-        return Array.from(text);
-    }
+    let fontSize = $state(28);
 
     let lyrics = $state<Lyrics | null>(null);
     let loading = $state(false);
@@ -112,31 +100,6 @@
             .trim()
             .split("\n")
             .map((l) => l.trimEnd());
-    });
-
-    let currentLine = $derived.by(() => {
-        const idx = currentLineIndex;
-        if (idx < 0) return null;
-        const line = parsedLines[idx];
-        const next = parsedLines.find((l, j) => j > idx && l.time >= 0);
-        const duration =
-            next?.time != null
-                ? next.time - line.time
-                : durationSec > line.time
-                  ? durationSec - line.time
-                  : 4;
-        return { ...line, duration, chars: toGraphemes(line.text) };
-    });
-
-    let litChars = $derived.by(() => {
-        const line = currentLine;
-        if (!line) return 0;
-        const progress = (position - line.time + SYNC_LEAD_SEC) / line.duration;
-        if (progress <= 0) return 0;
-        return Math.min(
-            line.chars.length,
-            Math.floor(progress * line.chars.length),
-        );
     });
 
     let hasBoth = $derived(!!(lyrics?.plain_lyrics && lyrics?.synced_lyrics));
@@ -255,9 +218,8 @@
         };
     };
 
-    const fontSizeMin = 12;
-    const fontSizeMax = 36;
-    const SYNC_LEAD_SEC = 0.5;
+    const fontSizeMin = 14;
+    const fontSizeMax = 40;
 </script>
 
 <div class="flex flex-col h-full" role="region" aria-label="Lyrics">
@@ -313,35 +275,15 @@
                         <button
                             use:captureRef={i}
                             onclick={() => handleLineClick(line.time)}
-                            class="w-full text-center transition-all duration-300 px-2 py-1 rounded-lg border-l-2 border-transparent font-satoshi"
+                            class="w-full text-center transition-all duration-300 px-2 py-1 rounded-lg border-l-2 border-transparent font-satoshi font-extrabold"
                             class:text-gray-500={i !== currentLineIndex}
                             class:font-extrabold={i === currentLineIndex}
-                            class:opacity-100={i === currentLineIndex}
-                            class:opacity-30={i < currentLineIndex - 2 ||
-                                i > currentLineIndex + 2}
-                            class:opacity-60={i === currentLineIndex - 1 ||
-                                i === currentLineIndex + 1}
                             style="font-size: {i === currentLineIndex
                                 ? fontSize + 3
                                 : fontSize}px; line-height: 1.8"
                             tabindex="-1"
                         >
-                            {#if i === currentLineIndex && currentLine}
-                                {#if currentLine.chars.length === 0}
-                                    {"\u00A0"}
-                                {:else}
-                                    {#each currentLine.chars as char, ci}
-                                        <span
-                                            class="transition-colors duration-150"
-                                            class:text-white={ci < litChars}
-                                            class:text-gray-500={ci >= litChars}
-                                            >{char}</span
-                                        >
-                                    {/each}
-                                {/if}
-                            {:else}
-                                {line.text || "\u00A0"}
-                            {/if}
+                            {line.text || "\u00A0"}
                         </button>
                     {:else if line.text}
                         <p
