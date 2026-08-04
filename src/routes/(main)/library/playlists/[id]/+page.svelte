@@ -9,6 +9,7 @@
     import type { Playlist, Track } from "$lib/types";
     import { formatDuration } from "$lib/utils";
     import { Music2, Search, X } from "@lucide/svelte";
+    import { toast } from "svelte-sonner";
     import { getSwatches } from "colorthief";
     import Fuse from "fuse.js";
     import { onMount } from "svelte";
@@ -56,9 +57,14 @@
         });
     }
 
-    function addTrackToPlaylist(track: Track) {
-        store.addTrackToPlaylist(track.id, playlistId);
-        searchResults = searchResults.filter((t) => t.id !== track.id);
+    async function addTrackToPlaylist(track: Track) {
+        try {
+            await store.addTrackToPlaylist(track.id, playlistId);
+            searchResults = searchResults.filter((t) => t.id !== track.id);
+        } catch (e) {
+            console.error("Failed to add track to playlist:", e);
+            toast.error("Failed to add track to playlist");
+        }
     }
 
     onMount(() => {
@@ -130,7 +136,7 @@
 <div class="flex flex-col p-5 z-1 isolate" transition:slide={{ duration: 250 }}>
     <div class="flex gap-4 mb-4">
         <button
-            class="w-42 lg:w-58 h-42 lg:h-58 rounded-2xl shadow-xl shadow-black/40 overflow-clip"
+            class="w-42 lg:w-64 h-42 lg:h-64 rounded-3xl shadow-xl shadow-black/40 overflow-clip"
             onclick={() => (editOpen = true)}
         >
             <PlaylistCoverArt
@@ -143,12 +149,12 @@
         <div class="flex flex-col justify-end ml-4 py-1">
             <button onclick={() => (editOpen = true)}>
                 <h1
-                    class="text-3xl md:text-5xl lg:text-7xl xl:text-8xl drop-shadow-lg font-black font-switzer line-clamp-2"
+                    class="text-4xl md:text-6xl lg:text-7xl xl:text-8xl text-left drop-shadow-lg font-black font-switzer line-clamp-2"
                 >
                     {playlist.name}
                 </h1>
             </button>
-            <div class="flex font-mono text-gray-300 gap-2 items-center">
+            <div class="flex font-mono  text-gray-300 gap-2 items-center ml-2">
                 <span class="">
                     {tracks.length} songs
                 </span>
@@ -241,7 +247,13 @@
                     class="flex items-center gap-2 p-1 rounded-xl hover:bg-white/5 transition-colors"
                     animate:flip={{ duration: 200 }}
                 >
-                    <TrackListSmall {track} styled={false} />
+                    <TrackListSmall
+                        {track}
+                        styled={false}
+                        context={playlistId === -1
+                            ? { type: "Album", id: track.album.id, name: track.album.name, coverArt: track.album.cover_art ?? null }
+                            : { type: "Playlist", id: playlistId, name: playlist.name, coverArt: playlist.cover_art ?? null }}
+                    />
                     <Button onclick={() => addTrackToPlaylist(track)}
                         >Add</Button
                     >
