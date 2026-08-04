@@ -37,7 +37,7 @@ fn start_unix(app: AppHandle) {
     let listener = match UnixListener::bind(&path) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("cli server: failed to bind {}: {e}", path.display());
+            tracing::error!(error = %e, path = %path.display(), "cli server: failed to bind");
             SERVER_RUNNING.store(false, Ordering::SeqCst);
             return;
         }
@@ -60,7 +60,7 @@ fn start_unix(app: AppHandle) {
                         thread::spawn(move || handle_client(app, stream));
                     }
                     Err(e) => {
-                        eprintln!("cli server accept error: {e}");
+                        tracing::error!(error = %e, "cli server accept error");
                     }
                 }
             }
@@ -76,7 +76,7 @@ fn start_tcp(app: AppHandle) {
     let listener = match TcpListener::bind("127.0.0.1:0") {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("cli server: failed to bind tcp: {e}");
+            tracing::error!(error = %e, "cli server: failed to bind tcp");
             SERVER_RUNNING.store(false, Ordering::SeqCst);
             return;
         }
@@ -84,7 +84,7 @@ fn start_tcp(app: AppHandle) {
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     let port_file = socket_path();
     if let Err(e) = std::fs::write(&port_file, port.to_string()) {
-        eprintln!("cli server: failed to write port file: {e}");
+        tracing::error!(error = %e, "cli server: failed to write port file");
     }
 
     thread::Builder::new()
@@ -96,7 +96,7 @@ fn start_tcp(app: AppHandle) {
                         let app = app.clone();
                         thread::spawn(move || handle_client(app, stream));
                     }
-                    Err(e) => eprintln!("cli server accept error: {e}"),
+                    Err(e) => tracing::error!(error = %e, "cli server accept error"),
                 }
             }
             SERVER_RUNNING.store(false, Ordering::SeqCst);
@@ -117,7 +117,7 @@ where
             Ok(f) => f,
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
             Err(e) => {
-                eprintln!("cli server read error: {e}");
+                tracing::error!(error = %e, "cli server read error");
                 break;
             }
         };
@@ -130,14 +130,14 @@ where
         let body = match serde_json::to_vec(&response) {
             Ok(b) => b,
             Err(e) => {
-                eprintln!("cli server serialize error: {e}");
+                tracing::error!(error = %e, "cli server serialize error");
                 break;
             }
         };
 
         let stream = reader.get_mut();
         if let Err(e) = write_frame(stream, &body) {
-            eprintln!("cli server write error: {e}");
+            tracing::error!(error = %e, "cli server write error");
             break;
         }
     }

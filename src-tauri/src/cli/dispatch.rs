@@ -215,6 +215,12 @@ fn dispatch(app: &AppHandle, cmd: CliCommand) -> Result<CliData, String> {
                 .app_data_dir()
                 .map_err(|e| format!("failed to resolve app data dir: {e}"))?;
 
+            // Stop the player actor so no DB connections stay open while the
+            // database files are removed.
+            if let Some(handle) = app.try_state::<crate::commands::PlayerHandle>() {
+                let _ = handle.0.send(crate::player::actor::PlayerCommand::Shutdown);
+            }
+
             let _ = std::fs::remove_file(app_dir.join("music.db"));
             let _ = std::fs::remove_file(app_dir.join("music.db-wal"));
             let _ = std::fs::remove_file(app_dir.join("music.db-shm"));
@@ -222,7 +228,7 @@ fn dispatch(app: &AppHandle, cmd: CliCommand) -> Result<CliData, String> {
             let _ = std::fs::remove_file(app_dir.join("session.json"));
             let _ = std::fs::remove_file(app_dir.join("settings.json"));
 
-            for dir in &["artists", "artist_banner", "cover_art"] {
+            for dir in &["artists", "covers"] {
                 let _ = std::fs::remove_dir_all(app_dir.join(dir));
             }
 
