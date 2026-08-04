@@ -6,17 +6,34 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_store::StoreExt;
 
 const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];
 
+/// Debounce window for coalescing filesystem events before scanning them.
+const WATCHER_DEBOUNCE: Duration = Duration::from_millis(500);
+
 #[derive(Clone)]
 pub struct SyncManager {
     watcher: Arc<parking_lot::Mutex<Option<RecommendedWatcher>>>,
     task: Arc<parking_lot::Mutex<Option<JoinHandle<()>>>>,
     scanning: Arc<AtomicBool>,
+    scan_lock: Arc<parking_lot::Mutex<()>>,
+}
+
+/// Holds the scan lock and keeps the realtime watcher paused until dropped.
+pub struct ScanGuard<'a> {
+    manager: &'a SyncManager,
+    _lock: parking_lot::MutexGuard<'a, ()>,
+}
+
+impl Drop for ScanGuard<'_> {
+    fn drop(&mut self) {
+        self.manager.set_scanning(false);
+    }
 }
 
 impl SyncManager {
@@ -25,11 +42,25 @@ impl SyncManager {
             watcher: Arc::new(parking_lot::Mutex::new(None)),
             task: Arc::new(parking_lot::Mutex::new(None)),
             scanning: Arc::new(AtomicBool::new(false)),
+            scan_lock: Arc::new(parking_lot::Mutex::new(())),
         }
     }
 
     pub fn set_scanning(&self, active: bool) {
         self.scanning.store(active, Ordering::Release);
+    }
+
+    /// Serialize full-library scans (startup, manual, CLI) and pause the realtime watcher for the duration. The scanning flag is cleared on every exit path — success, error or panic — when the guard drops.
+    pub fn try_start_scan(&self) -> Result<ScanGuard<'_>, String> {
+        let lock = self
+            .scan_lock
+            .try_lock()
+            .ok_or_else(|| "scan already in progress".to_string())?;
+        self.set_scanning(true);
+        Ok(ScanGuard {
+            manager: self,
+            _lock: lock,
+        })
     }
 
     pub fn init(&self, app: &AppHandle) {
@@ -39,7 +70,6 @@ impl SyncManager {
         tauri::async_runtime::spawn(async move {
             let sync_on_startup = get_setting(&app_handle, "syncOnStartup", true).unwrap_or(true);
             if sync_on_startup {
-                println!("Performing startup sync...");
                 let _ = app_handle.emit(
                     "scan-progress",
                     crate::scanner::ScanProgress {
@@ -49,19 +79,20 @@ impl SyncManager {
                     },
                 );
                 if let Some(sync_manager) = app_handle.try_state::<SyncManager>() {
-                    sync_manager.set_scanning(true);
-                }
-                let pool = app_handle.state::<DbPool>();
-                let pool = pool.inner().clone();
-                let handle_for_scan = app_handle.clone();
-                let _ = tokio::task::spawn_blocking(move || {
-                    if let Ok(mut conn) = pool.get() {
-                        let _ = scanner::scan_directories(&mut conn, &handle_for_scan);
-                    }
-                })
-                .await;
-                if let Some(sync_manager) = app_handle.try_state::<SyncManager>() {
-                    sync_manager.set_scanning(false);
+                    let sync_manager = sync_manager.inner().clone();
+                    let pool = app_handle.state::<DbPool>();
+                    let pool = pool.inner().clone();
+                    let handle_for_scan = app_handle.clone();
+                    let _ = tokio::task::spawn_blocking(move || {
+                        let _guard = match sync_manager.try_start_scan() {
+                            Ok(guard) => guard,
+                            Err(_) => return,
+                        };
+                        if let Ok(mut conn) = pool.get() {
+                            let _ = scanner::scan_directories(&mut conn, &handle_for_scan);
+                        }
+                    })
+                    .await;
                 }
             }
 
@@ -80,7 +111,10 @@ impl SyncManager {
                                     let app_dir = handle_for_fetch
                                         .path()
                                         .app_data_dir()
-                                        .map_err(|e| eprintln!("Failed to get app dir: {e}"))
+                                        .map_err(|e| {
+                                            tracing::warn!(error = %e, "failed to get app dir");
+                                            e
+                                        })
                                         .ok();
                                     if let Some(app_dir) = app_dir {
                                         let artists_map: HashMap<i64, String> =
@@ -88,10 +122,6 @@ impl SyncManager {
                                         let pool_clone = pool.clone();
                                         let app_handle_clone = handle_for_fetch.clone();
                                         let app_dir_clone = app_dir.clone();
-                                        println!(
-                                            "Retrying artist image fetch for {} artists",
-                                            artists_map.len()
-                                        );
                                         tauri::async_runtime::spawn(async move {
                                             let _ = artist_pic_fetcher::fetch_artist_images(
                                                 &artists_map,
@@ -171,7 +201,22 @@ impl SyncManager {
 
         let scanning = self.scanning.clone();
         let handle = tauri::async_runtime::spawn(async move {
-            while let Some(event) = rx.recv().await {
+            // Coalesce Create/Modify events and scan them in one batched pass after a short idle window, instead of spawning a scan per event.
+            let mut pending_paths: Vec<PathBuf> = Vec::new();
+
+            loop {
+                let event = match tokio::time::timeout(WATCHER_DEBOUNCE, rx.recv()).await {
+                    Ok(Some(event)) => event,
+                    Ok(None) => {
+                        flush_pending_scan(&app_handle, &mut pending_paths).await;
+                        break;
+                    }
+                    Err(_) => {
+                        flush_pending_scan(&app_handle, &mut pending_paths).await;
+                        continue;
+                    }
+                };
+
                 if scanning.load(Ordering::Acquire)
                     && matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_))
                 {
@@ -180,80 +225,18 @@ impl SyncManager {
 
                 match event.kind {
                     EventKind::Create(_) | EventKind::Modify(_) => {
-                        let mut paths_to_scan: Vec<PathBuf> = event
-                            .paths
-                            .into_iter()
-                            .filter(|p| {
-                                let ext = p
-                                    .extension()
-                                    .and_then(|e| e.to_str())
-                                    .unwrap_or("")
-                                    .to_lowercase();
-                                p.is_file() && AUDIO_EXTENSIONS.contains(&ext.as_ref())
-                            })
-                            .collect();
-
-                        if !paths_to_scan.is_empty() {
-                            let pool = app_handle.state::<DbPool>();
-                            let pool = pool.inner().clone();
-                            let handle_for_scan = app_handle.clone();
-                            let _ = tokio::task::spawn_blocking(move || {
-                                if let Ok(mut conn) = pool.get() {
-                                    // Filter out blacklisted paths
-                                    if let Ok(blacklist_entries) =
-                                        db::get_scan_blacklist(&conn)
-                                    {
-                                        let blacklist: std::collections::HashMap<
-                                            String,
-                                            (i64, String),
-                                        > = blacklist_entries
-                                            .into_iter()
-                                            .map(|e| (e.path, (e.mtime, e.reason)))
-                                            .collect();
-
-                                        paths_to_scan.retain(|p| {
-                                            let path_str =
-                                                p.to_string_lossy().to_string();
-                                            if let Some(&(bl_mtime, _)) =
-                                                blacklist.get(&path_str)
-                                            {
-                                                if bl_mtime == -1 {
-                                                    return false;
-                                                }
-                                                let current_mtime = std::fs::metadata(p)
-                                                    .ok()
-                                                    .and_then(|m| m.modified().ok())
-                                                    .and_then(|t| {
-                                                        t.duration_since(
-                                                            std::time::UNIX_EPOCH,
-                                                        )
-                                                        .ok()
-                                                    })
-                                                    .map(|d| d.as_secs() as i64)
-                                                    .unwrap_or(0);
-                                                if current_mtime == bl_mtime {
-                                                    return false;
-                                                }
-                                                let _ = db::remove_from_scan_blacklist(
-                                                    &conn,
-                                                    &path_str,
-                                                );
-                                            }
-                                            true
-                                        });
-                                    }
-
-                                    let _ = scanner::scan_files(
-                                        &mut conn,
-                                        &handle_for_scan,
-                                        paths_to_scan,
-                                    );
-                                }
-                            })
-                            .await;
-                        }
+                        pending_paths.extend(event.paths.into_iter().filter(|p| {
+                            let ext = p
+                                .extension()
+                                .and_then(|e| e.to_str())
+                                .unwrap_or("")
+                                .to_lowercase();
+                            p.is_file() && AUDIO_EXTENSIONS.contains(&ext.as_ref())
+                        }));
                     }
                     EventKind::Remove(_) => {
+                        flush_pending_scan(&app_handle, &mut pending_paths).await;
+
                         let paths_to_remove: Vec<String> = event
                             .paths
                             .into_iter()
@@ -308,8 +291,9 @@ impl SyncManager {
                                         }
 
                                         if !tracks_to_delete.is_empty() {
-                                            let tx =
-                                                conn.transaction().map_err(crate::error::Error::Db)?;
+                                            let tx = conn
+                                                .transaction()
+                                                .map_err(crate::error::Error::Db)?;
                                             db::delete_tracks_by_paths(&tx, &tracks_to_delete)?;
                                             tx.commit().map_err(crate::error::Error::Db)?;
                                             let _ = handle_for_emit.emit("library-updated", ());
@@ -330,6 +314,55 @@ impl SyncManager {
 
         Ok(())
     }
+}
+
+// Scan a batch of pending audio files (with blacklist filtering)
+async fn flush_pending_scan(app_handle: &AppHandle, pending: &mut Vec<PathBuf>) {
+    if pending.is_empty() {
+        return;
+    }
+    let paths_to_scan = std::mem::take(pending);
+    let pool = app_handle.state::<DbPool>();
+    let pool = pool.inner().clone();
+    let handle_for_scan = app_handle.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        if let Ok(mut conn) = pool.get() {
+            if let Ok(blacklist_entries) = db::get_scan_blacklist(&conn) {
+                let blacklist: std::collections::HashMap<String, (i64, String)> =
+                    blacklist_entries
+                        .into_iter()
+                        .map(|e| (e.path, (e.mtime, e.reason)))
+                        .collect();
+
+                let mut filtered = paths_to_scan;
+                filtered.retain(|p| {
+                    let path_str = p.to_string_lossy().to_string();
+                    if let Some(&(bl_mtime, _)) = blacklist.get(&path_str) {
+                        if bl_mtime == -1 {
+                            return false;
+                        }
+                        let current_mtime = std::fs::metadata(p)
+                            .ok()
+                            .and_then(|m| m.modified().ok())
+                            .and_then(|t| {
+                                t.duration_since(std::time::UNIX_EPOCH).ok()
+                            })
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0);
+                        if current_mtime == bl_mtime {
+                            return false;
+                        }
+                        let _ = db::remove_from_scan_blacklist(&conn, &path_str);
+                    }
+                    true
+                });
+                let _ = scanner::scan_files(&mut conn, &handle_for_scan, filtered);
+            } else {
+                let _ = scanner::scan_files(&mut conn, &handle_for_scan, paths_to_scan);
+            }
+        }
+    })
+    .await;
 }
 
 pub fn get_setting<R: tauri::Runtime>(
