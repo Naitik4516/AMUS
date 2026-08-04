@@ -18,13 +18,14 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
     "core:window:allow-set-size",
+    "core:window:allow-set-fullscreen",
     "dialog:default",
     "dialog:allow-open",
+    "dialog:allow-message",
     "fs:default",
     "fs:scope-appdata",
     "fs:allow-appdata-read-recursive",
     "store:default",
-    "updater:default",
-    "core:window:allow-set-fullscreen"
+    "updater:default"
   ]
 }
