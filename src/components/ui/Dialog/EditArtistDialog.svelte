@@ -75,7 +75,7 @@
 </script>
 
 <Dialog bind:open title="Edit Artist" maxWidth="xl">
-    <div class="flex flex-col gap-5 mb-8 font-satoshi">
+    <div class="flex flex-col gap-5 mb-5 font-satoshi">
         <div class="flex flex-col gap-2">
             <Input
                 id="artist-name"
@@ -85,12 +85,12 @@
             />
         </div>
 
-        <div class="flex justify-around  mx-5 h-46">
-            <div class="flex flex-col gap-2 h-full justify-between">
+        <div class="flex justify-around mx-5 h-70">
+            <div class="flex flex-col gap-2 h-full ">
                 <EditImage
                     onclick={pickProfile}
                     removeCover={removeProfile}
-                    class="h-32 w-32 shrink-0 rounded-full shadow-lg overflow-hidden border"
+                    class="h-40 w-40 shrink-0 rounded-full shadow-lg overflow-hidden border my-auto"
                     closeButtonClass="top-2 right-2"
                 >
                     {#if editProfileImage || profileImage}
@@ -112,7 +112,7 @@
                     {/if}
                 </EditImage>
                 <label
-                    class="text-sm text-center font-bold text-zinc-300"
+                    class="text-sm text-center font-bold text-zinc-300 "
                     for="profile-image">Profile Image</label
                 >
             </div>
@@ -123,7 +123,7 @@
                 <EditImage
                     onclick={pickBanner}
                     removeCover={removeBanner}
-                    class="h-auto shrink-0 rounded-2xl shadow-lg overflow-hidden "
+                    class="h-70 rounded-2xl shadow-lg overflow-hidden bg-neutral-800/50"
                 >
                     {#if editBannerImage || bannerImage}
                         <img
@@ -133,7 +133,7 @@
                             )}
                             alt="Banner preview"
                             id="banner-image"
-                            class="object-cover h-full"
+                            class="object-cover h-full "
                         />
                     {:else}
                         <div

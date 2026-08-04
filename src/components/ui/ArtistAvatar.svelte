@@ -24,7 +24,7 @@
 </script>
 
 <div
-    class="rounded-full bg-zinc-800/60 border border-black/30"
+    class="rounded-full bg-zinc-800/60 border overflow-hidden"
     style="width: {size}px; height: {size}px;"
 >
     {#if profileImage}
@@ -35,7 +35,7 @@
         />
     {:else}
         <div
-            class="size-full flex items-center justify-center text-gray-400 font-satohsi font-medium"
+            class="size-full flex items-center justify-center text-gray-400 font-satohsi font-medium decoration-0"
             style="font-size: {size / 3}px;"
         >
             {getArtistPlaceHolder(name)}

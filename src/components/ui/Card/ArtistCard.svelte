@@ -27,10 +27,10 @@
     }
 </script>
 
-<div
+<a
     oncontextmenu={handleContextMenu}
-    class="group flex flex-col items-center text-center gap-4 px-5 py-3"
-    role="feed"
+    class="group flex flex-col items-center text-center gap-4"
+    href="/library/artists/{data.id}"
 >
     <ArtistAvatar
         size={240}
@@ -38,13 +38,12 @@
         name={data.name}
     />
 
-    <a
-        href="/library/artists/{data.id}"
+    <h4
         class="font-extrabold font-satoshi text-lg truncate text-white"
     >
         {data.name}
-    </a>
-</div>
+    </h4>
+</a>
 
 <EditArtistDialog
     bind:open={editDialogOpen}
