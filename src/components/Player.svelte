@@ -1,16 +1,5 @@
 <script lang="ts">
     import {
-        Play,
-        Pause,
-        SkipBack,
-        SkipForward,
-        Shuffle,
-        Repeat,
-        Repeat1,
-        Volume,
-        Volume1,
-        Volume2,
-        VolumeX,
         ListMusic,
         Heart,
         Music2,
@@ -33,9 +22,13 @@
     import TrackMenu from "$components/ui/Menu/TrackMenu.svelte";
     import { openContextMenu } from "$lib/context-menu.svelte";
     import type { Context } from "$lib/types";
+    import TransportControls from "./TransportControls.svelte";
+    import VolumeControl from "./VolumeControl.svelte";
 
     let showQueue = $state(false);
     let showLyrics = $state(false);
+
+    let displayPosition = $derived(Math.round(player.position * 4) / 4);
 
     let trackContext = $derived.by<Context>(() => {
         const t = player.currentTrack;
@@ -76,7 +69,7 @@
     });
 
     $effect(() => {
-        if (ui.queueVisible) showQueue = true;
+        showQueue = ui.queueVisible;
     });
 
     async function toggleFavorite() {
@@ -106,7 +99,7 @@
             <div
                 class="flex items-center gap-4 pr-10 z-1"
                 ondblclick={() => player.close()}
-                role="contentinfo"
+                role="group"
             >
                 <div
                     class="w-15 h-15 rounded-lg bg-neutral-800 shadow-md flex items-center justify-center overflow-hidden shrink-0"
@@ -152,6 +145,9 @@
                     class="ml-2 {player.currentTrack?.is_favorite
                         ? 'text-rose-600 fill-rose-600'
                         : 'text-gray-300'}  hover:text-secondary transition-colors"
+                    aria-label={player.currentTrack?.is_favorite
+                        ? "Remove from favorites"
+                        : "Add to favorites"}
                 >
                     <Heart
                         size={22}
@@ -164,55 +160,12 @@
 
             <!-- Controls -->
             <div class="flex flex-col items-center gap-2 z-1">
-                <div class="flex items-center gap-6">
-                    <button
-                        class="hover:text-white transition-colors"
-                        class:text-rose-300={player.shuffleEnabled}
-                        class:text-gray-200={!player.shuffleEnabled}
-                        onclick={() => player.toggleShuffle()}
-                    >
-                        <Shuffle size={20} />
-                    </button>
-                    <button
-                        class="text-gray-300 hover:text-white transition-colors"
-                        onclick={() => player.previous()}
-                    >
-                        <SkipBack size={22} fill="currentColor" />
-                    </button>
-                    <button
-                        class="bg-white text-black rounded-full p-3 hover:scale-105 transition-transform shadow-lg"
-                        onclick={() => player.playPause()}
-                    >
-                        {#if player.isPlaying}
-                            <Pause size={24} fill="currentColor" />
-                        {:else}
-                            <Play size={24} fill="currentColor" />
-                        {/if}
-                    </button>
-                    <button
-                        class="text-gray-200 hover:text-white transition-colors"
-                        onclick={() => player.next()}
-                    >
-                        <SkipForward size={22} fill="currentColor" />
-                    </button>
-                    <button
-                        class="hover:text-white transition-colors"
-                        class:text-red-300={player.repeatMode !== "OFF"}
-                        class:text-gray-200={player.repeatMode === "OFF"}
-                        onclick={() => player.cycleRepeat()}
-                    >
-                        {#if player.repeatMode === "ONE"}
-                            <Repeat1 size={20} />
-                        {:else}
-                            <Repeat size={20} />
-                        {/if}
-                    </button>
-                </div>
+                <TransportControls />
                 <div class="w-full flex items-center justify-center gap-3">
                     <span
                         class="text-[10px] font-medium text-gray-200 w-10 text-right"
                     >
-                        {formatDurationColon(player.position)}
+                        {formatDurationColon(displayPosition)}
                     </span>
                     <Slider
                         value={player.progress}
@@ -247,41 +200,13 @@
                     onclick={() => (showQueue = !showQueue)}
                     class="text-gray-300 hover:text-white transition-colors"
                     class:text-accent={showQueue}
+                    aria-label="Toggle queue"
                 >
                     <ListMusic size={20} />
                 </button>
 
-                <div
-                    class="flex items-center gap-2 group"
-                    onwheel={(e) => {
-                        e.preventDefault();
-                        const delta = e.deltaY > 0 ? -0.05 : 0.05;
-                        player.setVolume(
-                            Math.max(0, Math.min(1, player.volume + delta)),
-                        );
-                    }}
-                >
-                    <button
-                        class="text-gray-300 group-hover:text-white transition-colors"
-                        onclick={() => player.toggleMute()}
-                    >
-                        {#if player.volume === 0}
-                            <VolumeX size={20} />
-                        {:else if player.volume < 0.33}
-                            <Volume size={20} />
-                        {:else if player.volume < 0.66}
-                            <Volume1 size={20} />
-                        {:else}
-                            <Volume2 size={20} />
-                        {/if}
-                    </button>
-                    <div class="w-24">
-                        <Slider
-                            value={player.volume}
-                            onValueChange={(val) => player.setVolume(val)}
-                        />
-                    </div>
-                </div>
+                <VolumeControl />
+
                 <button
                     onclick={() => (fullscreen.active = true)}
                     class="text-gray-300 hover:text-white transition-colors"
@@ -296,7 +221,7 @@
             >
                 {#if showLyrics}
                     <div
-                        class="realtive h-[60vh] max-w-2/3 w-full bg-card/60 backdrop-saturate-200 backdrop-blur-3xl border-2 border-border/70 rounded-2xl shadow-2xl flex flex-col overflow-hidden mx-auto"
+                        class="relative h-[60vh] max-w-2/3 w-full bg-card/60 backdrop-saturate-200 backdrop-blur-3xl border-2 border-border/70 rounded-2xl shadow-2xl flex flex-col overflow-hidden mx-auto"
                         transition:slide
                     >
                         <Button
@@ -310,9 +235,8 @@
                         <div class="flex-1 overflow-hidden px-1 pb-1 pt-10">
                             <LyricsView
                                 trackId={player.currentTrack?.id ?? 0}
-                                position={player.position}
+                                position={displayPosition}
                                 isPlaying={player.isPlaying}
-                                durationSec={player.duration}
                                 onSeek={(sec: number) => player.seek(sec)}
                             />
                         </div>
@@ -321,7 +245,7 @@
 
                 {#if showQueue}
                     <div
-                        class="w-1/3 ml-3 h-[60vh] realtive bg-card/60 backdrop-blur-2xl backdrop-saturate-200 border-2 border-border/70 rounded-2xl shadow-2xl overflow-hidden"
+                        class="w-[30%] ml-3 h-[60vh] relative bg-card/60 backdrop-blur-2xl backdrop-saturate-200 border-2 border-border/70 rounded-2xl shadow-2xl overflow-hidden"
                         transition:slide
                     >
                         <QueueView bind:showQueue />
