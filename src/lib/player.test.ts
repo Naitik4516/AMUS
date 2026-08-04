@@ -161,7 +161,10 @@ describe("event handling — state machine", () => {
   });
 
   it("Position updates position with correct math", () => {
-    emitEvent({ event: "Position", payload: { pos_sec: 42.5, at_epoch_ms: Date.now() } });
+    emitEvent({
+      event: "Position",
+      payload: { pos_sec: 42.5, at_epoch_ms: Date.now(), is_playing: true },
+    });
     expect(player.position).toBe(42.5);
   });
 

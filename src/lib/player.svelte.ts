@@ -10,7 +10,10 @@ type PlayerEvent =
       payload: { track: Track; duration_sec: number; source: PlaybackSource };
     }
   | { event: "StateChanged"; payload: { is_playing: boolean } }
-  | { event: "Position"; payload: { pos_sec: number; at_epoch_ms: number } }
+  | {
+      event: "Position";
+      payload: { pos_sec: number; at_epoch_ms: number; is_playing: boolean };
+    }
   | {
       event: "QueueChanged";
       payload: {

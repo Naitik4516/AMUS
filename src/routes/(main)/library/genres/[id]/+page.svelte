@@ -2,7 +2,7 @@
     import { page } from "$app/state";
     import TrackList from "$components/ui/TrackList.svelte";
     import EditGenreDialog from "$components/ui/Dialog/EditGenreDialog.svelte";
-    import { formatDuration } from "$lib/utils";
+    import { formatDuration, sumDuration } from "$lib/utils";
     import { Music, Pen } from "@lucide/svelte";
     import { store } from "$lib/stores.svelte";
 
@@ -11,9 +11,7 @@
     let tracks = $derived(store.tracksByGenre(genreId));
     let editOpen = $state(false);
 
-    let totalDuration = $derived(
-        tracks.reduce((sum, t) => sum + t.duration_seconds, 0),
-    );
+    let totalDuration = $derived(sumDuration(tracks));
 
     let thumbnailUrl = $derived(genre.thumbnail ? store.getImageSrc(genre.thumbnail) : null);
 </script>
