@@ -23,6 +23,7 @@ pub enum PlayerEvent {
     Position {
         pos_sec: f64,
         at_epoch_ms: i64,
+        is_playing: bool,
     },
     QueueChanged {
         user_queue: Vec<Track>,
@@ -50,7 +51,7 @@ pub fn emit(app: &tauri::AppHandle, event: PlayerEvent) {
     use tauri::Emitter;
     let event_name = event.event_name();
     if let Err(e) = app.emit(PLAYER_EVENT_NAME, &event) {
-        eprintln!("⚠️ failed to emit player event '{event_name}': {e}");
+        tracing::warn!(error = %e, event = %event_name, "failed to emit player event");
     }
 }
 

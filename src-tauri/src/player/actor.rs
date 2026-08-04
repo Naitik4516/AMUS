@@ -1,7 +1,7 @@
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use std::sync::mpsc::{Receiver, SyncSender};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tauri::AppHandle;
 use tokio::sync::oneshot;
 
@@ -86,7 +86,6 @@ struct NowPlaying {
     duration_sec: f64,
     max_position_reached: f64,
     source: PlaybackSource,
-    started_at: Instant,
 }
 
 pub struct PlayerActor {
@@ -94,17 +93,25 @@ pub struct PlayerActor {
     app: AppHandle,
     pool: DbPool,
 
-    engine: AudioEngine,
+    engine: Option<AudioEngine>,
     queue: PlaybackQueue,
     volume: f32,
     muted: bool,
     volume_before_mute: f32,
     autoplay_enabled: bool,
+    /// True after one autoplay chain failed to load, so we don't loop
+    /// trying new recommendation chains on consecutive failures.
+    autoplay_chain_failed: bool,
     now_playing: Option<NowPlaying>,
     has_track_loaded: bool,
+    /// Counter driving periodic Position emissions for OS media controls.
+    position_emit_counter: u32,
 }
 
 const TICK_INTERVAL: Duration = Duration::from_millis(250);
+/// Emit a Position event every N ticks (~5s) so OS media controls show
+/// a live progress while a track is playing.
+const POSITION_EMIT_EVERY_TICKS: u32 = 20;
 
 impl PlayerActor {
     pub fn spawn(app: AppHandle, pool: DbPool) -> SyncSender<PlayerCommand> {
@@ -114,10 +121,19 @@ impl PlayerActor {
             .name("player-actor".into())
             .spawn(move || {
                 let engine = match AudioEngine::new() {
-                    Ok(e) => e,
+                    Ok(e) => Some(e),
                     Err(e) => {
-                        eprintln!("fatal: failed to init audio engine: {e}");
-                        return;
+                        tracing::error!(error = %e, "failed to init audio engine");
+                        // Keep the actor alive in degraded mode so commands still
+                        // respond; playback will report an error instead.
+                        emit(
+                            &app,
+                            PlayerEvent::Error {
+                                message: format!("audio engine unavailable: {e}"),
+                                track_id: None,
+                            },
+                        );
+                        None
                     }
                 };
                 let mut actor = PlayerActor {
@@ -130,8 +146,10 @@ impl PlayerActor {
                     muted: false,
                     volume_before_mute: 1.0,
                     autoplay_enabled: true,
+                    autoplay_chain_failed: false,
                     now_playing: None,
                     has_track_loaded: false,
+                    position_emit_counter: 0,
                 };
                 actor.run();
             })
@@ -144,7 +162,7 @@ impl PlayerActor {
         match self.pool.get() {
             Ok(c) => Some(c),
             Err(e) => {
-                eprintln!("failed to get db connection: {e}");
+                tracing::warn!(error = %e, "failed to get db connection");
                 None
             }
         }
@@ -152,7 +170,8 @@ impl PlayerActor {
 
     fn run(&mut self) {
         loop {
-            let is_active = self.has_track_loaded && !self.engine.is_paused();
+            let is_active = self.has_track_loaded
+                && self.engine.as_ref().is_some_and(|e| !e.is_paused());
             let cmd = if is_active {
                 match self.rx.recv_timeout(TICK_INTERVAL) {
                     Ok(c) => c,
@@ -174,6 +193,7 @@ impl PlayerActor {
                     context_label,
                 } => {
                     self.finalize_now_playing();
+                    self.autoplay_chain_failed = false;
                     self.queue
                         .load_context(tracks, source, start_index, context_label);
                     self.load_current_into_engine(true);
@@ -186,7 +206,10 @@ impl PlayerActor {
                 PlayerCommand::Previous => self.handle_previous(),
                 PlayerCommand::Seek(pos) => self.handle_seek(pos),
                 PlayerCommand::SeekRelative(delta) => {
-                    let (pos, _) = self.engine.state();
+                    let (pos, _) = self
+                        .engine
+                        .as_ref()
+                        .map_or((0.0, true), |e| e.state());
                     self.handle_seek((pos + delta).max(0.0));
                 }
                 PlayerCommand::SetVolume(v) => self.apply_volume(v),
@@ -236,7 +259,27 @@ impl PlayerActor {
                     self.emit_queue_changed();
                 }
                 PlayerCommand::RemoveFromContext(track_id) => {
-                    self.queue.remove_from_context(track_id);
+                    use crate::player::queue::RemoveFromContextOutcome;
+                    match self.queue.remove_from_context(track_id) {
+                        Some(RemoveFromContextOutcome::RemovedCurrent {
+                            resume: Some(_),
+                        }) => {
+                            // Keep playing: record the partial listen, then load the
+                            // next track (as chosen by the queue's playback order).
+                            self.finalize_now_playing();
+                            self.load_current_into_engine(true);
+                        }
+                        Some(RemoveFromContextOutcome::RemovedCurrent { resume: None }) => {
+                            // The removed track was the last one in the context.
+                            self.finalize_now_playing();
+                            if self.autoplay_enabled {
+                                self.try_autoplay();
+                            } else {
+                                self.stop_playback();
+                            }
+                        }
+                        _ => {}
+                    }
                     self.emit_queue_changed();
                 }
                 PlayerCommand::ClearQueue => {
@@ -263,6 +306,8 @@ impl PlayerActor {
                 PlayerCommand::SetAutoplay(v) => self.autoplay_enabled = v,
                 PlayerCommand::PlayTrackFromContext(track_id) => {
                     if self.queue.jump_to_track(track_id) {
+                        // Record the partial listen of the track we're leaving.
+                        self.finalize_now_playing();
                         self.load_current_into_engine(true);
                     }
                 }
@@ -278,6 +323,7 @@ impl PlayerActor {
                     shuffle,
                 } => {
                     self.finalize_now_playing();
+                    self.autoplay_chain_failed = false;
                     self.queue.clear_queue();
                     if let Some(conn) = self.conn() {
                         let _ = playback::queue_clear_all(&conn);
@@ -301,7 +347,9 @@ impl PlayerActor {
                     self.queue.set_shuffle(shuffle);
                     self.emit_repeat_shuffle();
                     self.volume = volume.clamp(0.0, 1.0);
-                    self.engine.set_volume(self.volume);
+                    if let Some(engine) = self.engine.as_ref() {
+                        engine.set_volume(self.volume);
+                    }
                     emit(
                         &self.app,
                         PlayerEvent::VolumeChanged {
@@ -309,15 +357,17 @@ impl PlayerActor {
                         },
                     );
                     self.emit_queue_changed();
-                    let _ = self
-                        .engine
-                        .seek(Duration::from_secs_f64(position_sec.max(0.0)));
+                    if let Some(engine) = self.engine.as_ref() {
+                        let _ = engine.seek(Duration::from_secs_f64(position_sec.max(0.0)));
+                    }
                     if let Some(np) = &mut self.now_playing {
                         np.max_position_reached = np.max_position_reached.max(position_sec);
                     }
                     // Since session is restored, we trigger play if it was loaded
                     if self.has_track_loaded {
-                        self.engine.play();
+                        if let Some(engine) = self.engine.as_ref() {
+                            engine.play();
+                        }
                         emit(&self.app, PlayerEvent::StateChanged { is_playing: true });
                     }
                     emit(
@@ -325,6 +375,7 @@ impl PlayerActor {
                         PlayerEvent::Position {
                             pos_sec: position_sec,
                             at_epoch_ms: now_epoch_ms(),
+                            is_playing: self.has_track_loaded,
                         },
                     );
                 }
@@ -343,28 +394,28 @@ impl PlayerActor {
     }
 
     fn load_current_into_engine(&mut self, autoplay: bool) {
-        let Some((track, source)) = self.queue.current().cloned() else {
-            self.has_track_loaded = false;
-            emit(&self.app, PlayerEvent::PlaybackEnded);
-            return;
-        };
+        // Bound the loop so a context full of broken/missing files cannot recurse
+        // into a stack overflow. One autoplay chain (20 tracks) is the max extension.
+        let max_attempts = self.queue.context_len() + self.queue.user_queue().len() + 20;
+        let mut attempts: usize = 0;
 
-        let conn = match self.conn() {
-            Some(c) => c,
-            None => {
-                emit(
-                    &self.app,
-                    PlayerEvent::Error {
-                        message: "failed to connect to database".into(),
-                        track_id: Some(track.id),
-                    },
-                );
+        loop {
+            attempts += 1;
+            if attempts > max_attempts.max(1) {
+                self.stop_playback();
                 return;
             }
-        };
-        let path = match db::get_track_path_by_id(&conn, track.id) {
-            Ok(p) => p,
-            _ => {
+
+            let Some((track, source)) = self.queue.current().cloned() else {
+                self.has_track_loaded = false;
+                emit(&self.app, PlayerEvent::PlaybackEnded);
+                return;
+            };
+
+            let Some(path) = (match self.conn() {
+                Some(conn) => db::get_track_path_by_id(&conn, track.id).ok(),
+                None => None,
+            }) else {
                 emit(
                     &self.app,
                     PlayerEvent::Error {
@@ -372,53 +423,80 @@ impl PlayerActor {
                         track_id: Some(track.id),
                     },
                 );
-                drop(conn);
-                self.handle_next(); // skip broken track
-                return;
-            }
-        };
-        drop(conn);
+                self.skip_current_track();
+                continue;
+            };
 
-        match self.engine.load(&path) {
-            Ok(()) => {
-                self.has_track_loaded = true;
-                self.engine.set_volume(self.volume);
-                self.now_playing = Some(NowPlaying {
-                    track_id: track.id,
-                    duration_sec: track.duration_seconds as f64,
-                    max_position_reached: 0.0,
-                    source: source.clone(),
-                    started_at: Instant::now(),
-                });
-                if autoplay {
-                    self.engine.play();
+            let load_result = {
+                let Some(engine) = self.engine.as_mut() else {
+                    emit(
+                        &self.app,
+                        PlayerEvent::Error {
+                            message: "audio engine unavailable (no output device)".into(),
+                            track_id: Some(track.id),
+                        },
+                    );
+                    self.stop_playback();
+                    return;
+                };
+                engine.load(&path)
+            };
+
+            match load_result {
+                Ok(()) => {
+                    self.has_track_loaded = true;
+                    self.autoplay_chain_failed = false;
+                    if let Some(engine) = self.engine.as_mut() {
+                        engine.set_volume(self.volume);
+                    }
+                    self.now_playing = Some(NowPlaying {
+                        track_id: track.id,
+                        duration_sec: track.duration_seconds as f64,
+                        max_position_reached: 0.0,
+                        source: source.clone(),
+                    });
+                    if autoplay {
+                        if let Some(engine) = self.engine.as_ref() {
+                            engine.play();
+                        }
+                    }
+                    emit(
+                        &self.app,
+                        PlayerEvent::TrackChanged {
+                            track: track.clone(),
+                            duration_sec: track.duration_seconds,
+                            source,
+                        },
+                    );
+                    emit(
+                        &self.app,
+                        PlayerEvent::StateChanged {
+                            is_playing: autoplay,
+                        },
+                    );
+                    self.emit_queue_changed();
+                    return;
                 }
-                emit(
-                    &self.app,
-                    PlayerEvent::TrackChanged {
-                        track: track.clone(),
-                        duration_sec: track.duration_seconds,
-                        source,
-                    },
-                );
-                emit(
-                    &self.app,
-                    PlayerEvent::StateChanged {
-                        is_playing: autoplay,
-                    },
-                );
-                self.emit_queue_changed();
+                Err(e) => {
+                    emit(
+                        &self.app,
+                        PlayerEvent::Error {
+                            message: format!("failed to load track: {e}"),
+                            track_id: Some(track.id),
+                        },
+                    );
+                    self.skip_current_track();
+                }
             }
-            Err(e) => {
-                emit(
-                    &self.app,
-                    PlayerEvent::Error {
-                        message: format!("failed to load track: {e}"),
-                        track_id: Some(track.id),
-                    },
-                );
-                self.handle_next();
-            }
+        }
+    }
+
+    /// Advance past a track that failed to load (broken file, missing path).
+    fn skip_current_track(&mut self) {
+        match self.queue.advance_next() {
+            NextOutcome::Track(_, _) => {}
+            NextOutcome::NeedsAutoplay => self.try_autoplay(),
+            NextOutcome::End => self.stop_playback(),
         }
     }
 
@@ -426,7 +504,7 @@ impl PlayerActor {
         if !self.has_track_loaded {
             return;
         }
-        if self.engine.is_paused() {
+        if self.engine.as_ref().is_none_or(|e| e.is_paused()) {
             self.handle_play();
         } else {
             self.handle_pause();
@@ -437,13 +515,17 @@ impl PlayerActor {
         if !self.has_track_loaded {
             return;
         }
-        self.engine.play();
-        let (pos, _) = self.engine.state();
+        let Some(engine) = self.engine.as_ref() else {
+            return;
+        };
+        engine.play();
+        let (pos, _) = engine.state();
         emit(
             &self.app,
             PlayerEvent::Position {
                 pos_sec: pos,
                 at_epoch_ms: now_epoch_ms(),
+                is_playing: true,
             },
         );
         emit(&self.app, PlayerEvent::StateChanged { is_playing: true });
@@ -453,13 +535,17 @@ impl PlayerActor {
         if !self.has_track_loaded {
             return;
         }
-        self.engine.pause();
-        let (pos, _) = self.engine.state();
+        let Some(engine) = self.engine.as_ref() else {
+            return;
+        };
+        engine.pause();
+        let (pos, _) = engine.state();
         emit(
             &self.app,
             PlayerEvent::Position {
                 pos_sec: pos,
                 at_epoch_ms: now_epoch_ms(),
+                is_playing: false,
             },
         );
         emit(&self.app, PlayerEvent::StateChanged { is_playing: false });
@@ -472,7 +558,9 @@ impl PlayerActor {
             // Unmute when volume is set explicitly while muted
             self.muted = false;
         }
-        self.engine.set_volume(self.volume);
+        if let Some(engine) = self.engine.as_ref() {
+            engine.set_volume(self.volume);
+        }
         emit(
             &self.app,
             PlayerEvent::VolumeChanged {
@@ -485,7 +573,6 @@ impl PlayerActor {
         if self.muted {
             self.muted = false;
             self.volume = self.volume_before_mute;
-            self.engine.set_volume(self.volume);
         } else {
             self.volume_before_mute = if self.volume > 0.0 {
                 self.volume
@@ -493,7 +580,9 @@ impl PlayerActor {
                 self.volume_before_mute
             };
             self.muted = true;
-            self.engine.set_volume(0.0);
+        }
+        if let Some(engine) = self.engine.as_ref() {
+            engine.set_volume(if self.muted { 0.0 } else { self.volume });
         }
         emit(
             &self.app,
@@ -510,7 +599,9 @@ impl PlayerActor {
             NextOutcome::NeedsAutoplay => self.try_autoplay(),
             NextOutcome::End => {
                 self.has_track_loaded = false;
-                self.engine.stop();
+                if let Some(engine) = self.engine.as_ref() {
+                    engine.stop();
+                }
                 emit(&self.app, PlayerEvent::StateChanged { is_playing: false });
                 emit(&self.app, PlayerEvent::PlaybackEnded);
             }
@@ -518,10 +609,13 @@ impl PlayerActor {
     }
 
     fn try_autoplay(&mut self) {
-        if !self.autoplay_enabled {
+        // Only ever attempt one autoplay chain per playback session: if the
+        // recommendations fail to load we stop instead of looping forever.
+        if !self.autoplay_enabled || self.autoplay_chain_failed {
             self.stop_playback();
             return;
         }
+        self.autoplay_chain_failed = true;
         let Some(last_id) = self.queue.last_played_id() else {
             self.stop_playback();
             return;
@@ -539,13 +633,11 @@ impl PlayerActor {
                 self.load_current_into_engine(true);
             }
             Ok(_) => {
-                eprintln!(
-                    "autoplay: get_similar_tracks returned 0 recommendations for track {last_id}"
-                );
+                tracing::warn!(track_id = last_id, "autoplay: no similar tracks found");
                 self.stop_playback();
             }
             Err(e) => {
-                eprintln!("autoplay: get_similar_tracks failed for track {last_id}: {e}");
+                tracing::warn!(error = %e, track_id = last_id, "autoplay: get_similar_tracks failed");
                 self.stop_playback();
             }
         }
@@ -553,7 +645,9 @@ impl PlayerActor {
 
     fn stop_playback(&mut self) {
         self.has_track_loaded = false;
-        self.engine.stop();
+        if let Some(engine) = self.engine.as_ref() {
+            engine.stop();
+        }
         emit(&self.app, PlayerEvent::StateChanged { is_playing: false });
         emit(&self.app, PlayerEvent::PlaybackEnded);
     }
@@ -565,20 +659,22 @@ impl PlayerActor {
     }
 
     fn handle_previous(&mut self) {
-        let elapsed = self
-            .now_playing
-            .as_ref()
-            .map(|n| n.started_at.elapsed().as_secs_f64())
-            .unwrap_or(0.0);
+        // Use the actual playback position rather than wall-clock time since
+        // starting the track: pausing for minutes must not make "previous"
+        // restart the current track.
+        let (pos, _) = self.engine.as_ref().map_or((0.0, true), |e| e.state());
         self.finalize_now_playing();
-        match self.queue.previous(elapsed) {
+        match self.queue.previous(pos) {
             PreviousOutcome::RestartCurrent => self.handle_seek(0.0),
             PreviousOutcome::Track(_, _) => self.load_current_into_engine(true),
         }
     }
 
     fn handle_seek(&mut self, pos_sec: f64) {
-        if let Err(e) = self.engine.seek(Duration::from_secs_f64(pos_sec.max(0.0))) {
+        let Some(engine) = self.engine.as_ref() else {
+            return;
+        };
+        if let Err(e) = engine.seek(Duration::from_secs_f64(pos_sec.max(0.0))) {
             emit(
                 &self.app,
                 PlayerEvent::Error {
@@ -591,11 +687,13 @@ impl PlayerActor {
         if let Some(np) = &mut self.now_playing {
             np.max_position_reached = np.max_position_reached.max(pos_sec);
         }
+        let (_, is_paused) = engine.state();
         emit(
             &self.app,
             PlayerEvent::Position {
                 pos_sec,
                 at_epoch_ms: now_epoch_ms(),
+                is_playing: !is_paused,
             },
         );
     }
@@ -604,13 +702,30 @@ impl PlayerActor {
         if !self.has_track_loaded {
             return;
         }
+        let Some(engine) = self.engine.as_ref() else {
+            return;
+        };
 
-        let (pos, is_finished) = self.engine.tick_status();
+        let (pos, is_finished) = engine.tick_status();
         if let Some(np) = &mut self.now_playing {
             np.max_position_reached = np.max_position_reached.max(pos);
         }
 
-        let track_ended = self.now_playing.as_ref().map_or(false, |np| {
+        // Periodically report position so OS media controls show live progress.
+        self.position_emit_counter = self.position_emit_counter.wrapping_add(1);
+        if self.position_emit_counter % POSITION_EMIT_EVERY_TICKS == 0 {
+            let (pos, is_paused) = engine.state();
+            emit(
+                &self.app,
+                PlayerEvent::Position {
+                    pos_sec: pos,
+                    at_epoch_ms: now_epoch_ms(),
+                    is_playing: !is_paused,
+                },
+            );
+        }
+
+        let track_ended = self.now_playing.as_ref().is_some_and(|np| {
             is_finished && np.max_position_reached >= np.duration_sec - 0.5
         });
 
@@ -627,7 +742,7 @@ impl PlayerActor {
                     if let Err(e) =
                         playback::record_playback(&conn, np.track_id, np.source.type_str(), pct)
                     {
-                        eprintln!("failed to record playback history: {e}");
+                        tracing::warn!(error = %e, "failed to record playback history");
                     }
                 }
             }
@@ -639,7 +754,7 @@ impl PlayerActor {
             Some((t, _)) => (Some(t.clone()), t.duration_seconds),
             None => (None, 0),
         };
-        let (pos, is_paused) = self.engine.state();
+        let (pos, is_paused) = self.engine.as_ref().map_or((0.0, true), |e| e.state());
         PlayerStateSnapshot {
             current_track: track,
             is_playing: self.has_track_loaded && !is_paused,
