@@ -4,7 +4,7 @@
     import { store } from "$lib/stores.svelte";
 
     let { data }: { data: Genre } = $props();
-    let trackCount = $derived(store.tracksByGenre(data.id).length);
+    let trackCount = $derived(data.track_count ?? store.tracksByGenre(data.id).length);
     let thumbnailSrc = $derived(data.thumbnail ? store.getImageSrc(data.thumbnail) : null);
 </script>
 

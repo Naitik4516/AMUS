@@ -1,13 +1,13 @@
 <script lang="ts">
-    import { X } from "@lucide/svelte";
-    import TrackListSmall from "./ui/TrackListSmall.svelte";
     import { player } from "$lib/player.svelte";
-    import { slide } from "svelte/transition";
-    import Button from "./ui/button/button.svelte";
+    import { ui } from "$lib/shortcut-handler.svelte";
     import type { Track } from "$lib/types";
-    import { VList } from "virtua/svelte";
+    import { X } from "@lucide/svelte";
     import { gsap } from "gsap";
     import { Flip } from "gsap/Flip";
+    import { VList } from "virtua/svelte";
+    import Button from "./ui/button/button.svelte";
+    import TrackListSmall from "./ui/TrackListSmall.svelte";
 
     gsap.registerPlugin(Flip);
 
@@ -22,7 +22,6 @@
     let dragStartY = $state(0);
     let dropIndex = $state<number | null>(null);
     let itemHeight = $state(68);
-    let containerEl = $state<HTMLDivElement | null>(null);
     let userVListWrapper = $state<HTMLElement | null>(null);
     let contextVListWrapper = $state<HTMLElement | null>(null);
 
@@ -63,10 +62,6 @@
     });
 
     $effect(() => {
-        // Read reactive dependencies
-        userQueue;
-        player.playNext;
-
         if (flipUserSnapshot && userVListWrapper) {
             const els = userVListWrapper.querySelectorAll("[data-flip-id]");
             if (els.length > 0) {
@@ -291,6 +286,20 @@
         destroyPreview();
     }
 
+    $effect(() => {
+        return () => {
+            if (autoScrollRafId !== null) {
+                cancelAnimationFrame(autoScrollRafId);
+                autoScrollRafId = null;
+            }
+            document.removeEventListener("pointermove", onDocumentMove);
+            document.removeEventListener("pointerup", onDocumentUp);
+            document.removeEventListener("pointercancel", onDocumentCancel);
+            document.removeEventListener("keydown", onDocumentKeyDown);
+            destroyPreview();
+        };
+    });
+
     function shouldShowIndicator(
         section: "user" | "context",
         index: number,
@@ -320,7 +329,7 @@
         {#snippet children(track, i)}
             <div
                 data-flip-id={track.queue_id ?? track.id}
-                class="relative drag-item-wrapper py-1"
+                class="relative drag-item-wrapper my-0.5"
             >
                 {#if shouldShowIndicator(section, i)}
                     <div
@@ -328,7 +337,7 @@
                     ></div>
                 {/if}
                 <div
-                    class="flex justify-between items-center rounded-xl h-16 px-1 gap-1 hover:bg-white/5 hover:shadow-lg transition-colors duration-300 drag-item group {isDragging &&
+                    class="flex justify-between items-center rounded-xl h-15 px-0.5 gap-1 hover:bg-white/5 hover:shadow-lg transition-colors duration-300 drag-item group {isDragging &&
                     dragSection === section &&
                     dragFromIndex === i
                         ? 'invisible'
@@ -352,8 +361,8 @@
                     />
                     <Button
                         variant="ghost"
-                        size="icon"
-                        class="text-gray-400 hover:text-red-600 group-hover:opacity-100 opacity-0"
+                        size="icon-sm"
+                        class="text-gray-400 hover:text-red-400 group-hover:opacity-100 opacity-0"
                         onclick={() => {
                             const id =
                                 section === "user" ? track.queue_id! : track.id;
@@ -363,7 +372,7 @@
                             ? "Remove from Queue"
                             : "Remove from Play Next"}
                     >
-                        <X size={28} />
+                        <X size={20} />
                     </Button>
                 </div>
             </div>
@@ -371,9 +380,12 @@
     </VList>
 {/snippet}
 
-<div class="flex flex-col" bind:this={containerEl}>
+<div class="flex flex-col">
     <Button
-        onclick={() => (showQueue = false)}
+        onclick={() => {
+            showQueue = false;
+            ui.queueVisible = false;
+        }}
         class="text-gray-300 hover:text-white absolute top-2 right-2 "
         variant="ghost"
         size="icon"

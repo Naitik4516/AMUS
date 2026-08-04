@@ -7,10 +7,13 @@
     import { loadSession, clearSession } from "$lib/session.svelte";
     import { store } from "$lib/stores.svelte";
     import Odometer from "$lib/animations/odometer.svelte";
+    import type { Track, TrackDetails } from "$lib/types";
 
     let totalTracks = $derived(store.tracks.length);
     let totalArtists = $derived(store.artists.length);
     let totalAlbums = $derived(store.albums.length);
+
+    let resuming = $state(false);
 
     async function playAllTracks() {
         if (store.tracks.length > 0) {
@@ -18,9 +21,17 @@
         }
     }
 
-    import type { Track, TrackDetails } from "$lib/types";
-
     async function resumeSession() {
+        if (resuming) return;
+        resuming = true;
+        try {
+            await resumeSessionInner();
+        } finally {
+            resuming = false;
+        }
+    }
+
+    async function resumeSessionInner() {
         const session = await loadSession();
         if (!session) {
             await resumeFallback();

@@ -13,8 +13,10 @@
         title?: string;
         message?: string;
         confirmLabel?: string;
-        onConfirm?: () => void;
+        onConfirm?: () => void | Promise<void>;
     } = $props();
+
+    let confirming = $state(false);
 </script>
 
 <Dialog bind:open {title}>
@@ -24,9 +26,15 @@
         <Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
         <Button
             variant="destructive"
-            onclick={() => {
-                onConfirm();
-                open = false;
+            disabled={confirming}
+            onclick={async () => {
+                confirming = true;
+                try {
+                    await onConfirm();
+                } finally {
+                    confirming = false;
+                    open = false;
+                }
             }}
         >
             {confirmLabel}

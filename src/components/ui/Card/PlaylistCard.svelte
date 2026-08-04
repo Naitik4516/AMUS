@@ -1,7 +1,7 @@
 <script lang="ts">
     import { Play } from "@lucide/svelte";
     import PlaylistCoverArt from "$components/ui/PlaylistCoverArt.svelte";
-    import PlaylistCardMenu from "$components/ui/Menu/PlaylistCardMenu.svelte";
+    import CollectionMenu from "$components/ui/Menu/CollectionMenu.svelte";
     import EditPlaylistDialog from "$components/ui/Dialog/EditPlaylistDialog.svelte";
     import ConfirmDialog from "$components/ui/Dialog/ConfirmDialog.svelte";
     import { store } from "$lib/stores.svelte";
@@ -14,9 +14,11 @@
 
     function handleContextMenu(e: MouseEvent) {
         e.preventDefault();
-        openContextMenu(PlaylistCardMenu, {
+        openContextMenu(CollectionMenu, {
             position: { type: "coordinates", x: e.clientX, y: e.clientY },
-            playlist: data,
+            type: "playlist",
+            id: data.id,
+            name: data.name,
             onEdit: () => {
                 editDialogOpen = true;
             },
@@ -36,9 +38,9 @@
 </script>
 
 <a
-    href="/library/playlists/{data.id}?data.name={data.name}"
+    href="/library/playlists/{data.id}"
     oncontextmenu={handleContextMenu}
-    class="group flex flex-col gap-3 p-6 rounded-3xl bg-card/80 transition-all duration-300 ring-2 ring-zinc-800/70 hover:ring-3 w-64 h-auto shadow-xl hover:shadow-card"
+    class="group flex flex-col gap-3 p-5 rounded-3xl bg-card/50 transition-all duration-300 ring-1 ring-zinc-800/50 hover:ring-2 w-64 h-auto shadow-xl"
 >
     <div
         class="aspect-square w-full rounded-3xl overflow-hidden relative inset-shadow-sm"
@@ -46,7 +48,7 @@
         <PlaylistCoverArt playlist={data} />
 
         <div
-            class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+            class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
         >
             <div
                 class="bg-accent text-black p-4 rounded-full shadow-xl transform translate-y-4 group-hover:translate-y-0 transition-transform"
@@ -57,7 +59,7 @@
     </div>
 
     <div class="flex flex-col mt-2">
-        <h3 class="font-bold font-satoshi truncate text-white text-lg">
+        <h3 class="font-bold font-satoshi truncate text-white text-xl">
             {data.name}
         </h3>
     </div>

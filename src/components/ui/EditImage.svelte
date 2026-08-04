@@ -1,11 +1,13 @@
 <script lang="ts">
     import { Pen, X } from "@lucide/svelte";
     import Button from "./button/button.svelte";
+    import { cn } from "$lib/utils.js";
 
     interface EditImageProps {
         onclick: () => void;
         removeCover?: () => void;
         class?: string;
+        closeButtonClass?: string;
         children: () => any;
     }
 
@@ -13,6 +15,7 @@
         onclick,
         removeCover,
         class: className,
+        closeButtonClass,
         children,
     }: EditImageProps = $props();
 </script>
@@ -31,9 +34,9 @@
                 variant="ghost"
                 size="icon-sm"
                 onclick={removeCover}
-                class="absolute top-1 right-1"
+                class={cn("absolute top-1 right-1", closeButtonClass)}
             >
-                <X />
+                <X size={14} />
             </Button>
         {/if}
     </div>

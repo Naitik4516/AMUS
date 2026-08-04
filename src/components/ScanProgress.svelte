@@ -1,6 +1,7 @@
 <script lang="ts">
     import { listen } from "@tauri-apps/api/event";
     import { invalidateAll } from "$app/navigation";
+    import { toast } from "svelte-sonner";
 
     interface ProgressEvent {
         current: number;
@@ -8,23 +9,32 @@
         message: string;
     }
 
+    interface FetchWarning {
+        level: "warn" | "error";
+        message: string;
+    }
+
     let scanProgress = $state({ current: 0, total: 0, message: "" });
     let fetchProgress = $state({ current: 0, total: 0, message: "" });
     let showScan = $state(false);
     let showFetch = $state(false);
-    let scanTimeout: ReturnType<typeof setTimeout>;
+    let scanTimeout: ReturnType<typeof setTimeout> | null = null;
+    let fetchTimeout: ReturnType<typeof setTimeout> | null = null;
 
     $effect(() => {
         let active = true;
 
         const unlistenScan = listen<ProgressEvent>("scan-progress", (event) => {
             if (!active) return;
+            if (scanTimeout) {
+                clearTimeout(scanTimeout);
+                scanTimeout = null;
+            }
             scanProgress = event.payload;
             showScan = true;
 
             if (scanProgress.current === 100 && scanProgress.total === 100) {
                 invalidateAll();
-                clearTimeout(scanTimeout);
                 scanTimeout = setTimeout(() => {
                     showScan = false;
                     scanProgress = { current: 0, total: 0, message: "" };
@@ -36,6 +46,10 @@
             "fetch-progress",
             (event) => {
                 if (!active) return;
+                if (fetchTimeout) {
+                    clearTimeout(fetchTimeout);
+                    fetchTimeout = null;
+                }
                 fetchProgress = event.payload;
                 showFetch = true;
 
@@ -43,7 +57,7 @@
                     fetchProgress.current === fetchProgress.total &&
                     fetchProgress.total > 0
                 ) {
-                    setTimeout(() => {
+                    fetchTimeout = setTimeout(() => {
                         showFetch = false;
                         fetchProgress = { current: 0, total: 0, message: "" };
                     }, 3000);
@@ -56,11 +70,33 @@
             invalidateAll();
         });
 
+        const unlistenFetchWarning = listen<FetchWarning>(
+            "artist-fetch-warning",
+            (event) => {
+                if (!active) return;
+                const { level, message } = event.payload;
+                if (level === "error") {
+                    toast.error(message);
+                } else {
+                    toast(message);
+                }
+            },
+        );
+
         return () => {
             active = false;
+            if (scanTimeout) {
+                clearTimeout(scanTimeout);
+                scanTimeout = null;
+            }
+            if (fetchTimeout) {
+                clearTimeout(fetchTimeout);
+                fetchTimeout = null;
+            }
             unlistenScan.then((fn) => fn());
             unlistenFetch.then((fn) => fn());
             unlistenUpdate.then((fn) => fn());
+            unlistenFetchWarning.then((fn) => fn());
         };
     });
 

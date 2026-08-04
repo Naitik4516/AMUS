@@ -3,16 +3,22 @@
     import Button from "./ui/button/button.svelte";
     import { X } from "@lucide/svelte";
 
-    let { open = $bindable(false), title, children, Footer } = $props();
+    let {
+        open = $bindable(false),
+        title,
+        children,
+        Footer,
+        maxWidth = "lg",
+    } = $props();
 </script>
 
 {#if open}
     <div
-        class="fixed inset-0 z-10 flex items-center justify-center p-4 bg-black/20"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30"
         transition:blur={{ duration: 300 }}
     >
         <div
-            class="bg-card border rounded-3xl p-6 w-full max-w-lg shadow-2xl flex flex-col"
+            class="bg-card/80 backdrop-blur-xl border rounded-3xl p-6 w-full max-w-{maxWidth} shadow-2xl flex flex-col"
             transition:fly={{ y: 600, duration: 300 }}
         >
             <div class="flex justify-between mb-6">

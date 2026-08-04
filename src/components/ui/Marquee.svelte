@@ -70,7 +70,7 @@
     role="presentation"
     class="w-full mask-x-from-95%"
 >
-    <span bind:this={text} class="inline-block px-2" role="marquee">
+    <span bind:this={text} class="inline-block px-2" aria-hidden="true">
         {@render children()}
     </span>
 </div>

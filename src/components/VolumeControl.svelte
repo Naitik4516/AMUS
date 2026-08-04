@@ -15,7 +15,7 @@
     }}
 >
     <button
-        class="text-gray-400 hover:text-white transition-colors"
+        class="text-gray-300 hover:text-white transition-colors"
         onclick={() => player.toggleMute()}
         aria-label="Toggle mute"
     >

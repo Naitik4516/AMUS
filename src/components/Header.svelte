@@ -32,13 +32,19 @@
 
     onMount(() => {
         checkMaximize();
+        let active = true;
         let unlisten: UnlistenFn | undefined;
         listen<boolean>('window-maximize-changed', (event) => {
            isMaximized = event.payload;
         }).then((fn) => {
-            unlisten = fn;
+            if (active) {
+                unlisten = fn;
+            } else {
+                fn();
+            }
         });
         return () => {
+            active = false;
             unlisten?.();
         };
     });
