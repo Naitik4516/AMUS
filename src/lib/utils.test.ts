@@ -7,6 +7,9 @@ import {
   formatBytes,
   formatPercentage,
   sortTracks,
+  sortCollectionItems,
+  toLocalDateKey,
+  formatDateShort,
 } from "./utils";
 
 describe("cn", () => {
@@ -180,5 +183,94 @@ describe("sortTracks", () => {
     const original = [...tracks];
     sortTracks(tracks, "title");
     expect(tracks).toEqual(original);
+  });
+});
+
+describe("sortCollectionItems", () => {
+  const items = [
+    {
+      id: 1,
+      name: "Beta",
+      added_at: "2024-01-01T00:00:00Z",
+      total_plays: 5,
+      track_count: 10,
+      year: 2001,
+    },
+    {
+      id: 2,
+      name: "alpha",
+      added_at: "2024-06-01T00:00:00Z",
+      total_plays: 2,
+      track_count: 3,
+      year: undefined,
+    },
+    {
+      id: 3,
+      name: "Gamma",
+      added_at: undefined,
+      total_plays: undefined,
+      track_count: 0,
+      year: 2000,
+    },
+  ];
+
+  it("sorts by name case-insensitively ascending", () => {
+    const sorted = sortCollectionItems(items, "name", "asc");
+    expect(sorted.map((i) => i.id)).toEqual([2, 1, 3]);
+  });
+
+  it("sorts by name descending", () => {
+    const sorted = sortCollectionItems(items, "name", "desc");
+    expect(sorted.map((i) => i.id)).toEqual([3, 1, 2]);
+  });
+
+  it("sorts by date added ascending", () => {
+    const sorted = sortCollectionItems(items, "added_at", "asc");
+    expect(sorted.map((i) => i.id)).toEqual([1, 2, 3]);
+  });
+
+  it("puts missing dates last in both directions", () => {
+    const asc = sortCollectionItems(items, "added_at", "asc");
+    expect(asc[2].id).toBe(3);
+    const desc = sortCollectionItems(items, "added_at", "desc");
+    expect(desc[2].id).toBe(3);
+  });
+
+  it("sorts by most played descending", () => {
+    const sorted = sortCollectionItems(items, "total_plays", "desc");
+    expect(sorted.map((i) => i.id)).toEqual([1, 2, 3]);
+  });
+
+  it("sorts by track count ascending", () => {
+    const sorted = sortCollectionItems(items, "track_count", "asc");
+    expect(sorted.map((i) => i.id)).toEqual([3, 2, 1]);
+  });
+
+  it("sorts by year with missing years last", () => {
+    const sorted = sortCollectionItems(items, "year", "asc");
+    expect(sorted.map((i) => i.id)).toEqual([3, 1, 2]);
+  });
+
+  it("does not mutate the original array", () => {
+    const original = [...items];
+    sortCollectionItems(items, "name", "desc");
+    expect(items).toEqual(original);
+  });
+});
+
+describe("toLocalDateKey", () => {
+  it("formats a date as local YYYY-MM-DD", () => {
+    expect(toLocalDateKey(new Date(2024, 0, 5))).toBe("2024-01-05");
+  });
+
+  it("zero-pads month and day", () => {
+    expect(toLocalDateKey(new Date(2024, 11, 31))).toBe("2024-12-31");
+  });
+});
+
+describe("formatDateShort", () => {
+  it("returns a human readable short date", () => {
+    const out = formatDateShort("2024-01-15T10:30:00Z");
+    expect(out).toMatch(/2024|Jan/);
   });
 });
