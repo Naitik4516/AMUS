@@ -290,22 +290,31 @@ describe("LibraryStore async operations", () => {
       expect(store.getImageSrc("art.jpg", "cover")).toBeNull();
     });
 
-    it("passes correct cover path to convertFileSrc", () => {
+    it("resolves cover urls from the app data dir", () => {
       store.appDataDirPath = "/app/data";
+      const url = store.getImageSrc("art.jpg", "cover");
+      expect(url).toBe("asset://localhost/asset.png/covers/art.jpg");
+      expect(vi.mocked(convertFileSrc)).toHaveBeenCalledWith("/app/data");
+    });
+
+    it("resolves artist urls from the app data dir", () => {
+      store.appDataDirPath = "/app/data";
+      const url = store.getImageSrc("pic.jpg", "artist");
+      expect(url).toBe("asset://localhost/asset.png/artists/pic.jpg");
+    });
+
+    it("resolves banner urls from the app data dir", () => {
+      store.appDataDirPath = "/app/data";
+      const url = store.getImageSrc("banner.jpg", "artist");
+      expect(url).toBe("asset://localhost/asset.png/artists/banner.jpg");
+    });
+
+    it("recomputes base url when app data dir changes", () => {
+      store.appDataDirPath = "/first/dir";
       store.getImageSrc("art.jpg", "cover");
-      expect(vi.mocked(convertFileSrc)).toHaveBeenCalledWith("/app/data/covers/art.jpg");
-    });
-
-    it("passes correct artist path to convertFileSrc", () => {
-      store.appDataDirPath = "/app/data";
-      store.getImageSrc("pic.jpg", "artist");
-      expect(vi.mocked(convertFileSrc)).toHaveBeenCalledWith("/app/data/artists/pic.jpg");
-    });
-
-    it("passes correct banner path to convertFileSrc", () => {
-      store.appDataDirPath = "/app/data";
-      store.getImageSrc("banner.jpg", "artist");
-      expect(vi.mocked(convertFileSrc)).toHaveBeenCalledWith("/app/data/artists/banner.jpg");
+      store.appDataDirPath = "/second/dir";
+      store.getImageSrc("art.jpg", "cover");
+      expect(vi.mocked(convertFileSrc)).toHaveBeenLastCalledWith("/second/dir");
     });
   });
 
