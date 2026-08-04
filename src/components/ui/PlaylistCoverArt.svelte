@@ -28,7 +28,7 @@
 </script>
 
 {#snippet fallBackPlaylistCoverArt()}
-    <div class="w-full h-full bg-gray-300/5 flex items-center justify-center">
+    <div class="w-full h-full bg-zinc-300/5 flex items-center justify-center">
         <ListMusic class="text-slate-400 size-1/2" />
     </div>
 {/snippet}

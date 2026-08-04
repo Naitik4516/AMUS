@@ -2,10 +2,17 @@
     import { Music2 } from "@lucide/svelte";
     import { store } from "$lib/stores.svelte";
 
-    let { cover_art, hovering, class: className = "", ...props } = $props();
+    let {
+        cover_art,
+        hovering,
+        class: className = "",
+        ...props
+    }: {
+        cover_art?: string;
+        hovering?: boolean;
+        class?: string;
+    } = $props();
     let loading = $state(true);
-
-    $inspect("Loading state", loading);
 </script>
 
 <div class="relative w-full h-full overflow-hidden {className}">

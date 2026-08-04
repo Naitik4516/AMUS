@@ -4,7 +4,6 @@
     import { store } from "$lib/stores.svelte";
     import { ImagePlus, LoaderCircle, User } from "@lucide/svelte";
     import Dialog from "$components/Dialog.svelte";
-    import { onMount } from "svelte";
     import Input from "../input/input.svelte";
     import EditImage from "../EditImage.svelte";
 
@@ -27,10 +26,12 @@
     let editBannerImage = $state<string | null>(null);
     let saving = $state(false);
 
-    onMount(() => {
-        editName = name;
-        editProfileImage = profileImage;
-        editBannerImage = bannerImage;
+    $effect(() => {
+        if (open) {
+            editName = name;
+            editProfileImage = profileImage;
+            editBannerImage = bannerImage;
+        }
     });
 
     async function pickProfile() {
@@ -73,8 +74,8 @@
     }
 </script>
 
-<Dialog bind:open title="Edit Artist">
-    <div class="flex flex-col gap-5 mb-5 font-satoshi">
+<Dialog bind:open title="Edit Artist" maxWidth="xl">
+    <div class="flex flex-col gap-5 mb-8 font-satoshi">
         <div class="flex flex-col gap-2">
             <Input
                 id="artist-name"
@@ -84,12 +85,13 @@
             />
         </div>
 
-        <div class="flex justify-around items-center mx-5">
-            <div class="flex flex-col gap-2 justify-between h-46">
+        <div class="flex justify-around  mx-5 h-46">
+            <div class="flex flex-col gap-2 h-full justify-between">
                 <EditImage
                     onclick={pickProfile}
                     removeCover={removeProfile}
-                    class="h-30 w-30 shrink-0 rounded-full shadow-lg overflow-hidden mt-5"
+                    class="h-32 w-32 shrink-0 rounded-full shadow-lg overflow-hidden border"
+                    closeButtonClass="top-2 right-2"
                 >
                     {#if editProfileImage || profileImage}
                         <img
@@ -103,9 +105,9 @@
                         />
                     {:else}
                         <div
-                            class="bg-zinc-800 flex items-center justify-center text-zinc-500"
+                            class="bg-zinc-800 flex items-center justify-center text-zinc-300 h-full"
                         >
-                            <User size={20} />
+                            <User size={32} strokeWidth={3} />
                         </div>
                     {/if}
                 </EditImage>
@@ -115,11 +117,13 @@
                 >
             </div>
 
-            <div class="flex flex-col gap-2 h-46 justify-between items-center">
+            <div
+                class="flex flex-col gap-2 h-full max-w-1/2 justify-between items-center"
+            >
                 <EditImage
                     onclick={pickBanner}
                     removeCover={removeBanner}
-                    class="h-38 max-w-2/3 ml-auto  shrink-0 rounded-xl shadow-lg overflow-hidden "
+                    class="h-auto shrink-0 rounded-2xl shadow-lg overflow-hidden "
                 >
                     {#if editBannerImage || bannerImage}
                         <img
@@ -129,13 +133,13 @@
                             )}
                             alt="Banner preview"
                             id="banner-image"
-                            class=""
+                            class="object-cover h-full"
                         />
                     {:else}
                         <div
-                            class="w-24 bg-zinc-800 flex items-center justify-center text-zinc-500"
+                            class="w-50 h-full bg-zinc-800 flex items-center justify-center text-zinc-300"
                         >
-                            <ImagePlus size={20} />
+                            <ImagePlus size={40} strokeWidth={2.5} />
                         </div>
                     {/if}
                 </EditImage>
