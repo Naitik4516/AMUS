@@ -44,6 +44,14 @@
         Card={GenreCard}
         fallBack={Fallback}
         cellHeight={370}
+        sortKey="genres"
+        sortOptions={[
+            { value: "name", label: "Name" },
+            { value: "added_at", label: "Date Added" },
+            { value: "last_played_at", label: "Recently Played" },
+            { value: "total_plays", label: "Most Played" },
+            { value: "track_count", label: "Track Count" },
+        ]}
     />
 </div>
 

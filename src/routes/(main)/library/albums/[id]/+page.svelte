@@ -3,7 +3,7 @@
     import Artist from "$components/icons/Artist.svelte";
     import TrackList from "$components/ui/TrackList.svelte";
     import { store } from "$lib/stores.svelte";
-    import { formatDuration } from "$lib/utils";
+    import { formatDuration, sumDuration } from "$lib/utils";
     import { Disc } from "@lucide/svelte";
     import { getSwatchesSync, type Color } from "colorthief";
     import type { Attachment } from "svelte/attachments";
@@ -21,9 +21,7 @@
     let color1 = $state<Color>();
     let color2 = $state<Color>();
 
-    let totalDuration = $derived(
-        tracks.reduce((sum, track) => sum + track.duration_seconds, 0),
-    );
+    let totalDuration = $derived(sumDuration(tracks));
 
     const CoverImage: Attachment = (e) => {
         e.addEventListener("load", () => {
