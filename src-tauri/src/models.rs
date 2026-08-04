@@ -55,26 +55,38 @@ pub struct Track {
     pub queue_id: Option<i64>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Playlist {
     pub id: i64,
     pub name: String,
     pub cover_art: Option<String>,
+    pub track_count: i64,
+    pub total_plays: i64,
+    pub last_played_at: Option<DateTime<Utc>>,
+    pub added_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct Artist {
     pub id: i64,
     pub name: String,
     pub profile_image: Option<String>,
     pub banner_image: Option<String>,
+    pub track_count: i64,
+    pub total_plays: i64,
+    pub last_played_at: Option<DateTime<Utc>>,
+    pub added_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct Genre {
     pub id: i64,
     pub name: String,
     pub thumbnail: Option<String>,
+    pub track_count: i64,
+    pub total_plays: i64,
+    pub last_played_at: Option<DateTime<Utc>>,
+    pub added_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -84,13 +96,17 @@ pub struct Lyrics {
     pub source: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub struct Album {
     pub id: i64,
     pub name: String,
     pub cover_art: Option<String>,
     pub album_artist: Option<Vec<Artist>>,
     pub year: Option<u32>,
+    pub track_count: i64,
+    pub total_plays: i64,
+    pub last_played_at: Option<DateTime<Utc>>,
+    pub added_at: Option<DateTime<Utc>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +127,11 @@ pub struct StatsOverview {
     pub format_distribution: Vec<FormatStat>,
     pub pct_library_played: f64,
     pub unplayed_tracks: i64,
+    pub avg_bitrate_kbps: Option<f64>,
+    pub avg_sample_rate: Option<f64>,
+    pub avg_bit_depth: Option<f64>,
+    pub avg_completion_pct: Option<f64>,
+    pub skip_rate: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -119,6 +140,9 @@ pub struct FormatStat {
     pub count: i64,
     pub percentage: f64,
     pub total_bytes: i64,
+    pub avg_bitrate_kbps: Option<f64>,
+    pub avg_sample_rate: Option<f64>,
+    pub avg_bit_depth: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -140,6 +164,14 @@ pub struct TopArtist {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TopAlbum {
     pub album: Album,
+    pub play_count: i64,
+    pub total_listening_time_sec: i64,
+    pub tracks_played: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TopGenre {
+    pub genre: Genre,
     pub play_count: i64,
     pub total_listening_time_sec: i64,
     pub tracks_played: i64,

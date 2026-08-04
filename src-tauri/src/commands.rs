@@ -1,5 +1,5 @@
 use crate::MiniPlayerPinned;
-use crate::db::{self, DataAge, DbPool, SortBy, Timeframe};
+use crate::db::{self, DataAge, DbPool, SortBy, Timeframe, TopSort};
 use crate::error::{Error, Result};
 use crate::models::*;
 use crate::player::actor::{PlayerCommand, PlayerStateSnapshot};
@@ -7,7 +7,6 @@ use crate::player::source::{PlaybackSource, RepeatMode};
 use crate::scanner;
 use crate::startup::StartupStatus;
 use crate::sync::SyncManager;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,8 +14,6 @@ use tauri::Emitter;
 use tauri::Manager;
 use tauri::State;
 use tokio::sync::oneshot;
-
-static SCAN_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 pub struct PlayerHandle(pub SyncSender<PlayerCommand>);
 
@@ -49,6 +46,7 @@ pub async fn remove_source(
     let mut conn = pool.get().map_err(Error::Pool)?;
     db::remove_source_dir(&mut conn, &path)?;
     let _ = sync_manager.refresh_watcher(&app_handle);
+    let _ = app_handle.emit("library-updated", ());
     Ok(())
 }
 
@@ -64,19 +62,25 @@ pub async fn refresh_watcher(
 }
 
 #[tauri::command]
-pub async fn scan_library(app_handle: tauri::AppHandle, pool: State<'_, DbPool>) -> Result<()> {
-    if SCAN_IN_PROGRESS.swap(true, Ordering::AcqRel) {
-        return Err(Error::Unknown("scan already in progress".into()));
-    }
+pub async fn scan_library(
+    app_handle: tauri::AppHandle,
+    pool: State<'_, DbPool>,
+    sync_manager: State<'_, SyncManager>,
+) -> Result<()> {
+    let sync_manager = sync_manager.inner().clone();
     let pool = pool.inner().clone();
-    let scan_result: Result<()> = tokio::task::spawn_blocking(move || {
+    let scan_result = tokio::task::spawn_blocking(move || {
+        // Acquire the scan guard on the blocking thread so the (!Send) mutex
+        // guard never crosses an await point.
+        let _guard = sync_manager.try_start_scan().map_err(Error::Unknown)?;
         let mut conn = pool.get().map_err(Error::Pool)?;
         scanner::scan_directories(&mut conn, &app_handle)
     })
-    .await
-    .map_err(|e| Error::Unknown(e.to_string()))?;
-    SCAN_IN_PROGRESS.store(false, Ordering::Release);
-    scan_result
+    .await;
+    match scan_result {
+        Ok(inner) => inner,
+        Err(join_err) => Err(Error::Unknown(format!("scan task panicked: {join_err}"))),
+    }
 }
 
 #[tauri::command]
@@ -310,7 +314,6 @@ pub fn remove_from_queue(
     queue_id: i64,
     queue_type: String,
 ) -> Result<()> {
-    println!("Removing from queue: {} (type: {})", queue_id, queue_type);
     match queue_type.as_str() {
         "user" => send(&handle, PlayerCommand::RemoveFromQueue(queue_id)),
         "context" => send(&handle, PlayerCommand::RemoveFromContext(queue_id)),
@@ -477,30 +480,44 @@ pub async fn get_stats_overview(
 pub async fn get_top_tracks_with_stats(
     timeframe: Timeframe,
     limit: usize,
+    sort_by: Option<TopSort>,
     pool: State<'_, DbPool>,
 ) -> Result<Vec<TopTrack>> {
     let conn = pool.get().map_err(Error::Pool)?;
-    db::get_top_tracks_with_stats(&conn, timeframe, limit)
+    db::get_top_tracks_with_stats(&conn, timeframe, limit, sort_by.unwrap_or_default())
 }
 
 #[tauri::command]
 pub async fn get_top_artists_with_stats(
     timeframe: Timeframe,
     limit: usize,
+    sort_by: Option<TopSort>,
     pool: State<'_, DbPool>,
 ) -> Result<Vec<TopArtist>> {
     let conn = pool.get().map_err(Error::Pool)?;
-    db::get_top_artists_with_stats(&conn, timeframe, limit)
+    db::get_top_artists_with_stats(&conn, timeframe, limit, sort_by.unwrap_or_default())
 }
 
 #[tauri::command]
 pub async fn get_top_albums_with_stats(
     timeframe: Timeframe,
     limit: usize,
+    sort_by: Option<TopSort>,
     pool: State<'_, DbPool>,
 ) -> Result<Vec<TopAlbum>> {
     let conn = pool.get().map_err(Error::Pool)?;
-    db::get_top_albums_with_stats(&conn, timeframe, limit)
+    db::get_top_albums_with_stats(&conn, timeframe, limit, sort_by.unwrap_or_default())
+}
+
+#[tauri::command]
+pub async fn get_top_genres_with_stats(
+    timeframe: Timeframe,
+    limit: usize,
+    sort_by: Option<TopSort>,
+    pool: State<'_, DbPool>,
+) -> Result<Vec<TopGenre>> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::get_top_genres_with_stats(&conn, timeframe, limit, sort_by.unwrap_or_default())
 }
 
 #[tauri::command]
@@ -519,12 +536,9 @@ pub async fn get_streak_data(timeframe: Timeframe, pool: State<'_, DbPool>) -> R
 }
 
 #[tauri::command]
-pub async fn get_library_growth(
-    timeframe: Timeframe,
-    pool: State<'_, DbPool>,
-) -> Result<Vec<GrowthPoint>> {
+pub async fn get_library_growth(pool: State<'_, DbPool>) -> Result<Vec<GrowthPoint>> {
     let conn = pool.get().map_err(Error::Pool)?;
-    db::get_library_growth(&conn, timeframe)
+    db::get_library_growth(&conn)
 }
 
 #[tauri::command]
@@ -743,20 +757,7 @@ pub async fn fetch_lyrics_from_lrclib(
 #[tauri::command]
 pub async fn get_genres(pool: State<'_, DbPool>) -> Result<Vec<Genre>> {
     let conn = pool.get().map_err(Error::Pool)?;
-    let mut stmt = conn
-        .prepare("SELECT id, name, thumbnail FROM genre ORDER BY name COLLATE NOCASE ASC")
-        .map_err(Error::Db)?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok(Genre {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                thumbnail: row.get(2)?,
-            })
-        })
-        .map_err(Error::Db)?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::Db)
+    db::get_all_genres(&conn)
 }
 
 #[tauri::command]
@@ -775,7 +776,7 @@ pub async fn create_genre(
 ) -> Result<Genre> {
     let conn = pool.get().map_err(Error::Pool)?;
     let id = db::get_or_create_genre(&conn, &name)?;
-    Ok(Genre { id, name, thumbnail: None })
+    Ok(Genre { id, name, thumbnail: None, ..Default::default() })
 }
 
 #[tauri::command]
@@ -787,6 +788,12 @@ pub async fn update_genre(
 ) -> Result<Genre> {
     let conn = pool.get().map_err(Error::Pool)?;
     db::update_genre(&conn, id, &name, thumbnail.as_deref())
+}
+
+#[tauri::command]
+pub async fn delete_genre(genre_id: i64, pool: State<'_, DbPool>) -> Result<()> {
+    let conn = pool.get().map_err(Error::Pool)?;
+    db::delete_genre(&conn, genre_id)
 }
 
 #[tauri::command]
@@ -816,7 +823,8 @@ pub async fn set_track_album(
     pool: State<'_, DbPool>,
 ) -> Result<()> {
     let conn = pool.get().map_err(Error::Pool)?;
-    db::set_track_album(&conn, track_id, album_id, 1)
+    let track_number = db::get_track_number(&conn, track_id)?.unwrap_or(1);
+    db::set_track_album(&conn, track_id, album_id, track_number)
 }
 
 #[tauri::command]
@@ -836,6 +844,12 @@ pub fn get_startup_status(startup: State<'_, Arc<StartupStatus>>) -> Option<Stri
 
 #[tauri::command]
 pub async fn reset_app_data(app_handle: tauri::AppHandle) -> std::result::Result<(), String> {
+    // Stop the player actor first so no DB connections remain open while the
+    // database files are removed (deleting an open file silently fails on Windows).
+    if let Some(handle) = app_handle.try_state::<PlayerHandle>() {
+        let _ = handle.0.send(PlayerCommand::Shutdown);
+    }
+
     let app_dir = app_handle
         .path()
         .app_data_dir()
@@ -847,7 +861,7 @@ pub async fn reset_app_data(app_handle: tauri::AppHandle) -> std::result::Result
         let _ = std::fs::remove_file(app_dir.join("music.db-shm"));
         let _ = std::fs::remove_file(app_dir.join("session.json"));
         let _ = std::fs::remove_file(app_dir.join("settings.json"));
-        for dir in &["artists", "artist_banner", "cover_art"] {
+        for dir in &["artists", "covers"] {
             let _ = std::fs::remove_dir_all(app_dir.join(dir));
         }
     })

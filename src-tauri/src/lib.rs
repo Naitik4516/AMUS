@@ -3,6 +3,7 @@ pub mod cli;
 pub mod commands;
 pub mod db;
 pub mod error;
+pub mod logging;
 pub mod lyrics_fetcher;
 pub mod media_controls;
 pub mod models;
@@ -18,31 +19,31 @@ use r2d2_sqlite::SqliteConnectionManager;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use sync::SyncManager;
+use tauri::{Emitter, Manager, WindowEvent};
+use tauri_plugin_window_state::{StateFlags, WindowExt};
+
+#[cfg(not(target_os = "linux"))]
 use tauri::{
-    Emitter, Manager, WindowEvent,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
-// use tauri_plugin_window_state::{AppHandleExt, StateFlags, WindowExt};
 
 pub(crate) struct MiniPlayerPinned(AtomicBool);
 
-fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+#[cfg(not(target_os = "linux"))]
+fn build_tray_menu(
+    app: &tauri::AppHandle,
+) -> tauri::Result<(Menu<tauri::Wry>, MenuItem<tauri::Wry>, MenuItem<tauri::Wry>)> {
     let play_pause = MenuItem::with_id(app, "play_pause", "Play/Pause", true, None::<&str>)?;
     let previous = MenuItem::with_id(app, "previous", "Previous", true, None::<&str>)?;
     let next = MenuItem::with_id(app, "next", "Next", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let show_miniplayer = MenuItem::with_id(
-        app,
-        "show_miniplayer",
-        "Show Miniplayer",
-        true,
-        None::<&str>,
-    )?;
+    let show_miniplayer =
+        MenuItem::with_id(app, "show_miniplayer", "Show Miniplayer", true, None::<&str>)?;
     let show = MenuItem::with_id(app, "show", "Show/Hide", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-    Menu::with_items(
+    let menu = Menu::with_items(
         app,
         &[
             &play_pause,
@@ -54,10 +55,39 @@ fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &separator,
             &quit,
         ],
-    )
+    )?;
+    Ok((menu, show, show_miniplayer))
 }
 
-fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
+#[cfg(not(target_os = "linux"))]
+fn update_tray_labels(
+    app: &tauri::AppHandle,
+    show: &MenuItem<tauri::Wry>,
+    show_miniplayer: &MenuItem<tauri::Wry>,
+) {
+    let main_visible = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    let _ = show.set_text(if main_visible { "Hide" } else { "Show" });
+    let mini_visible = app
+        .get_webview_window("mini-player")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    let _ = show_miniplayer.set_text(if mini_visible {
+        "Hide Miniplayer"
+    } else {
+        "Show Miniplayer"
+    });
+}
+
+#[cfg(not(target_os = "linux"))]
+fn handle_tray_menu(
+    app: &tauri::AppHandle,
+    event: tauri::menu::MenuEvent,
+    show: MenuItem<tauri::Wry>,
+    show_miniplayer: MenuItem<tauri::Wry>,
+) {
     let handle = app.state::<commands::PlayerHandle>();
     match event.id().as_ref() {
         "play_pause" => {
@@ -71,6 +101,7 @@ fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
         }
         "show_miniplayer" => {
             toggle_miniplayer(app);
+            update_tray_labels(app, &show, &show_miniplayer);
         }
         "show" => {
             if let Some(window) = app.get_webview_window("main") {
@@ -81,6 +112,7 @@ fn handle_tray_menu(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
                     let _ = window.set_focus();
                 }
             }
+            update_tray_labels(app, &show, &show_miniplayer);
         }
         "quit" => {
             app.exit(0);
@@ -100,13 +132,239 @@ fn toggle_miniplayer(app: &tauri::AppHandle) {
     }
 }
 
+fn saved_miniplayer_position(app: &tauri::AppHandle) -> Option<(i32, i32)> {
+    let config_dir = app.path().app_config_dir().ok()?;
+    let content = std::fs::read_to_string(config_dir.join(".window-state.json")).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let entry = value.get("mini-player")?;
+    let x = entry.get("x")?.as_i64()?;
+    let y = entry.get("y")?.as_i64()?;
+    // (0,0) is the WM default when the window was never positioned.
+    (x != 0 || y != 0).then_some((x as i32, y as i32))
+}
+
+fn position_bottom_right(mini_win: &tauri::WebviewWindow<tauri::Wry>) -> tauri::Result<()> {
+    let monitor = mini_win
+        .current_monitor()?
+        .ok_or(tauri::Error::WindowNotFound)?;
+    let area = *monitor.work_area();
+    let size = mini_win.outer_size()?;
+    const MARGIN: i32 = 8;
+    mini_win.set_position(tauri::PhysicalPosition {
+        x: area.position.x + area.size.width as i32 - size.width as i32 - MARGIN,
+        y: area.position.y + area.size.height as i32 - size.height as i32 - MARGIN,
+    })
+}
+
+fn setup_miniplayer_window(app: &tauri::AppHandle, mini_win: &tauri::WebviewWindow<tauri::Wry>) {
+    #[cfg(target_os = "linux")]
+    let layer_shell = {
+        use gtk_layer_shell::{Edge, Layer, LayerShell};
+
+        if gtk_layer_shell::is_supported() {
+            if let Ok(gtk_win) = mini_win.gtk_window() {
+                gtk_win.init_layer_shell();
+                gtk_win.set_layer(Layer::Top);
+                gtk_win.set_anchor(Edge::Bottom, true);
+                gtk_win.set_anchor(Edge::Right, true);
+                gtk_win.set_layer_shell_margin(Edge::Bottom, 12);
+                gtk_win.set_layer_shell_margin(Edge::Right, 12);
+            }
+            true
+        } else {
+            false
+        }
+    };
+
+    if saved_miniplayer_position(app).is_some() {
+        // Restore saved size and position, but never the visibility — the
+        // mini-player must stay hidden until the user opens it.
+        let _ = mini_win.restore_state(StateFlags::SIZE | StateFlags::POSITION);
+    } else {
+        // First run: default to the bottom-right corner of the screen.
+        #[cfg(target_os = "linux")]
+        if !layer_shell {
+            let _ = position_bottom_right(mini_win);
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = position_bottom_right(mini_win);
+    }
+
+    let _ = mini_win.hide();
+}
+
+#[cfg(target_os = "linux")]
+mod linux_tray {
+    use super::*;
+    use ksni::{Icon, Tray, blocking::TrayMethods, menu::StandardItem};
+
+    pub(crate) struct AmusTray {
+        pub app: tauri::AppHandle,
+        pub icon: Option<Icon>,
+    }
+
+    impl Tray for AmusTray {
+        fn id(&self) -> String {
+            "amus".into()
+        }
+
+        fn title(&self) -> String {
+            "AMUS".into()
+        }
+
+        fn icon_name(&self) -> String {
+            "amus".into()
+        }
+
+        fn icon_pixmap(&self) -> Vec<Icon> {
+            self.icon.clone().into_iter().collect()
+        }
+
+        fn activate(&mut self, _x: i32, _y: i32) {
+            toggle_miniplayer(&self.app);
+        }
+
+        fn menu_about_to_show(&mut self) {
+            // ksni only rebuilds the menu when this hook is implemented.
+            // Labels are computed from live window visibility in `menu()`.
+        }
+
+        fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+            let main_visible = self
+                .app
+                .get_webview_window("main")
+                .and_then(|w| w.is_visible().ok())
+                .unwrap_or(false);
+            let mini_visible = self
+                .app
+                .get_webview_window("mini-player")
+                .and_then(|w| w.is_visible().ok())
+                .unwrap_or(false);
+
+            let play = StandardItem {
+                label: "Play/Pause".into(),
+                activate: Box::new(|this: &mut Self| {
+                    let handle = this.app.state::<commands::PlayerHandle>();
+                    let _ = commands::send(&handle, PlayerCommand::PlayPause);
+                }),
+                ..Default::default()
+            }
+            .into();
+            let previous = StandardItem {
+                label: "Previous".into(),
+                activate: Box::new(|this: &mut Self| {
+                    let handle = this.app.state::<commands::PlayerHandle>();
+                    let _ = commands::send(&handle, PlayerCommand::Previous);
+                }),
+                ..Default::default()
+            }
+            .into();
+            let next = StandardItem {
+                label: "Next".into(),
+                activate: Box::new(|this: &mut Self| {
+                    let handle = this.app.state::<commands::PlayerHandle>();
+                    let _ = commands::send(&handle, PlayerCommand::Next);
+                }),
+                ..Default::default()
+            }
+            .into();
+            let show_miniplayer = StandardItem {
+                label: if mini_visible {
+                    "Hide Miniplayer"
+                } else {
+                    "Show Miniplayer"
+                }
+                .into(),
+                activate: Box::new(|this: &mut Self| toggle_miniplayer(&this.app)),
+                ..Default::default()
+            }
+            .into();
+            let show = StandardItem {
+                label: if main_visible { "Hide" } else { "Show" }.into(),
+                activate: Box::new(|this: &mut Self| {
+                    if let Some(window) = this.app.get_webview_window("main") {
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                }),
+                ..Default::default()
+            }
+            .into();
+            let quit = StandardItem {
+                label: "Quit".into(),
+                activate: Box::new(|this: &mut Self| this.app.exit(0)),
+                ..Default::default()
+            }
+            .into();
+
+            vec![
+                play,
+                previous,
+                next,
+                ksni::MenuItem::Separator,
+                show_miniplayer,
+                show,
+                ksni::MenuItem::Separator,
+                quit,
+            ]
+        }
+    }
+
+    #[allow(dead_code)]
+    struct TrayHandle(ksni::blocking::Handle<AmusTray>);
+
+    pub(crate) fn spawn_ksni_tray(app: &tauri::AppHandle) {
+        let icon = app.default_window_icon().map(|img| {
+            let rgba = img.rgba();
+            let mut data = Vec::with_capacity(rgba.len());
+            for px in rgba.chunks_exact(4) {
+                data.extend_from_slice(&[px[3], px[0], px[1], px[2]]);
+            }
+            Icon {
+                width: img.width() as i32,
+                height: img.height() as i32,
+                data,
+            }
+        });
+
+        let tray = AmusTray { app: app.clone(), icon };
+        match tray.spawn() {
+            Ok(handle) => {
+                let _ = app.manage(TrayHandle(handle));
+            }
+            Err(e) => tracing::error!(error = %e, "failed to spawn ksni tray"),
+        }
+    }
+}
+
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder =
-        tauri::Builder::default().plugin(tauri_plugin_window_state::Builder::new().build());
+    let builder = tauri::Builder::default().plugin(
+        tauri_plugin_window_state::Builder::new()
+            .skip_initial_state("mini-player")
+            .build(),
+    );
 
     #[cfg(debug_assertions)]
-    let builder = builder.plugin(tauri_plugin_devtools::init());
+    let builder = {
+        // The devtools plugin claims the global tracing subscriber. Attach a
+        // log bridge so our file logging still receives events (falls back to
+        // the plain fmt subscriber in setup if devtools can't init).
+        let mut devtools_builder = tauri_plugin_devtools::Builder::default();
+        devtools_builder.attach_logger(logging::build_file_adapter(&logging::early_app_data_dir()));
+        match devtools_builder.try_init() {
+            Ok(plugin) => builder.plugin(plugin),
+            Err(e) => {
+                tracing::warn!(error = %e, "devtools plugin unavailable");
+                builder
+            }
+        }
+    };
 
     let startup_status = Arc::new(startup::StartupStatus::new());
     let startup_status_clone = startup_status.clone();
@@ -144,6 +402,11 @@ pub fn run() {
         .manage(startup_status)
         .setup(move |app| {
             let app_handle = app.handle();
+
+            if let Ok(app_dir) = app_handle.path().app_data_dir() {
+                let guard = logging::init(&app_dir);
+                app.manage(guard);
+            }
 
             if let Err(e) = (|| -> Result<(), String> {
                 let app_dir = app_handle
@@ -187,7 +450,7 @@ pub fn run() {
                 Ok(())
             })() {
                 startup_status_clone.fail(&e);
-                eprintln!("Startup error: {e}");
+                tracing::error!(error = %e, "startup error");
             } else {
                 startup_status_clone.succeed();
             }
@@ -202,35 +465,62 @@ pub fn run() {
 
             // app_handle.save_window_state(StateFlags::all());
 
-            let tray_menu = build_tray_menu(app_handle)?;
+            #[cfg(target_os = "linux")]
+            linux_tray::spawn_ksni_tray(app_handle);
 
-            TrayIconBuilder::new()
-                .icon(app_handle.default_window_icon().cloned().unwrap())
-                .menu(&tray_menu)
-                .show_menu_on_left_click(false)
-                .on_tray_icon_event(|tray, event| {
-                    tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        toggle_miniplayer(tray.app_handle());
-                    }
-                })
-                .on_menu_event(handle_tray_menu)
-                .build(app_handle)?;
+            #[cfg(not(target_os = "linux"))]
+            {
+                let (tray_menu, show_item, show_miniplayer_item) = build_tray_menu(app_handle)?;
+
+                let show_for_events = show_item.clone();
+                let show_miniplayer_for_events = show_miniplayer_item.clone();
+
+                TrayIconBuilder::new()
+                    .icon(app_handle.default_window_icon().cloned().unwrap())
+                    .menu(&tray_menu)
+                    .show_menu_on_left_click(false)
+                    .on_tray_icon_event(|tray, event| {
+                        tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            toggle_miniplayer(tray.app_handle());
+                        }
+                    })
+                    .on_menu_event(move |app, event| {
+                        handle_tray_menu(
+                            app,
+                            event,
+                            show_for_events.clone(),
+                            show_miniplayer_for_events.clone(),
+                        );
+                    })
+                    .build(app_handle)?;
+            }
 
             // Mini-player window event handlers
             if let Some(mini_win) = app_handle.get_webview_window("mini-player") {
                 let app_clone = app_handle.clone();
-                // mini_win.restore_state(StateFlags::all());
+
+                // Restore the saved size/position (but never auto-show), position
+                // bottom-right on first run, and keep it hidden at startup.
+                setup_miniplayer_window(&app_clone, &mini_win);
+
+                #[cfg(not(target_os = "linux"))]
+                let show_miniplayer_label = show_miniplayer_item.clone();
+
                 mini_win.on_window_event(move |event| match event {
                     WindowEvent::CloseRequested { api, .. } => {
                         api.prevent_close();
                         if let Some(w) = app_clone.get_webview_window("mini-player") {
                             let _ = w.hide();
+                        }
+                        #[cfg(not(target_os = "linux"))]
+                        {
+                            let _ = show_miniplayer_label.set_text("Show Miniplayer");
                         }
                     }
                     WindowEvent::Focused(false) => {
@@ -240,6 +530,22 @@ pub fn run() {
                                     let _ = w.hide();
                                 }
                             }
+                        }
+                        #[cfg(not(target_os = "linux"))]
+                        {
+                            let still_visible = app_clone
+                                .get_webview_window("mini-player")
+                                .and_then(|w| w.is_visible().ok())
+                                .unwrap_or(false);
+                            if !still_visible {
+                                let _ = show_miniplayer_label.set_text("Show Miniplayer");
+                            }
+                        }
+                    }
+                    WindowEvent::Focused(true) => {
+                        #[cfg(not(target_os = "linux"))]
+                        {
+                            let _ = show_miniplayer_label.set_text("Hide Miniplayer");
                         }
                     }
                     _ => {}
@@ -252,6 +558,9 @@ pub fn run() {
                 let was_maximized = AtomicBool::new(main_win.is_maximized().unwrap_or(false));
                 let win = main_win.clone();
 
+                #[cfg(not(target_os = "linux"))]
+                let show_label = show_item.clone();
+
                 main_win.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         let keep_in_bg =
@@ -261,7 +570,30 @@ pub fn run() {
                             if let Some(w) = handle.get_webview_window("main") {
                                 let _ = w.hide();
                             }
+                            #[cfg(not(target_os = "linux"))]
+                            {
+                                let _ = show_label.set_text("Show");
+                            }
+                        } else {
+                            // The tray icon and the hidden mini-player window keep the
+                            // event loop alive after the main window is destroyed, so
+                            // exit the whole app explicitly.
+                            handle.exit(0);
                         }
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    if let WindowEvent::Focused(false) = event {
+                        let still_visible = handle
+                            .get_webview_window("main")
+                            .and_then(|w| w.is_visible().ok())
+                            .unwrap_or(false);
+                        if !still_visible {
+                            let _ = show_label.set_text("Show");
+                        }
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    if let WindowEvent::Focused(true) = event {
+                        let _ = show_label.set_text("Hide");
                     }
                     if let WindowEvent::Resized(_) = event {
                         let is_maximized = win.is_maximized().unwrap_or(false);
@@ -344,6 +676,7 @@ pub fn run() {
             commands::get_top_tracks_with_stats,
             commands::get_top_artists_with_stats,
             commands::get_top_albums_with_stats,
+            commands::get_top_genres_with_stats,
             commands::get_listening_time_trend,
             commands::get_streak_data,
             commands::get_library_growth,
@@ -367,6 +700,7 @@ pub fn run() {
             commands::get_tracks_by_genre,
             commands::create_genre,
             commands::update_genre,
+            commands::delete_genre,
             commands::set_track_cover_art,
             commands::set_track_artists,
             commands::set_track_album,
@@ -396,9 +730,12 @@ pub fn run() {
                 .collect();
             if !paths.is_empty() {
                 if let Err(e) = cli::play_paths(_handle, &paths) {
-                    eprintln!("file association: {e}");
+                    tracing::error!(error = %e, "file association failed");
                 }
             }
         }
     });
+
+    // Remove the CLI socket/port files now that the app is exiting.
+    cli::cleanup_server();
 }

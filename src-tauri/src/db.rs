@@ -1,6 +1,5 @@
 use crate::error::{Error, Result};
 use crate::models::*;
-use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Params, params, types::ToSql};
 use rusqlite_migration::{M, Migrations};
 use serde::{Deserialize, Serialize};
@@ -8,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 pub type DbPool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Timeframe {
     Today,
@@ -19,20 +18,73 @@ pub enum Timeframe {
     ThisYear,
     LastYear,
     Last5Years,
+    #[default]
     AllTime,
 }
 
-pub fn timeframe_where_clause(alias: &str, timeframe: Timeframe) -> String {
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TopSort {
+    #[default]
+    Plays,
+    Time,
+}
+
+/// Window length (in days) used to normalize per-day averages. `AllTime` uses
+/// the span since the first recorded play instead.
+fn timeframe_window_days(timeframe: Timeframe) -> Option<i64> {
     match timeframe {
-        Timeframe::Today => format!("{} >= datetime('now', 'start of day')", alias),
-        Timeframe::ThisWeek => format!("{} >= datetime('now', '-7 days')", alias),
-        Timeframe::ThisMonth => format!("{} >= datetime('now', '-30 days')", alias),
-        Timeframe::Last3Months => format!("{} >= datetime('now', '-90 days')", alias),
-        Timeframe::Last6Months => format!("{} >= datetime('now', '-180 days')", alias),
-        Timeframe::ThisYear => format!("{} >= datetime('now', 'start of year')", alias),
-        Timeframe::LastYear => format!("{} >= datetime('now', '-1 year')", alias),
-        Timeframe::Last5Years => format!("{} >= datetime('now', '-5 years')", alias),
+        Timeframe::Today => Some(1),
+        Timeframe::ThisWeek => Some(7),
+        Timeframe::ThisMonth => Some(30),
+        Timeframe::Last3Months => Some(90),
+        Timeframe::Last6Months => Some(180),
+        Timeframe::ThisYear | Timeframe::LastYear => Some(365),
+        Timeframe::Last5Years => Some(1825),
+        Timeframe::AllTime => None,
+    }
+}
+
+pub fn timeframe_where_clause(alias: &str, timeframe: Timeframe) -> String {
+    // Timestamps are stored in UTC; every boundary is evaluated in local time
+    // so "today", streaks, heatmaps and trends match the user's clock.
+    match timeframe {
+        Timeframe::Today => {
+            format!("{} >= datetime('now', 'localtime', 'start of day')", alias)
+        }
+        Timeframe::ThisWeek => {
+            format!("{} >= datetime('now', 'localtime', '-7 days')", alias)
+        }
+        Timeframe::ThisMonth => {
+            format!("{} >= datetime('now', 'localtime', '-30 days')", alias)
+        }
+        Timeframe::Last3Months => {
+            format!("{} >= datetime('now', 'localtime', '-90 days')", alias)
+        }
+        Timeframe::Last6Months => {
+            format!("{} >= datetime('now', 'localtime', '-180 days')", alias)
+        }
+        Timeframe::ThisYear => {
+            format!("{} >= datetime('now', 'localtime', 'start of year')", alias)
+        }
+        Timeframe::LastYear => {
+            format!("{} >= datetime('now', 'localtime', '-1 year')", alias)
+        }
+        Timeframe::Last5Years => {
+            format!("{} >= datetime('now', 'localtime', '-5 years')", alias)
+        }
         Timeframe::AllTime => "1=1".to_string(),
+    }
+}
+
+fn top_order_by(sort: TopSort, name_col: &str) -> String {
+    match sort {
+        TopSort::Plays => format!(
+            "play_count DESC, total_time DESC, {name_col} COLLATE NOCASE ASC"
+        ),
+        TopSort::Time => format!(
+            "total_time DESC, play_count DESC, {name_col} COLLATE NOCASE ASC"
+        ),
     }
 }
 
@@ -59,6 +111,7 @@ const MIGRATIONS_SLICE: &[M<'_>] = &[
     M::up(include_str!("../migrations/008_extended_metadata.sql")),
     M::up(include_str!("../migrations/009_genre_thumbnail.sql")),
     M::up(include_str!("../migrations/010_lyrics_fetch_attempts.sql")),
+    M::up(include_str!("../migrations/011_drop_musical_key.sql")),
 ];
 
 const MIGRATIONS: Migrations<'_> = Migrations::from_slice(MIGRATIONS_SLICE);
@@ -93,10 +146,15 @@ pub fn get_source_dirs(conn: &Connection) -> Result<Vec<String>> {
 pub fn remove_source_dir(conn: &mut Connection, path: &str) -> Result<()> {
     let tx = conn.transaction().map_err(Error::Db)?;
 
-    let path_pattern = format!("{}%", path);
+    // Delete the exact path plus anything nested under it, never a sibling
+    // that merely shares a prefix (e.g. /music must not match /music2).
+    let path = path.trim_end_matches(['/', '\\']);
 
-    tx.execute("DELETE FROM track WHERE path LIKE ?", [path_pattern])
-        .map_err(Error::Db)?;
+    tx.execute(
+        "DELETE FROM track WHERE path = ? OR path LIKE ? || '/%' OR path LIKE ? || '\\%'",
+        params![path, path, path],
+    )
+    .map_err(Error::Db)?;
     tx.execute("DELETE FROM source_dirs WHERE path = ?", [path])
         .map_err(Error::Db)?;
 
@@ -260,20 +318,6 @@ pub fn get_scan_blacklist(conn: &Connection) -> Result<Vec<BlacklistedEntry>> {
     Ok(entries)
 }
 
-pub fn get_track_path(conn: &Connection, id: i64) -> Result<String> {
-    conn.query_row(
-        "SELECT path FROM track WHERE id = ?1",
-        params![id],
-        |row| row.get(0),
-    )
-    .map_err(|e| match e {
-        rusqlite::Error::QueryReturnedNoRows => {
-            Error::Unknown(format!("Track {id} not found"))
-        }
-        e => Error::Db(e),
-    })
-}
-
 pub fn get_or_create_artist(conn: &Connection, name: &str) -> Result<i64> {
     conn
         .prepare_cached(
@@ -366,6 +410,29 @@ pub fn get_artists_needing_fetch(conn: &Connection) -> Result<Vec<(i64, String)>
         artists.push(row.map_err(Error::Db)?);
     }
     Ok(artists)
+}
+
+/// Returns the subset of `ids` that still need an artist image fetched
+/// (missing profile/banner and fetch attempts not exhausted).
+pub fn get_artists_missing_images(conn: &Connection, ids: &[i64]) -> Result<std::collections::HashSet<i64>> {
+    if ids.is_empty() {
+        return Ok(std::collections::HashSet::new());
+    }
+    let placeholders = vec!["?"; ids.len()].join(", ");
+    let sql = format!(
+        "SELECT id FROM artist WHERE id IN ({placeholders})
+         AND (profile_image IS NULL OR banner_image IS NULL)
+         AND fetch_attempts < 3"
+    );
+    let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(ids), |row| row.get::<_, i64>(0))
+        .map_err(Error::Db)?;
+    let mut result = std::collections::HashSet::new();
+    for row in rows {
+        result.insert(row.map_err(Error::Db)?);
+    }
+    Ok(result)
 }
 
 pub fn set_album_artist(conn: &Connection, name: &str, album_artist: &str) -> Result<()> {
@@ -593,6 +660,7 @@ pub fn get_genres_for_tracks(conn: &Connection, track_ids: &[i64]) -> Result<Has
                             id: row.get(1)?,
                             name: row.get(2)?,
                             thumbnail: row.get(3)?,
+                        ..Default::default()
                         },
                     ))
             })
@@ -647,46 +715,6 @@ pub fn get_track_lyrics(conn: &Connection, track_id: i64) -> Result<Option<Lyric
         .optional()
         .map_err(Error::Db)?;
     Ok(result)
-}
-
-pub fn get_tracks_needing_lyrics_fetch(conn: &Connection) -> Result<Vec<(i64, String, String, u32)>> {
-    let mut stmt = conn
-        .prepare_cached(
-            "SELECT t.id, ar.name, t.title, t.duration_sec
-             FROM track t
-             JOIN track_artist ta ON ta.track_id = t.id
-             JOIN artist ar ON ar.id = ta.artist_id
-             WHERE NOT EXISTS (
-                 SELECT 1 FROM track_lyrics tl
-                 WHERE tl.track_id = t.id
-                   AND (tl.plain_lyrics IS NOT NULL OR tl.synced_lyrics IS NOT NULL)
-             )
-             AND t.id IN (
-                 SELECT track_id FROM track_lyrics
-                 WHERE fetch_attempts < 3
-                 UNION
-                 SELECT t2.id FROM track t2
-                 WHERE NOT EXISTS (SELECT 1 FROM track_lyrics WHERE track_id = t2.id)
-             )
-             ORDER BY t.id
-             LIMIT 50",
-        )
-        .map_err(Error::Db)?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, u32>(3)?,
-            ))
-        })
-        .map_err(Error::Db)?;
-    let mut tracks = Vec::new();
-    for row in rows {
-        tracks.push(row.map_err(Error::Db)?);
-    }
-    Ok(tracks)
 }
 
 pub fn report_lyrics_fetch_success(conn: &Connection, track_id: i64) -> Result<()> {
@@ -747,8 +775,61 @@ pub fn update_genre(conn: &Connection, id: i64, name: &str, thumbnail: Option<&s
             id: row.get(0)?,
             name: row.get(1)?,
             thumbnail: row.get(2)?,
+        ..Default::default()
         })
     })
+    .map_err(Error::Db)
+}
+
+pub fn get_all_genres(conn: &Connection) -> Result<Vec<Genre>> {
+    let sql = "SELECT g.id, g.name, g.thumbnail,
+            COUNT(tg.track_id) AS track_count,
+            IFNULL(SUM(s.play_count), 0) AS total_plays,
+            MAX(s.last_played_at) AS last_played_at,
+            MIN(t.added_at) AS added_at
+        FROM genre g
+        LEFT JOIN track_genre tg ON tg.genre_id = g.id
+        LEFT JOIN track t ON t.id = tg.track_id
+        LEFT JOIN track_stats s ON s.track_id = tg.track_id
+        GROUP BY g.id
+        ORDER BY g.name COLLATE NOCASE ASC";
+    let mut stmt = conn.prepare(sql).map_err(Error::Db)?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(Genre {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                thumbnail: row.get(2)?,
+                track_count: row.get(3)?,
+                total_plays: row.get(4)?,
+                last_played_at: row.get(5)?,
+                added_at: row.get(6)?,
+            ..Default::default()
+            })
+        })
+        .map_err(Error::Db)?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Error::Db)
+}
+
+pub fn delete_genre(conn: &Connection, genre_id: i64) -> Result<()> {
+    let tx = conn.unchecked_transaction().map_err(Error::Db)?;
+    tx.execute("DELETE FROM track_genre WHERE genre_id = ?", params![genre_id])
+        .map_err(Error::Db)?;
+    tx.execute("DELETE FROM genre WHERE id = ?", params![genre_id])
+        .map_err(Error::Db)?;
+    tx.commit().map_err(Error::Db)?;
+    Ok(())
+}
+
+/// Track number of a track within its album (album_track.track_number).
+pub fn get_track_number(conn: &Connection, track_id: i64) -> Result<Option<i32>> {
+    conn.query_row(
+        "SELECT track_number FROM album_track WHERE track_id = ?",
+        params![track_id],
+        |row| row.get(0),
+    )
+    .optional()
     .map_err(Error::Db)
 }
 
@@ -825,9 +906,17 @@ pub fn toggle_favorite(conn: &Connection, track_id: i64) -> Result<Track> {
 }
 
 pub fn get_all_albums(conn: &Connection) -> Result<Vec<Album>> {
-    let sql = "SELECT id, name, cover_art, album_artist, year
-        FROM album
-        ORDER BY name COLLATE NOCASE ASC";
+    let sql = "SELECT al.id, al.name, al.cover_art, al.album_artist, al.year,
+            COUNT(DISTINCT alt.track_id) AS track_count,
+            IFNULL(SUM(s.play_count), 0) AS total_plays,
+            MAX(s.last_played_at) AS last_played_at,
+            MIN(t.added_at) AS added_at
+        FROM album al
+        LEFT JOIN album_track alt ON alt.album_id = al.id
+        LEFT JOIN track t ON t.id = alt.track_id
+        LEFT JOIN track_stats s ON s.track_id = alt.track_id
+        GROUP BY al.id
+        ORDER BY al.name COLLATE NOCASE ASC";
 
     let mut stmt = conn.prepare(sql).map_err(Error::Db)?;
     let raw: Vec<(Album, Option<String>)> = stmt
@@ -838,6 +927,11 @@ pub fn get_all_albums(conn: &Connection) -> Result<Vec<Album>> {
                 cover_art: row.get(2)?,
                 album_artist: None,
                 year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+                track_count: row.get(5)?,
+                total_plays: row.get(6)?,
+                last_played_at: row.get(7)?,
+                added_at: row.get(8)?,
+            ..Default::default()
             };
             let aa: Option<String> = row.get(3)?;
             Ok((album, aa))
@@ -855,15 +949,29 @@ pub fn get_all_albums(conn: &Connection) -> Result<Vec<Album>> {
 }
 
 pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
-    let mut stmt = conn
-        .prepare("SELECT id, name, cover_art FROM playlist")
-        .map_err(Error::Db)?;
+    let sql = "SELECT p.id, p.name, p.cover_art,
+            COUNT(pt.track_id) AS track_count,
+            IFNULL(SUM(s.play_count), 0) AS total_plays,
+            MAX(s.last_played_at) AS last_played_at,
+            MIN(t.added_at) AS added_at
+        FROM playlist p
+        LEFT JOIN playlist_track pt ON pt.playlist_id = p.id
+        LEFT JOIN track t ON t.id = pt.track_id
+        LEFT JOIN track_stats s ON s.track_id = pt.track_id
+        GROUP BY p.id";
+
+    let mut stmt = conn.prepare(sql).map_err(Error::Db)?;
     let playlist_iter = stmt
         .query_map([], |row| {
             Ok(Playlist {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 cover_art: row.get(2)?,
+                track_count: row.get(3)?,
+                total_plays: row.get(4)?,
+                last_played_at: row.get(5)?,
+                added_at: row.get(6)?,
+            ..Default::default()
             })
         })
         .map_err(Error::Db)?;
@@ -874,9 +982,18 @@ pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
 }
 
 pub fn get_all_artists(conn: &Connection) -> Result<Vec<Artist>> {
-    let mut stmt = conn
-        .prepare("SELECT id, name, profile_image, banner_image FROM artist")
-        .map_err(Error::Db)?;
+    let sql = "SELECT ar.id, ar.name, ar.profile_image, ar.banner_image,
+            COUNT(DISTINCT ta.track_id) AS track_count,
+            IFNULL(SUM(s.play_count), 0) AS total_plays,
+            MAX(s.last_played_at) AS last_played_at,
+            MIN(t.added_at) AS added_at
+        FROM artist ar
+        LEFT JOIN track_artist ta ON ta.artist_id = ar.id
+        LEFT JOIN track t ON t.id = ta.track_id
+        LEFT JOIN track_stats s ON s.track_id = ta.track_id
+        GROUP BY ar.id";
+
+    let mut stmt = conn.prepare(sql).map_err(Error::Db)?;
     let artist_iter = stmt
         .query_map([], |row| {
             Ok(Artist {
@@ -884,6 +1001,11 @@ pub fn get_all_artists(conn: &Connection) -> Result<Vec<Artist>> {
                 name: row.get(1)?,
                 profile_image: row.get(2)?,
                 banner_image: row.get(3)?,
+                track_count: row.get(4)?,
+                total_plays: row.get(5)?,
+                last_played_at: row.get(6)?,
+                added_at: row.get(7)?,
+            ..Default::default()
             })
         })
         .map_err(Error::Db)?;
@@ -1025,7 +1147,14 @@ pub fn get_tracks_in_playlist(
         LEFT JOIN album al ON alt.album_id = al.id
         WHERE pt.playlist_id = ?";
 
-    prepare_sorted_tracks_list(conn, sql, params![playlist_id], sort_by)
+    if let Some(sort_by) = sort_by {
+        return prepare_sorted_tracks_list(conn, sql, params![playlist_id], Some(sort_by));
+    }
+
+    // Default order is playlist insertion order (position is MAX+1 on insert),
+    // so the most recently added track is last.
+    let ordered = format!("{} ORDER BY pt.position ASC", sql);
+    prepare_tracks_list(conn, &ordered, params![playlist_id])
 }
 
 pub fn get_playlist(conn: &Connection, playlist_id: i64) -> Result<Playlist> {
@@ -1037,6 +1166,7 @@ pub fn get_playlist(conn: &Connection, playlist_id: i64) -> Result<Playlist> {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 cover_art: row.get(2)?,
+            ..Default::default()
             })
         },
     )
@@ -1053,6 +1183,7 @@ pub fn get_artist(conn: &Connection, artist_id: i64) -> Result<Artist> {
                 name: row.get(1)?,
                 profile_image: row.get(2)?,
                 banner_image: row.get(3)?,
+            ..Default::default()
             })
         },
     )
@@ -1071,6 +1202,7 @@ pub fn get_album(conn: &Connection, album_id: i64) -> Result<Album> {
                     cover_art: row.get(2)?,
                     album_artist: None,
                     year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+                ..Default::default()
                 };
                 Ok((album, row.get::<_, Option<String>>(3)?))
             },
@@ -1116,6 +1248,7 @@ pub fn get_track_details(conn: &Connection, track_id: i64) -> Result<TrackDetail
                 cover_art: album_art,
                 album_artist: None,
                 year: row.get::<_, Option<i32>>(8)?.map(|y| y as u32),
+            ..Default::default()
             };
 
             Ok((
@@ -1317,6 +1450,7 @@ pub fn search_artists(conn: &Connection, query: &str, limit: usize) -> Result<Ve
                 name: row.get(1)?,
                 profile_image: row.get(2)?,
                 banner_image: row.get(3)?,
+            ..Default::default()
             })
         })
         .map_err(Error::Db)?;
@@ -1346,6 +1480,7 @@ pub fn search_albums(conn: &Connection, query: &str, limit: usize) -> Result<Vec
                 cover_art: row.get(2)?,
                 album_artist: None,
                 year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+            ..Default::default()
             };
             Ok((album, row.get::<_, Option<String>>(3)?))
         })
@@ -1370,6 +1505,7 @@ pub fn get_playlist_by_name(conn: &Connection, name: &str) -> Result<Playlist> {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 cover_art: row.get(2)?,
+            ..Default::default()
             })
         },
     )
@@ -1386,6 +1522,7 @@ pub fn get_artist_by_name(conn: &Connection, name: &str) -> Result<Artist> {
                 name: row.get(1)?,
                 profile_image: row.get(2)?,
                 banner_image: row.get(3)?,
+            ..Default::default()
             })
         },
     )
@@ -1404,6 +1541,7 @@ pub fn get_album_by_name(conn: &Connection, name: &str) -> Result<Album> {
                     cover_art: row.get(2)?,
                     album_artist: None,
                     year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+                ..Default::default()
                 };
                 Ok((album, row.get::<_, Option<String>>(3)?))
             },
@@ -1443,6 +1581,7 @@ fn resolve_album_artist(
                         name: row.get(1)?,
                         profile_image: row.get(2)?,
                         banner_image: row.get(3)?,
+                    ..Default::default()
                     })
                 })
                 .map_err(Error::Db)?
@@ -1488,6 +1627,7 @@ fn batch_resolve_album_artists(
                     name: row.get(2)?,
                     profile_image: row.get(3)?,
                     banner_image: row.get(4)?,
+                ..Default::default()
                 },
             ))
         }) {
@@ -1527,6 +1667,7 @@ pub fn prepare_tracks_list<P: Params>(
                 cover_art: album_art,
                 album_artist: None,
                 year: album_year.map(|y| y as u32),
+            ..Default::default()
             };
 
             Ok(RawTrack {
@@ -1623,6 +1764,7 @@ fn get_artists_for_tracks(
                         name: row.get(2)?,
                         profile_image: row.get(3)?,
                         banner_image: row.get(4)?,
+                    ..Default::default()
                     },
                 ))
             })
@@ -1782,6 +1924,7 @@ pub fn get_top_artists(conn: &Connection, limit: usize) -> Result<Vec<Artist>> {
                 name: row.get(1)?,
                 profile_image: row.get(2)?,
                 banner_image: row.get(3)?,
+            ..Default::default()
             })
         })
         .map_err(Error::Db)?;
@@ -1810,6 +1953,7 @@ pub fn get_top_albums(conn: &Connection, limit: usize) -> Result<Vec<Album>> {
                 cover_art: row.get(2)?,
                 album_artist: None,
                 year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+            ..Default::default()
             };
             Ok((album, row.get::<_, Option<String>>(3)?))
         })
@@ -1883,25 +2027,33 @@ pub fn get_stats_overview(conn: &Connection, timeframe: Timeframe) -> Result<Sta
         )
         .map_err(Error::Db)?;
 
-    let (total_plays, total_time, days_span): (i64, f64, f64) = conn
+    let (total_plays, total_time, days_span, avg_completion, skip_rate): (i64, f64, f64, Option<f64>, Option<f64>) = conn
         .query_row(
             &format!(
                 "SELECT
                     COALESCE(COUNT(ph.id), 0),
                     COALESCE(SUM(t.duration_sec * ph.completion_percent / 100.0), 0),
-                    COALESCE(CAST(JULIANDAY('now') - JULIANDAY(MIN(ph.played_at)) AS REAL), 1)
+                    COALESCE(CAST(JULIANDAY('now', 'localtime') - JULIANDAY(MIN(ph.played_at), 'localtime') AS REAL), 1),
+                    AVG(ph.completion_percent),
+                    AVG(CASE WHEN ph.completion_percent < 50 THEN 1.0 ELSE 0.0 END)
                  FROM playback_history ph
                  JOIN track t ON t.id = ph.track_id
                  WHERE {}",
                 time_filter
             ),
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )
         .map_err(Error::Db)?;
 
     let total_time_sec = total_time as i64;
-    let days = days_span.max(1.0);
+    // For rolling windows divide by the window length; AllTime uses the span
+    // since the first recorded play so a long-ago first play doesn't flatten
+    // recent activity.
+    let days = match timeframe_window_days(timeframe) {
+        Some(w) => w as f64,
+        None => days_span.max(1.0),
+    };
     let avg_daily = if total_time > 0.0 {
         total_time / 60.0 / days
     } else {
@@ -1921,6 +2073,18 @@ pub fn get_stats_overview(conn: &Connection, timeframe: Timeframe) -> Result<Sta
 
     let format_dist = get_format_distribution(conn)?;
 
+    let (avg_bitrate_kbps, avg_sample_rate, avg_bit_depth): (Option<f64>, Option<f64>, Option<f64>) = conn
+        .query_row(
+            "SELECT
+                AVG(CASE WHEN bitrate IS NOT NULL AND bitrate > 0 THEN bitrate / 1000.0 END),
+                AVG(CASE WHEN sample_rate > 0 THEN sample_rate END),
+                AVG(CASE WHEN bit_depth IS NOT NULL AND bit_depth > 0 THEN bit_depth END)
+             FROM track",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(Error::Db)?;
+
     Ok(StatsOverview {
         total_tracks,
         total_artists,
@@ -1934,6 +2098,11 @@ pub fn get_stats_overview(conn: &Connection, timeframe: Timeframe) -> Result<Sta
         format_distribution: format_dist,
         pct_library_played,
         unplayed_tracks: unplayed,
+        avg_bitrate_kbps,
+        avg_sample_rate,
+        avg_bit_depth,
+        avg_completion_pct: avg_completion,
+        skip_rate,
     })
 }
 
@@ -1947,7 +2116,10 @@ pub fn get_format_distribution(conn: &Connection) -> Result<Vec<FormatStat>> {
             "SELECT
                 LOWER(audio_format) as fmt,
                 COUNT(*) as cnt,
-                COALESCE(SUM(file_size), 0) as total_bytes
+                COALESCE(SUM(file_size), 0) as total_bytes,
+                AVG(CASE WHEN bitrate IS NOT NULL AND bitrate > 0 THEN bitrate / 1000.0 END),
+                AVG(CASE WHEN sample_rate > 0 THEN sample_rate END),
+                AVG(CASE WHEN bit_depth IS NOT NULL AND bit_depth > 0 THEN bit_depth END)
              FROM track
              GROUP BY fmt
              ORDER BY cnt DESC",
@@ -1965,6 +2137,9 @@ pub fn get_format_distribution(conn: &Connection) -> Result<Vec<FormatStat>> {
                     0.0
                 },
                 total_bytes: row.get(2)?,
+                avg_bitrate_kbps: row.get(3)?,
+                avg_sample_rate: row.get(4)?,
+                avg_bit_depth: row.get(5)?,
             })
         })
         .map_err(Error::Db)?
@@ -1974,120 +2149,175 @@ pub fn get_format_distribution(conn: &Connection) -> Result<Vec<FormatStat>> {
     Ok(stats)
 }
 
+/// First album per track, with its track number and album-artist name.
+struct AlbumInfo {
+    album: Album,
+    track_number: Option<u32>,
+    album_artist_name: Option<String>,
+}
+
+fn batch_resolve_albums_for_tracks(
+    conn: &Connection,
+    track_ids: &[i64],
+) -> Result<HashMap<i64, AlbumInfo>> {
+    let mut map = HashMap::new();
+    if track_ids.is_empty() {
+        return Ok(map);
+    }
+    let mut unique: Vec<i64> = track_ids.to_vec();
+    unique.sort();
+    unique.dedup();
+
+    for chunk in unique.chunks(400) {
+        let placeholders: Vec<String> = chunk.iter().map(|_| "?".to_string()).collect();
+        let sql = format!(
+            "SELECT a2.track_id, al.id, al.name, al.cover_art, alt2.track_number, al.album_artist, al.year
+             FROM (SELECT track_id, MIN(album_id) as album_id
+                   FROM album_track
+                   WHERE track_id IN ({})
+                   GROUP BY track_id) a2
+             JOIN album_track alt2 ON alt2.album_id = a2.album_id AND alt2.track_id = a2.track_id
+             JOIN album al ON al.id = a2.album_id",
+            placeholders.join(",")
+        );
+        let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(chunk.iter()), |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    AlbumInfo {
+                        album: Album {
+                            id: row.get(1)?,
+                            name: row.get(2)?,
+                            cover_art: row.get(3)?,
+                            album_artist: None,
+                            year: row.get::<_, Option<i32>>(6)?.map(|y| y as u32),
+                        ..Default::default()
+                        },
+                        track_number: row.get::<_, Option<i64>>(4)?.map(|n| n as u32),
+                        album_artist_name: row.get(5)?,
+                    },
+                ))
+            })
+            .map_err(Error::Db)?;
+        for row in rows {
+            if let Ok((track_id, info)) = row {
+                map.entry(track_id).or_insert(info);
+            }
+        }
+    }
+    Ok(map)
+}
+
 pub fn get_top_tracks_with_stats(
     conn: &Connection,
     timeframe: Timeframe,
     limit: usize,
+    sort_by: TopSort,
 ) -> Result<Vec<TopTrack>> {
     let time_filter = timeframe_where_clause("ph.played_at", timeframe);
 
+    // Aggregate playback per track first, then attach album info in a second
+    // pass. Joining album_track up-front would multiply plays/listening time
+    // for tracks that belong to several albums.
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year,
-                    t.duration_sec, t.is_favorite, t.cover_art, t.added_at,
+            "SELECT t.id, t.title, t.duration_sec, t.is_favorite, t.cover_art, t.added_at,
                     COUNT(ph.id) as play_count,
                     COALESCE(SUM(t.duration_sec * ph.completion_percent / 100.0), 0) as total_time,
                     MAX(ph.played_at) as last_played
              FROM playback_history ph
              JOIN track t ON t.id = ph.track_id
-             LEFT JOIN album_track alt ON t.id = alt.track_id
-             LEFT JOIN album al ON alt.album_id = al.id
              WHERE {}
              GROUP BY t.id
-             ORDER BY play_count DESC
+             ORDER BY {}
              LIMIT ?",
-            time_filter
+            time_filter,
+            top_order_by(sort_by, "t.title")
         ))
         .map_err(Error::Db)?;
 
-    struct RawTopTrack {
-        top: TopTrack,
-        album_artist_name: Option<String>,
-    }
-
-    let mut raw_list = Vec::new();
-    let rows = stmt
+    let mut items: Vec<(i64, TopTrack)> = stmt
         .query_map(params![limit as i64], |row| {
-            let album_id: Option<i64> = row.get(2)?;
-            let album_title: Option<String> = row.get(3)?;
-            let album_art: Option<String> = row.get(4)?;
-            let album_artist_name: Option<String> = row.get(6)?;
-            let album_year: Option<i32> = row.get(7)?;
-
             let track = Track {
                 id: row.get(0)?,
                 title: row.get(1)?,
                 artists: vec![],
                 album: Album {
-                    id: album_id.unwrap_or(0),
-                    name: album_title.unwrap_or_else(|| "Unknown Album".to_string()),
-                    cover_art: album_art,
+                    id: 0,
+                    name: "Unknown Album".to_string(),
+                    cover_art: None,
                     album_artist: None,
-                    year: album_year.map(|y| y as u32),
+                    year: None,
+                ..Default::default()
                 },
-                duration_seconds: row.get(8)?,
-                is_favorite: row.get(9)?,
-                cover_art: row.get(10)?,
-                added_at: row.get(11)?,
-                track_number: row.get::<_, Option<i32>>(5)?.map(|n| n as u32),
+                duration_seconds: row.get(2)?,
+                is_favorite: row.get(3)?,
+                cover_art: row.get(4)?,
+                added_at: row.get(5)?,
+                track_number: None,
                 playlist_ids: vec![],
                 genre_ids: None,
                 queue_id: None,
             };
-
-            let play_count: i64 = row.get(12)?;
-            let total_listening_time_sec: f64 = row.get(13)?;
-            let last_played_at: Option<DateTime<Utc>> = row.get(14)?;
-
-            Ok(RawTopTrack {
-                top: TopTrack {
+            Ok((
+                row.get::<_, i64>(0)?,
+                TopTrack {
                     track,
-                    play_count,
-                    total_listening_time_sec: total_listening_time_sec as i64,
-                    last_played_at,
+                    play_count: row.get(6)?,
+                    total_listening_time_sec: row.get::<_, f64>(7)? as i64,
+                    last_played_at: row.get(8)?,
                 },
-                album_artist_name,
-            })
+            ))
         })
+        .map_err(Error::Db)?
+        .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::Db)?;
 
-    for row in rows {
-        raw_list.push(row.map_err(Error::Db)?);
+    if items.is_empty() {
+        return Ok(Vec::new());
     }
 
-    // Resolve album artists
-    if !raw_list.is_empty() {
-        let names: Vec<&str> = raw_list
-            .iter()
-            .filter_map(|r| r.album_artist_name.as_deref())
-            .collect();
-        if !names.is_empty() {
-            let album_artist_map = batch_resolve_album_artists(conn, &names)?;
-            for rt in &mut raw_list {
-                if let Some(ref name) = rt.album_artist_name {
-                    if let Some(artists) = album_artist_map.get(name) {
-                        rt.top.track.album.album_artist = Some(artists.clone());
-                    }
+    let track_ids: Vec<i64> = items.iter().map(|(id, _)| *id).collect();
+    let album_map = batch_resolve_albums_for_tracks(conn, &track_ids)?;
+    for (track_id, top) in &mut items {
+        if let Some(info) = album_map.get(track_id) {
+            top.track.album = info.album.clone();
+            top.track.track_number = info.track_number;
+        }
+    }
+
+    let aa_names: Vec<&str> = album_map
+        .values()
+        .filter_map(|info| info.album_artist_name.as_deref())
+        .collect();
+    if !aa_names.is_empty() {
+        let album_artist_map = batch_resolve_album_artists(conn, &aa_names)?;
+        for (track_id, top) in &mut items {
+            if let Some(name) = album_map.get(track_id).and_then(|i| i.album_artist_name.as_deref())
+            {
+                if let Some(artists) = album_artist_map.get(name) {
+                    top.track.album.album_artist = Some(artists.clone());
                 }
             }
         }
+    }
 
-        let track_ids: Vec<i64> = raw_list.iter().map(|r| r.top.track.id).collect();
-        let artists_map = get_artists_for_tracks(conn, &track_ids)?;
-        for rt in &mut raw_list {
-            if let Some(artists) = artists_map.get(&rt.top.track.id) {
-                rt.top.track.artists = artists.clone();
-            }
+    let artists_map = get_artists_for_tracks(conn, &track_ids)?;
+    for (track_id, top) in &mut items {
+        if let Some(artists) = artists_map.get(track_id) {
+            top.track.artists = artists.clone();
         }
     }
 
-    Ok(raw_list.into_iter().map(|r| r.top).collect())
+    Ok(items.into_iter().map(|(_, top)| top).collect())
 }
 
 pub fn get_top_artists_with_stats(
     conn: &Connection,
     timeframe: Timeframe,
     limit: usize,
+    sort_by: TopSort,
 ) -> Result<Vec<TopArtist>> {
     let time_filter = timeframe_where_clause("ph.played_at", timeframe);
 
@@ -2103,9 +2333,10 @@ pub fn get_top_artists_with_stats(
              JOIN artist ar ON ar.id = ta.artist_id
              WHERE {}
              GROUP BY ar.id
-             ORDER BY play_count DESC
+             ORDER BY {}
              LIMIT ?",
-            time_filter
+            time_filter,
+            top_order_by(sort_by, "ar.name")
         ))
         .map_err(Error::Db)?;
 
@@ -2117,6 +2348,7 @@ pub fn get_top_artists_with_stats(
                     name: row.get(1)?,
                     profile_image: row.get(2)?,
                     banner_image: row.get(3)?,
+                ..Default::default()
                 },
                 play_count: row.get(4)?,
                 total_listening_time_sec: row.get::<_, f64>(5)? as i64,
@@ -2134,6 +2366,7 @@ pub fn get_top_albums_with_stats(
     conn: &Connection,
     timeframe: Timeframe,
     limit: usize,
+    sort_by: TopSort,
 ) -> Result<Vec<TopAlbum>> {
     let time_filter = timeframe_where_clause("ph.played_at", timeframe);
 
@@ -2149,9 +2382,10 @@ pub fn get_top_albums_with_stats(
              JOIN album al ON al.id = alt.album_id
              WHERE {}
              GROUP BY al.id
-             ORDER BY play_count DESC
+             ORDER BY {}
              LIMIT ?",
-            time_filter
+            time_filter,
+            top_order_by(sort_by, "al.name")
         ))
         .map_err(Error::Db)?;
 
@@ -2165,6 +2399,7 @@ pub fn get_top_albums_with_stats(
                         cover_art: row.get(2)?,
                         album_artist: None,
                         year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
+                    ..Default::default()
                     },
                     play_count: row.get(5)?,
                     total_listening_time_sec: row.get::<_, f64>(6)? as i64,
@@ -2185,6 +2420,54 @@ pub fn get_top_albums_with_stats(
     Ok(top_albums)
 }
 
+pub fn get_top_genres_with_stats(
+    conn: &Connection,
+    timeframe: Timeframe,
+    limit: usize,
+    sort_by: TopSort,
+) -> Result<Vec<TopGenre>> {
+    let time_filter = timeframe_where_clause("ph.played_at", timeframe);
+
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT g.id, g.name, g.thumbnail,
+                    COUNT(DISTINCT ph.id) as play_count,
+                    COALESCE(SUM(t.duration_sec * ph.completion_percent / 100.0), 0) as total_time,
+                    COUNT(DISTINCT ph.track_id) as tracks_played
+             FROM playback_history ph
+             JOIN track t ON t.id = ph.track_id
+             JOIN track_genre tg ON tg.track_id = t.id
+             JOIN genre g ON g.id = tg.genre_id
+             WHERE {}
+             GROUP BY g.id
+             ORDER BY {}
+             LIMIT ?",
+            time_filter,
+            top_order_by(sort_by, "g.name")
+        ))
+        .map_err(Error::Db)?;
+
+    let rows = stmt
+        .query_map(params![limit as i64], |row| {
+            Ok(TopGenre {
+                genre: Genre {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    thumbnail: row.get(2)?,
+                ..Default::default()
+                },
+                play_count: row.get(3)?,
+                total_listening_time_sec: row.get::<_, f64>(4)? as i64,
+                tracks_played: row.get(5)?,
+            })
+        })
+        .map_err(Error::Db)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Error::Db)?;
+
+    Ok(rows)
+}
+
 pub fn get_listening_time_trend(
     conn: &Connection,
     timeframe: Timeframe,
@@ -2193,12 +2476,12 @@ pub fn get_listening_time_trend(
 
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT date(ph.played_at) as day,
+            "SELECT date(ph.played_at, 'localtime') as day,
                     COALESCE(SUM(t.duration_sec * ph.completion_percent / 100.0 / 60.0), 0) as minutes
              FROM playback_history ph
              JOIN track t ON t.id = ph.track_id
              WHERE {}
-             GROUP BY date(ph.played_at)
+             GROUP BY date(ph.played_at, 'localtime')
              ORDER BY day ASC",
             time_filter
         ))
@@ -2223,8 +2506,8 @@ pub fn get_streak_data(conn: &Connection, timeframe: Timeframe) -> Result<Streak
 
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT DISTINCT date(played_at) as play_date,
-                    (SELECT COUNT(*) FROM playback_history ph2 WHERE date(ph2.played_at) = date(ph.played_at)) as count
+            "SELECT DISTINCT date(played_at, 'localtime') as play_date,
+                    (SELECT COUNT(*) FROM playback_history ph2 WHERE date(ph2.played_at, 'localtime') = date(ph.played_at, 'localtime')) as count
              FROM playback_history ph
              WHERE {}
              ORDER BY play_date ASC",
@@ -2238,21 +2521,13 @@ pub fn get_streak_data(conn: &Connection, timeframe: Timeframe) -> Result<Streak
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::Db)?;
 
-    // Also fetch all dates for all-time streaks
-    let mut all_stmt = conn
-        .prepare("SELECT DISTINCT date(played_at) FROM playback_history ORDER BY played_at ASC")
-        .map_err(Error::Db)?;
+    // Streaks are computed from the same time-filtered set the calendar shows,
+    // so the cards stay consistent with the selected timeframe.
+    let dates: Vec<String> = date_counts.iter().map(|(d, _)| d.clone()).collect();
+    let longest = compute_longest_streak(&dates);
 
-    let all_dates: Vec<String> = all_stmt
-        .query_map([], |row| row.get(0))
-        .map_err(Error::Db)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Error::Db)?;
-
-    let longest = compute_longest_streak(&all_dates);
-
-    let today = chrono::Utc::now().date_naive();
-    let current = compute_current_streak(&all_dates, today);
+    let today = chrono::Local::now().date_naive();
+    let current = compute_current_streak(&dates, today);
 
     let streak_dates: Vec<String> = date_counts.iter().map(|(d, _)| d.clone()).collect();
     let daily_counts: HashMap<String, i64> = date_counts.into_iter().collect();
@@ -2302,7 +2577,13 @@ fn compute_current_streak(dates: &[String], today: chrono::NaiveDate) -> i32 {
     let mut expected = today;
     for d in dates.iter().rev() {
         if let Some(date) = parse_date(d) {
-            if date == expected || date == expected - chrono::Duration::days(1) {
+            if date == expected {
+                streak += 1;
+                expected = date - chrono::Duration::days(1);
+            } else if streak == 0 && date == expected - chrono::Duration::days(1) {
+                // Today hasn't been played yet, but yesterday was: the streak
+                // is still alive. Only the first iteration may skip a day so a
+                // gap in the middle of the streak never counts.
                 streak += 1;
                 expected = date - chrono::Duration::days(1);
             } else {
@@ -2317,11 +2598,10 @@ fn parse_date(s: &str) -> Option<chrono::NaiveDate> {
     chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
 
-pub fn get_library_growth(conn: &Connection, _timeframe: Timeframe) -> Result<Vec<GrowthPoint>> {
-    let (_data_span_days, period_fmt): (i64, String) = conn
+pub fn get_library_growth(conn: &Connection) -> Result<Vec<GrowthPoint>> {
+    let period_fmt: String = conn
         .query_row(
             "SELECT
-                COALESCE(CAST(JULIANDAY(MAX(added_at)) - JULIANDAY(MIN(added_at)) AS INTEGER), 0),
                 CASE
                     WHEN JULIANDAY(MAX(added_at)) - JULIANDAY(MIN(added_at)) < 31 THEN '%Y-%m-%d'
                     WHEN JULIANDAY(MAX(added_at)) - JULIANDAY(MIN(added_at)) < 365 THEN '%Y-%W'
@@ -2329,7 +2609,7 @@ pub fn get_library_growth(conn: &Connection, _timeframe: Timeframe) -> Result<Ve
                 END
              FROM track",
             [],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            |row| row.get(0),
         )
         .map_err(Error::Db)?;
 
@@ -2460,8 +2740,8 @@ pub fn get_heatmap_hourly(conn: &Connection, timeframe: Timeframe) -> Result<Vec
 
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT CAST(strftime('%w', played_at) AS INTEGER) as weekday,
-                    CAST(strftime('%H', played_at) AS INTEGER) as hour,
+            "SELECT CAST(strftime('%w', played_at, 'localtime') AS INTEGER) as weekday,
+                    CAST(strftime('%H', played_at, 'localtime') AS INTEGER) as hour,
                     COUNT(*) as count
              FROM playback_history ph
              WHERE {}
@@ -2510,7 +2790,7 @@ pub fn get_heatmap_weekday(conn: &Connection, timeframe: Timeframe) -> Result<Ve
 
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT CAST(strftime('%w', played_at) AS INTEGER) as weekday,
+            "SELECT CAST(strftime('%w', played_at, 'localtime') AS INTEGER) as weekday,
                     COUNT(*) as count
              FROM playback_history ph
              WHERE {}
@@ -2545,7 +2825,7 @@ pub fn get_heatmap_weekday(conn: &Connection, timeframe: Timeframe) -> Result<Ve
 
 pub fn get_favorite_trends(conn: &Connection, timeframe: Timeframe) -> Result<Vec<FavoriteTrend>> {
     let time_filter = timeframe_where_clause("ph.played_at", timeframe);
-    let period_expr = "strftime('%Y-%m', ph.played_at)";
+    let period_expr = "strftime('%Y-%m', ph.played_at, 'localtime')";
 
     let mut stmt = conn
         .prepare(&format!(
@@ -2579,90 +2859,62 @@ pub fn get_favorite_trends(conn: &Connection, timeframe: Timeframe) -> Result<Ve
     // Group by period and take top track per period
     rows.sort_by(|a, b| a.0.cmp(&b.0).then(b.3.cmp(&a.3)));
 
-    let mut result = Vec::new();
-    let mut current_period = String::new();
-    let mut top_track_in_period: Option<(i64, String)> = None;
-    let mut top_artist_in_period: Option<(i64, String)> = None;
-    let mut top_album_in_period: Option<(i64, String)> = None;
-
+    let mut periods: Vec<String> = Vec::new();
+    let mut top_track_by_period: HashMap<String, (i64, String)> = HashMap::new();
     for (period, track_id, track_name, _) in &rows {
-        if *period != current_period {
-            if !current_period.is_empty() {
-                let (track_id_opt, track_name_opt) = top_track_in_period
-                    .as_ref()
-                    .map(|(id, n)| (*id, n.clone()))
-                    .unzip();
-                let (artist_id_opt, artist_name_opt) = top_artist_in_period
-                    .as_ref()
-                    .map(|(id, n)| (*id, n.clone()))
-                    .unzip();
-                let (album_id_opt, album_name_opt) = top_album_in_period
-                    .as_ref()
-                    .map(|(id, n)| (*id, n.clone()))
-                    .unzip();
-
-                result.push(FavoriteTrend {
-                    period: current_period.clone(),
-                    top_track_id: track_id_opt,
-                    top_track_name: track_name_opt,
-                    top_artist_id: artist_id_opt,
-                    top_artist_name: artist_name_opt,
-                    top_album_id: album_id_opt,
-                    top_album_name: album_name_opt,
-                });
-            }
-            current_period = period.clone();
-            top_track_in_period = Some((*track_id, track_name.clone()));
-            top_artist_in_period = None;
-            top_album_in_period = None;
-        }
-
-        // Get artist info for this track to compute top artist
-        if top_artist_in_period.is_none() {
-            if let Ok(Some((artist_id, artist_name))) = conn
-                .query_row(
-                    "SELECT ar.id, ar.name FROM track_artist ta JOIN artist ar ON ar.id = ta.artist_id WHERE ta.track_id = ? LIMIT 1",
-                    params![track_id],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()
-            {
-                top_artist_in_period = Some((artist_id, artist_name));
-            }
-        }
-
-        // Get album info
-        if top_album_in_period.is_none() {
-            if let Ok(Some((album_id, album_name))) = conn
-                .query_row(
-                    "SELECT al.id, al.name FROM album_track alt JOIN album al ON al.id = alt.album_id WHERE alt.track_id = ? LIMIT 1",
-                    params![track_id],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()
-            {
-                top_album_in_period = Some((album_id, album_name));
-            }
+        if !top_track_by_period.contains_key(period) {
+            top_track_by_period.insert(period.clone(), (*track_id, track_name.clone()));
+            periods.push(period.clone());
         }
     }
 
-    // Push last period
-    if !current_period.is_empty() {
-        let (track_id_opt, track_name_opt) = top_track_in_period
-            .as_ref()
+    // Top artist per period: count plays per artist within the timeframe.
+    let top_artist_by_period =
+        collect_top_per_period(conn, &format!(
+            "SELECT {pe} as period, ar.id as id, ar.name as name, COUNT(ph.id) as plays
+             FROM playback_history ph
+             JOIN track t ON t.id = ph.track_id
+             JOIN track_artist ta ON ta.track_id = t.id
+             JOIN artist ar ON ar.id = ta.artist_id
+             WHERE {}
+             GROUP BY period, ar.id
+             ORDER BY period ASC, plays DESC",
+            time_filter,
+            pe = period_expr
+        ))?;
+
+    // Top album per period: count plays per album within the timeframe.
+    let top_album_by_period =
+        collect_top_per_period(conn, &format!(
+            "SELECT {pe} as period, al.id as id, al.name as name, COUNT(ph.id) as plays
+             FROM playback_history ph
+             JOIN track t ON t.id = ph.track_id
+             JOIN album_track alt ON alt.track_id = t.id
+             JOIN album al ON al.id = alt.album_id
+             WHERE {}
+             GROUP BY period, al.id
+             ORDER BY period ASC, plays DESC",
+            time_filter,
+            pe = period_expr
+        ))?;
+
+    let mut result = Vec::new();
+    for period in &periods {
+        let (track_id_opt, track_name_opt) = top_track_by_period
+            .get(period)
             .map(|(id, n)| (*id, n.clone()))
             .unzip();
-        let (artist_id_opt, artist_name_opt) = top_artist_in_period
-            .as_ref()
+        let (artist_id_opt, artist_name_opt) = top_artist_by_period
+            .get(period)
             .map(|(id, n)| (*id, n.clone()))
             .unzip();
-        let (album_id_opt, album_name_opt) = top_album_in_period
-            .as_ref()
+        let (album_id_opt, album_name_opt) = top_album_by_period
+            .get(period)
             .map(|(id, n)| (*id, n.clone()))
             .unzip();
 
         result.push(FavoriteTrend {
-            period: current_period,
+            period: period.clone(),
             top_track_id: track_id_opt,
             top_track_name: track_name_opt,
             top_artist_id: artist_id_opt,
@@ -2675,6 +2927,32 @@ pub fn get_favorite_trends(conn: &Connection, timeframe: Timeframe) -> Result<Ve
     Ok(result)
 }
 
+/// Runs a `(period, id, name, plays)` query ordered by plays desc and keeps
+/// the top row (highest plays) per period.
+fn collect_top_per_period(
+    conn: &Connection,
+    sql: &str,
+) -> Result<HashMap<String, (i64, String)>> {
+    let mut stmt = conn.prepare(sql).map_err(Error::Db)?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(Error::Db)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Error::Db)?;
+
+    let mut top: HashMap<String, (i64, String)> = HashMap::new();
+    for (period, id, name) in rows {
+        top.entry(period).or_insert((id, name));
+    }
+    Ok(top)
+}
+
 pub fn get_playback_history_timeline(
     conn: &Connection,
     timeframe: Timeframe,
@@ -2684,13 +2962,10 @@ pub fn get_playback_history_timeline(
 
     let mut stmt = conn
         .prepare(&format!(
-            "SELECT ph.played_at, t.id, t.title, al.id, al.name, al.cover_art, alt.track_number, al.album_artist, al.year,
-                    t.duration_sec, t.is_favorite, t.cover_art, t.added_at,
+            "SELECT ph.played_at, t.id, t.title, t.duration_sec, t.is_favorite, t.cover_art, t.added_at,
                     ph.completion_percent, ph.source_type
              FROM playback_history ph
              JOIN track t ON t.id = ph.track_id
-             LEFT JOIN album_track alt ON t.id = alt.track_id
-             LEFT JOIN album al ON alt.album_id = al.id
              WHERE {}
              ORDER BY ph.played_at DESC
              LIMIT ?",
@@ -2698,83 +2973,80 @@ pub fn get_playback_history_timeline(
         ))
         .map_err(Error::Db)?;
 
-    struct RawEvent {
-        event: PlaybackEvent,
-        album_artist_name: Option<String>,
-    }
-
-    let mut raw_events = Vec::new();
-    let rows = stmt
+    let mut raw_events: Vec<(i64, PlaybackEvent)> = stmt
         .query_map(params![limit as i64], |row| {
-            let album_id: Option<i64> = row.get(3)?;
-            let album_title: Option<String> = row.get(4)?;
-            let album_art: Option<String> = row.get(5)?;
-            let album_artist_name: Option<String> = row.get(7)?;
-            let album_year: Option<i32> = row.get(8)?;
-
             let track = Track {
                 id: row.get(1)?,
                 title: row.get(2)?,
                 artists: vec![],
                 album: Album {
-                    id: album_id.unwrap_or(0),
-                    name: album_title.unwrap_or_else(|| "Unknown Album".to_string()),
-                    cover_art: album_art,
+                    id: 0,
+                    name: "Unknown Album".to_string(),
+                    cover_art: None,
                     album_artist: None,
-                    year: album_year.map(|y| y as u32),
+                    year: None,
+                ..Default::default()
                 },
-                duration_seconds: row.get(9)?,
-                is_favorite: row.get(10)?,
-                cover_art: row.get(11)?,
-                added_at: row.get(12)?,
-                track_number: row.get::<_, Option<i32>>(6)?.map(|n| n as u32),
+                duration_seconds: row.get(3)?,
+                is_favorite: row.get(4)?,
+                cover_art: row.get(5)?,
+                added_at: row.get(6)?,
+                track_number: None,
                 playlist_ids: vec![],
                 genre_ids: None,
                 queue_id: None,
             };
 
-            Ok(RawEvent {
-                event: PlaybackEvent {
+            Ok((
+                row.get::<_, i64>(1)?,
+                PlaybackEvent {
                     played_at: row.get(0)?,
                     track,
-                    completion_percent: row.get(13)?,
-                    source_type: row.get::<_, String>(14)?.to_lowercase(),
+                    completion_percent: row.get(7)?,
+                    source_type: row.get::<_, String>(8)?.to_lowercase(),
                 },
-                album_artist_name,
-            })
+            ))
         })
+        .map_err(Error::Db)?
+        .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(Error::Db)?;
 
-    for row in rows {
-        raw_events.push(row.map_err(Error::Db)?);
-    }
-
     if !raw_events.is_empty() {
-        let names: Vec<&str> = raw_events
-            .iter()
-            .filter_map(|r| r.album_artist_name.as_deref())
+        let track_ids: Vec<i64> = raw_events.iter().map(|(id, _)| *id).collect();
+        let album_map = batch_resolve_albums_for_tracks(conn, &track_ids)?;
+        for (track_id, event) in &mut raw_events {
+            if let Some(info) = album_map.get(track_id) {
+                event.track.album = info.album.clone();
+                event.track.track_number = info.track_number;
+            }
+        }
+
+        let aa_names: Vec<&str> = album_map
+            .values()
+            .filter_map(|info| info.album_artist_name.as_deref())
             .collect();
-        if !names.is_empty() {
-            let album_artist_map = batch_resolve_album_artists(conn, &names)?;
-            for re in &mut raw_events {
-                if let Some(ref name) = re.album_artist_name {
+        if !aa_names.is_empty() {
+            let album_artist_map = batch_resolve_album_artists(conn, &aa_names)?;
+            for (track_id, event) in &mut raw_events {
+                if let Some(name) =
+                    album_map.get(track_id).and_then(|i| i.album_artist_name.as_deref())
+                {
                     if let Some(artists) = album_artist_map.get(name) {
-                        re.event.track.album.album_artist = Some(artists.clone());
+                        event.track.album.album_artist = Some(artists.clone());
                     }
                 }
             }
         }
 
-        let track_ids: Vec<i64> = raw_events.iter().map(|e| e.event.track.id).collect();
         let artists_map = get_artists_for_tracks(conn, &track_ids)?;
-        for re in &mut raw_events {
-            if let Some(artists) = artists_map.get(&re.event.track.id) {
-                re.event.track.artists = artists.clone();
+        for (track_id, event) in &mut raw_events {
+            if let Some(artists) = artists_map.get(track_id) {
+                event.track.artists = artists.clone();
             }
         }
     }
 
-    Ok(raw_events.into_iter().map(|r| r.event).collect())
+    Ok(raw_events.into_iter().map(|(_, event)| event).collect())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -2883,31 +3155,34 @@ mod tests {
     #[test]
     fn test_timeframe_where_clause_today() {
         let result = timeframe_where_clause("t.col", Timeframe::Today);
-        assert_eq!(result, "t.col >= datetime('now', 'start of day')");
+        assert_eq!(
+            result,
+            "t.col >= datetime('now', 'localtime', 'start of day')"
+        );
     }
 
     #[test]
     fn test_timeframe_where_clause_this_week() {
         let result = timeframe_where_clause("t.col", Timeframe::ThisWeek);
-        assert_eq!(result, "t.col >= datetime('now', '-7 days')");
+        assert_eq!(result, "t.col >= datetime('now', 'localtime', '-7 days')");
     }
 
     #[test]
     fn test_timeframe_where_clause_this_month() {
         let result = timeframe_where_clause("t.col", Timeframe::ThisMonth);
-        assert_eq!(result, "t.col >= datetime('now', '-30 days')");
+        assert_eq!(result, "t.col >= datetime('now', 'localtime', '-30 days')");
     }
 
     #[test]
     fn test_timeframe_where_clause_last_3_months() {
         let result = timeframe_where_clause("t.col", Timeframe::Last3Months);
-        assert_eq!(result, "t.col >= datetime('now', '-90 days')");
+        assert_eq!(result, "t.col >= datetime('now', 'localtime', '-90 days')");
     }
 
     #[test]
     fn test_timeframe_where_clause_last_year() {
         let result = timeframe_where_clause("t.col", Timeframe::LastYear);
-        assert_eq!(result, "t.col >= datetime('now', '-1 year')");
+        assert_eq!(result, "t.col >= datetime('now', 'localtime', '-1 year')");
     }
 
     #[test]
@@ -3263,6 +3538,20 @@ mod tests {
         ).unwrap();
     }
 
+    /// Local weekday (0=Sunday) + hour for a stored UTC timestamp. Mirrors
+    /// SQLite's `'localtime'` modifier so heatmap tests are TZ-agnostic.
+    fn local_hour_weekday(utc_str: &str) -> (i64, i64) {
+        use chrono::{Datelike, Timelike};
+        let dt = chrono::NaiveDateTime::parse_from_str(utc_str, "%Y-%m-%d %H:%M:%S")
+            .unwrap()
+            .and_utc()
+            .with_timezone(&chrono::Local);
+        (
+            dt.weekday().num_days_from_sunday() as i64,
+            dt.hour() as i64,
+        )
+    }
+
     // -----------------------------------------------------------------------
     // Stats overview tests
     // -----------------------------------------------------------------------
@@ -3349,7 +3638,7 @@ mod tests {
     #[test]
     fn test_top_tracks_with_stats_empty() {
         let conn = setup_memory_db();
-        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert!(result.is_empty());
     }
 
@@ -3361,7 +3650,7 @@ mod tests {
         insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, t1, "2024-01-16 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 100.0);
-        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].play_count, 2);
         assert_eq!(result[1].play_count, 1);
@@ -3374,7 +3663,7 @@ mod tests {
         let conn = setup_memory_db();
         let track_id = insert_basic_track(&conn);
         insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 50.0);
-        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].total_listening_time_sec, 100);
     }
@@ -3386,7 +3675,7 @@ mod tests {
         let t2 = insert_basic_track_with_path(&conn, "/music/b.mp3", 2);
         insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 100.0);
-        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 1).unwrap();
+        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 1, TopSort::default()).unwrap();
         assert_eq!(result.len(), 1);
     }
 
@@ -3396,10 +3685,52 @@ mod tests {
         let track_id = insert_basic_track(&conn);
         insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, track_id, "2024-06-20 15:30:00", "ALBUM", 100.0);
-        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].play_count, 2);
         assert!(result[0].last_played_at.is_some());
+    }
+
+    #[test]
+    fn test_top_tracks_with_stats_multi_album_no_inflation() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        let album2 = get_or_create_album(&conn, "Compilation", None, Some(2024)).unwrap();
+        conn.execute(
+            "INSERT INTO album_track (album_id, track_id, track_number) VALUES (?, ?, ?)",
+            params![album2, track_id, 5],
+        )
+        .unwrap();
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-01-16 10:00:00", "ALBUM", 50.0);
+        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        assert_eq!(result.len(), 1);
+        // One play per history row regardless of how many albums the track is in.
+        assert_eq!(result[0].play_count, 2);
+        assert_eq!(result[0].total_listening_time_sec, 300);
+        // Album is resolved deterministically (the first album row by id).
+        assert!(result[0].track.album.id == 1 || result[0].track.album.id == album2);
+    }
+
+    #[test]
+    fn test_top_tracks_with_stats_sort_by_time() {
+        let conn = setup_memory_db();
+        // t1: 1 play of a 200s track at 100% => 200s
+        let t1 = insert_basic_track(&conn);
+        // t2: 2 plays of a 100s track at 50% => 100s total
+        let t2 = update_track(
+            &conn, "/music/other.mp3", "Other Song", 100, Some(2024), 2000, 6000,
+            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
+        ).unwrap();
+        insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 50.0);
+        insert_play_at(&conn, t2, "2024-01-16 10:00:00", "ALBUM", 50.0);
+        let by_plays = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::Plays).unwrap();
+        let by_time = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::Time).unwrap();
+        assert_eq!(by_plays[0].track.id, t2);
+        assert_eq!(by_plays[0].play_count, 2);
+        assert_eq!(by_time[0].track.id, t1);
+        assert_eq!(by_time[0].total_listening_time_sec, 200);
     }
 
     // -----------------------------------------------------------------------
@@ -3409,7 +3740,7 @@ mod tests {
     #[test]
     fn test_top_artists_with_stats_empty() {
         let conn = setup_memory_db();
-        let result = get_top_artists_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        let result = get_top_artists_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert!(result.is_empty());
     }
 
@@ -3418,7 +3749,7 @@ mod tests {
         let conn = setup_memory_db();
         let track_id = insert_basic_track(&conn);
         insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
-        let result = get_top_artists_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        let result = get_top_artists_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].artist.name, "Test Artist");
         assert_eq!(result[0].play_count, 1);
@@ -3444,10 +3775,11 @@ mod tests {
 
         insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 100.0);
-        let result = get_top_artists_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        let result = get_top_artists_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0].artist.name, "Test Artist"); // same play count, arbitrary order but both present
-        assert_eq!(result[1].artist.name, "Second Artist");
+        // Equal play counts tie-break by listening time, then name.
+        assert_eq!(result[0].artist.name, "Second Artist");
+        assert_eq!(result[1].artist.name, "Test Artist");
     }
 
     // -----------------------------------------------------------------------
@@ -3457,7 +3789,7 @@ mod tests {
     #[test]
     fn test_top_albums_with_stats_empty() {
         let conn = setup_memory_db();
-        let result = get_top_albums_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        let result = get_top_albums_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert!(result.is_empty());
     }
 
@@ -3466,7 +3798,7 @@ mod tests {
         let conn = setup_memory_db();
         let track_id = insert_basic_track(&conn);
         insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 50.0);
-        let result = get_top_albums_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        let result = get_top_albums_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].album.name, "Test Album");
         assert_eq!(result[0].play_count, 1);
@@ -3490,8 +3822,78 @@ mod tests {
 
         insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 100.0);
-        let result = get_top_albums_with_stats(&conn, Timeframe::AllTime, 10).unwrap();
+        let result = get_top_albums_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // get_top_genres_with_stats tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_top_genres_with_stats_empty() {
+        let conn = setup_memory_db();
+        let result =
+            get_top_genres_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_top_genres_with_stats_basic() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        let gid = get_or_create_genre(&conn, "Rock").unwrap();
+        bulk_insert_track_genres(&conn, &[(track_id, gid)]).unwrap();
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        let result =
+            get_top_genres_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].genre.name, "Rock");
+        assert_eq!(result[0].play_count, 1);
+        assert_eq!(result[0].tracks_played, 1);
+        assert_eq!(result[0].total_listening_time_sec, 200);
+    }
+
+    #[test]
+    fn test_top_genres_with_stats_multi_genre_play_counts_once_per_genre() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        let gid1 = get_or_create_genre(&conn, "Rock").unwrap();
+        let gid2 = get_or_create_genre(&conn, "Indie").unwrap();
+        bulk_insert_track_genres(&conn, &[(track_id, gid1), (track_id, gid2)]).unwrap();
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        let result =
+            get_top_genres_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        assert_eq!(result.len(), 2);
+        // A play counts once per genre, matching the overview's per-row count.
+        assert_eq!(result[0].play_count, 1);
+        assert_eq!(result[1].play_count, 1);
+    }
+
+    #[test]
+    fn test_top_genres_with_stats_sort_by_time() {
+        let conn = setup_memory_db();
+        let t1 = insert_basic_track(&conn); // 200s
+        let t2 = update_track(
+            &conn, "/music/other.mp3", "Other Song", 100, Some(2024), 2000, 6000,
+            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
+        )
+        .unwrap();
+        let rock = get_or_create_genre(&conn, "Rock").unwrap();
+        let pop = get_or_create_genre(&conn, "Pop").unwrap();
+        bulk_insert_track_genres(&conn, &[(t1, pop)]).unwrap();
+        bulk_insert_track_genres(&conn, &[(t2, rock)]).unwrap();
+        insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0); // 200s
+        insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 50.0); // 50s
+        insert_play_at(&conn, t2, "2024-01-16 10:00:00", "ALBUM", 50.0); // 50s
+        let by_plays = get_top_genres_with_stats(&conn, Timeframe::AllTime, 10, TopSort::Plays)
+            .unwrap();
+        let by_time = get_top_genres_with_stats(&conn, Timeframe::AllTime, 10, TopSort::Time)
+            .unwrap();
+        assert_eq!(by_plays[0].genre.name, "Rock");
+        assert_eq!(by_plays[0].play_count, 2);
+        assert_eq!(by_time[0].genre.name, "Pop");
+        assert_eq!(by_time[0].total_listening_time_sec, 200);
     }
 
     // -----------------------------------------------------------------------
@@ -3589,6 +3991,85 @@ mod tests {
         assert_eq!(*result.daily_counts.get("2024-01-15").unwrap(), 2);
     }
 
+    #[test]
+    fn test_current_streak_allows_unplayed_today() {
+        // Listened yesterday, not today: streak is still alive.
+        let dates = vec!["2026-08-01".to_string(), "2026-08-02".to_string()];
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 8, 3).unwrap();
+        assert_eq!(compute_current_streak(&dates, today), 2);
+    }
+
+    #[test]
+    fn test_current_streak_does_not_skip_mid_streak_gap() {
+        // Mon/Wed/Thu with today=Thu: Tuesday is missing, so the streak is
+        // only Thu+Wed (2), not 3.
+        let dates = vec![
+            "2026-07-27".to_string(),
+            "2026-07-29".to_string(),
+            "2026-07-30".to_string(),
+        ];
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 7, 30).unwrap();
+        assert_eq!(compute_current_streak(&dates, today), 2);
+    }
+
+    #[test]
+    fn test_current_streak_breaks_after_two_missed_days() {
+        let dates = vec![
+            "2026-07-20".to_string(),
+            "2026-07-21".to_string(),
+            "2026-07-22".to_string(),
+        ];
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 7, 25).unwrap();
+        assert_eq!(compute_current_streak(&dates, today), 0);
+    }
+
+    #[test]
+    fn test_streak_data_uses_timeframe_dates() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        // One play inside the week, two consecutive just outside it.
+        let now = chrono::Local::now().naive_local();
+        let day = chrono::NaiveTime::from_hms_opt(12, 0, 0).unwrap();
+        insert_play_at(
+            &conn,
+            track_id,
+            &(now.date() - chrono::Duration::days(1))
+                .and_time(day)
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+            "ALBUM",
+            100.0,
+        );
+        insert_play_at(
+            &conn,
+            track_id,
+            &(now.date() - chrono::Duration::days(10))
+                .and_time(day)
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+            "ALBUM",
+            100.0,
+        );
+        insert_play_at(
+            &conn,
+            track_id,
+            &(now.date() - chrono::Duration::days(11))
+                .and_time(day)
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+            "ALBUM",
+            100.0,
+        );
+        // All-time: longest streak is 2 (the two consecutive older plays).
+        let all = get_streak_data(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(all.longest_streak, 2);
+        // This week window: only the recent play counts; streaks come from the
+        // same filtered set the calendar displays.
+        let week = get_streak_data(&conn, Timeframe::ThisWeek).unwrap();
+        assert_eq!(week.streak_dates.len(), 1);
+        assert_eq!(week.longest_streak, 1);
+    }
+
     // -----------------------------------------------------------------------
     // get_library_growth tests
     // -----------------------------------------------------------------------
@@ -3596,7 +4077,7 @@ mod tests {
     #[test]
     fn test_library_growth_empty() {
         let conn = setup_memory_db();
-        let result = get_library_growth(&conn, Timeframe::AllTime).unwrap();
+        let result = get_library_growth(&conn).unwrap();
         assert!(result.is_empty());
     }
 
@@ -3604,7 +4085,7 @@ mod tests {
     fn test_library_growth_with_tracks() {
         let conn = setup_memory_db();
         insert_basic_track(&conn);
-        let result = get_library_growth(&conn, Timeframe::AllTime).unwrap();
+        let result = get_library_growth(&conn).unwrap();
         assert!(!result.is_empty());
         assert!(result[0].tracks_added >= 1);
     }
@@ -3624,7 +4105,7 @@ mod tests {
             params![t2],
         )
         .unwrap();
-        let result = get_library_growth(&conn, Timeframe::AllTime).unwrap();
+        let result = get_library_growth(&conn).unwrap();
         assert!(!result.is_empty());
         // The last entry should have cumulative tracks >= 2
         assert!(result.last().unwrap().tracks_added >= 2);
@@ -3648,12 +4129,11 @@ mod tests {
     fn test_heatmap_hourly_with_plays() {
         let conn = setup_memory_db();
         let track_id = insert_basic_track(&conn);
-        // 2024-01-15 is a Monday (strftime('%w') = 1)
         insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
         let result = get_heatmap_hourly(&conn, Timeframe::AllTime).unwrap();
         assert_eq!(result.len(), 168);
-        // Monday=1, hour=10 => index = 1*24 + 10 = 34
-        assert_eq!(result[34].value, 1);
+        let (wd, h) = local_hour_weekday("2024-01-15 10:00:00");
+        assert_eq!(result[(wd * 24 + h) as usize].value, 1);
     }
 
     #[test]
@@ -3663,8 +4143,11 @@ mod tests {
         insert_play_at(&conn, track_id, "2024-01-15 08:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, track_id, "2024-01-15 22:00:00", "ALBUM", 100.0);
         let result = get_heatmap_hourly(&conn, Timeframe::AllTime).unwrap();
-        assert_eq!(result[32].value, 1); // Monday, 08:00
-        assert_eq!(result[46].value, 1); // Monday, 22:00
+        assert_eq!(result.len(), 168);
+        let (wd1, h1) = local_hour_weekday("2024-01-15 08:00:00");
+        let (wd2, h2) = local_hour_weekday("2024-01-15 22:00:00");
+        assert_eq!(result[(wd1 * 24 + h1) as usize].value, 1);
+        assert_eq!(result[(wd2 * 24 + h2) as usize].value, 1);
     }
 
     // -----------------------------------------------------------------------
@@ -3685,13 +4168,14 @@ mod tests {
     fn test_heatmap_weekday_with_plays() {
         let conn = setup_memory_db();
         let track_id = insert_basic_track(&conn);
-        // 2024-01-15 = Monday, 2024-01-17 = Wednesday
         insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, track_id, "2024-01-17 10:00:00", "ALBUM", 100.0);
         let result = get_heatmap_weekday(&conn, Timeframe::AllTime).unwrap();
         assert_eq!(result.len(), 7);
-        assert_eq!(result[1].value, 1); // Monday
-        assert_eq!(result[3].value, 1); // Wednesday
+        let (wd1, _) = local_hour_weekday("2024-01-15 10:00:00");
+        let (wd2, _) = local_hour_weekday("2024-01-17 10:00:00");
+        assert_eq!(result[wd1 as usize].value, 1);
+        assert_eq!(result[wd2 as usize].value, 1);
     }
 
     // -----------------------------------------------------------------------
@@ -3729,6 +4213,49 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].period, "2024-01");
         assert_eq!(result[1].period, "2024-02");
+    }
+
+    #[test]
+    fn test_favorite_trends_top_artist_and_album_are_true_tops() {
+        let conn = setup_memory_db();
+        // Top track (5 plays) belongs to ArtistX / AlbumX.
+        let a = insert_basic_track(&conn);
+        // Two tracks from ArtistY / AlbumY with 4 + 3 plays = 7 total.
+        let b = update_track(
+            &conn, "/music/b.mp3", "Song B", 200, None, 0, 1000,
+            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
+        ).unwrap();
+        let c = update_track(
+            &conn, "/music/c.mp3", "Song C", 200, None, 0, 1000,
+            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
+        ).unwrap();
+        let artist_x = get_or_create_artist(&conn, "ArtistX").unwrap();
+        let artist_y = get_or_create_artist(&conn, "ArtistY").unwrap();
+        set_track_artists(&conn, a, &[artist_x]).unwrap();
+        set_track_artists(&conn, b, &[artist_y]).unwrap();
+        set_track_artists(&conn, c, &[artist_y]).unwrap();
+        let album_x = get_or_create_album(&conn, "AlbumX", None, None).unwrap();
+        let album_y = get_or_create_album(&conn, "AlbumY", None, None).unwrap();
+        set_track_album(&conn, a, album_x, 1).unwrap();
+        set_track_album(&conn, b, album_y, 1).unwrap();
+        set_track_album(&conn, c, album_y, 2).unwrap();
+        for _ in 0..5 {
+            insert_play_at(&conn, a, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        }
+        for _ in 0..4 {
+            insert_play_at(&conn, b, "2024-01-16 10:00:00", "ALBUM", 100.0);
+        }
+        for _ in 0..3 {
+            insert_play_at(&conn, c, "2024-01-17 10:00:00", "ALBUM", 100.0);
+        }
+
+        let result = get_favorite_trends(&conn, Timeframe::AllTime).unwrap();
+        assert_eq!(result.len(), 1);
+        // Top track is the 5-play track...
+        assert_eq!(result[0].top_track_id, Some(a));
+        // ...but top artist/album are the 7-play artist/album.
+        assert_eq!(result[0].top_artist_name.as_deref(), Some("ArtistY"));
+        assert_eq!(result[0].top_album_name.as_deref(), Some("AlbumY"));
     }
 
     // -----------------------------------------------------------------------
@@ -3773,6 +4300,86 @@ mod tests {
         let result = get_playback_history_timeline(&conn, Timeframe::AllTime, 10).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].source_type, "playlist");
+    }
+
+    #[test]
+    fn test_playback_history_timeline_multi_album_no_duplicates() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn);
+        let album2 = get_or_create_album(&conn, "Compilation", None, None).unwrap();
+        conn.execute(
+            "INSERT INTO album_track (album_id, track_id, track_number) VALUES (?, ?, ?)",
+            params![album2, track_id, 5],
+        )
+        .unwrap();
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        let result = get_playback_history_timeline(&conn, Timeframe::AllTime, 10).unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // avg daily + quality aggregate tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_stats_overview_avg_daily_uses_window() {
+        let conn = setup_memory_db();
+        let track_id = insert_basic_track(&conn); // 200s
+        // 5 plays over the last 5 days, each 100% = 1000s ≈ 16.67 min
+        for day in 1..=5 {
+            let date = chrono::Utc::now()
+                .checked_sub_days(chrono::Days::new(day))
+                .unwrap()
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string();
+            insert_play_at(&conn, track_id, &date, "ALBUM", 100.0);
+        }
+        // this_week window = 7 days => 1000 / 60 / 7 ≈ 2.38 min/day
+        let week = get_stats_overview(&conn, Timeframe::ThisWeek).unwrap();
+        assert_eq!(week.total_plays, 5);
+        assert!((week.avg_daily_listening_min - 1000.0 / 60.0 / 7.0).abs() < 0.001);
+        // today window = 1 day; all plays are from previous days.
+        let today = get_stats_overview(&conn, Timeframe::Today).unwrap();
+        assert_eq!(today.total_plays, 0);
+    }
+
+    #[test]
+    fn test_stats_overview_quality_and_completion() {
+        let conn = setup_memory_db();
+        update_track(
+            &conn, "/music/song.flac", "Song", 200, None, 0, 5000,
+            None, None, Some(1400), 44100, Some(16), 2, "flac", None, None, None, None, None, None, None,
+        )
+        .unwrap();
+        let track_id = get_track_id_by_path(&conn, "/music/song.flac").unwrap();
+        insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
+        insert_play_at(&conn, track_id, "2024-01-16 10:00:00", "ALBUM", 20.0);
+        let overview = get_stats_overview(&conn, Timeframe::AllTime).unwrap();
+        assert!((overview.avg_bitrate_kbps.unwrap() - 1.4).abs() < 0.001);
+        assert_eq!(overview.avg_sample_rate.unwrap() as i64, 44100);
+        assert_eq!(overview.avg_bit_depth.unwrap() as i64, 16);
+        assert!((overview.avg_completion_pct.unwrap() - 60.0).abs() < 0.001);
+        assert!((overview.skip_rate.unwrap() - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_format_distribution_quality_aggregates() {
+        let conn = setup_memory_db();
+        update_track(
+            &conn, "/music/a.flac", "A", 100, None, 0, 1000,
+            None, None, Some(1200), 48000, Some(24), 2, "flac", None, None, None, None, None, None, None,
+        )
+        .unwrap();
+        update_track(
+            &conn, "/music/b.flac", "B", 100, None, 0, 1000,
+            None, None, Some(800), 44100, Some(16), 2, "flac", None, None, None, None, None, None, None,
+        )
+        .unwrap();
+        let result = get_format_distribution(&conn).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!((result[0].avg_bitrate_kbps.unwrap() - 1.0).abs() < 0.001);
+        assert_eq!(result[0].avg_sample_rate.unwrap() as i64, 46050);
+        assert_eq!(result[0].avg_bit_depth.unwrap() as i64, 20);
     }
 
     // -----------------------------------------------------------------------
