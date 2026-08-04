@@ -1,18 +1,18 @@
 <script lang="ts">
-    import { getCurrentWindow } from "@tauri-apps/api/window";
-    import { Heart, X, Music2, Maximize2, MicVocal } from "@lucide/svelte";
+    import Slider from "$components/ui/Slider.svelte";
+    import { fullscreen } from "$lib/fullscreen.svelte";
     import { player } from "$lib/player.svelte";
     import { store } from "$lib/stores.svelte";
     import { formatDurationColon } from "$lib/utils";
-    import { fullscreen } from "$lib/fullscreen.svelte";
-    import Slider from "$components/ui/Slider.svelte";
+    import { Heart, MicVocal, Music2, X } from "@lucide/svelte";
+    import { getCurrentWindow } from "@tauri-apps/api/window";
+    import { gsap } from "gsap";
+    import { Flip } from "gsap/Flip";
+    import { fade } from "svelte/transition";
     import LyricsView from "./LyricsView.svelte";
     import TransportControls from "./TransportControls.svelte";
     import VolumeControl from "./VolumeControl.svelte";
     import Button from "./ui/button/button.svelte";
-    import { fade } from "svelte/transition";
-    import { gsap } from "gsap";
-    import { Flip } from "gsap/Flip";
 
     gsap.registerPlugin(Flip);
 
