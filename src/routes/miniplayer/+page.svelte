@@ -21,6 +21,8 @@
 
     let isPinned = $state(true);
 
+    let displayPosition = $derived(Math.round(player.position * 4) / 4);
+
     async function toggleFavorite() {
         if (player.currentTrack) {
             await player.toggleFavorite(player.currentTrack);
@@ -63,7 +65,7 @@
                 <img
                     src={store.getImageSrc(player.currentTrack?.cover_art)}
                     alt="Cover Art"
-                    class="oject-cover rounded-3xl shadow-lg shadow-zinc-800/60 w-full h-full select-none"
+                    class="object-cover rounded-3xl shadow-lg shadow-zinc-800/60 w-full h-full select-none"
                 />
             </div>
             <div class="col-span-3 flex flex-col gap-4 items-center z-20">
@@ -112,7 +114,7 @@
                     <span
                         class="text-[10px] font-medium text-zinc-300 w-10 text-right"
                     >
-                        {formatDurationColon(player.position)}
+                        {formatDurationColon(displayPosition)}
                     </span>
                     <Slider
                         value={player.progress}
