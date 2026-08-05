@@ -79,7 +79,7 @@
             <SortControl options={sortOptions} {sortKey} bind:field={sortField} bind:dir={sortDir} />
 
             <div
-                class="flex items-center gap-2 bg-secondary rounded-full px-6 py-5 w-60 ring-gray-600 focus-within:ring-2 focus-within:w-80 transition-all duration-300"
+                class="flex items-center gap-2 bg-secondary/60 rounded-full px-6 py-5 w-60 ring-gray-600 focus-within:bg-secondary focus-within:ring-2 focus-within:w-80 transition-all duration-300"
             >
                 <Search size={18} class="text-gray-400" />
                 <input
