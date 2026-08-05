@@ -37,6 +37,7 @@ pub(crate) struct MiniPlayerUsesLayerShell(AtomicBool);
 
 #[derive(Clone)]
 pub(crate) enum TrayAnchor {
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Point(i32, i32),
     #[cfg_attr(target_os = "linux", allow(dead_code))]
     Rect {
@@ -48,6 +49,7 @@ pub(crate) enum TrayAnchor {
 }
 
 pub(crate) struct ClickState {
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     last_click: Mutex<Option<Instant>>,
     pending_single: Arc<AtomicBool>,
     delay: Duration,
@@ -62,6 +64,7 @@ impl ClickState {
         }
     }
 
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     fn is_double_click(&self) -> bool {
         let now = Instant::now();
         let mut last = self.last_click.lock().unwrap_or_else(|e| e.into_inner());
