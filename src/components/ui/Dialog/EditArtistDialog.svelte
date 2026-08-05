@@ -1,8 +1,15 @@
 <script lang="ts">
     import { Button } from "$components/ui/button/index.js";
     import { selectAndUploadImage } from "$lib/edit-helpers";
+    import { fetchArtistImage } from "$lib/commands.svelte";
     import { store } from "$lib/stores.svelte";
-    import { ImagePlus, LoaderCircle, User } from "@lucide/svelte";
+    import {
+        CloudDownload,
+        ImagePlus,
+        LoaderCircle,
+        User,
+    } from "@lucide/svelte";
+    import { toast } from "svelte-sonner";
     import Dialog from "$components/Dialog.svelte";
     import Input from "../input/input.svelte";
     import EditImage from "../EditImage.svelte";
@@ -25,6 +32,7 @@
     let editProfileImage = $state<string | null>(null);
     let editBannerImage = $state<string | null>(null);
     let saving = $state(false);
+    let fetching = $state(false);
 
     $effect(() => {
         if (open) {
@@ -56,6 +64,26 @@
         editBannerImage = null;
     }
 
+    async function fetchFromInternet() {
+        if (!editName.trim()) return;
+        fetching = true;
+        try {
+            const filename = await fetchArtistImage(artistId, editName.trim());
+            if (filename) {
+                editProfileImage = filename;
+                editBannerImage = filename;
+                toast.success("Artist image fetched from the internet");
+                window.location.reload();
+            } else {
+                toast.error("Could not find an artist image online");
+            }
+        } catch (e) {
+            toast.error(String(e));
+        } finally {
+            fetching = false;
+        }
+    }
+
     async function save() {
         saving = true;
         try {
@@ -85,8 +113,11 @@
             />
         </div>
 
-        <div class="flex justify-around mx-5 h-70">
-            <div class="flex flex-col gap-2 h-full ">
+        <div
+            class="flex justify-around mx-5 h-70"
+            transition:fade={{ duration: 200, delay: 100 }}
+        >
+            <div class="flex flex-col gap-2 h-full">
                 <EditImage
                     onclick={pickProfile}
                     removeCover={removeProfile}
@@ -112,7 +143,7 @@
                     {/if}
                 </EditImage>
                 <label
-                    class="text-sm text-center font-bold text-zinc-300 "
+                    class="text-sm text-center font-bold text-zinc-300"
                     for="profile-image">Profile Image</label
                 >
             </div>
@@ -133,7 +164,7 @@
                             )}
                             alt="Banner preview"
                             id="banner-image"
-                            class="object-cover h-full "
+                            class="object-cover h-full"
                         />
                     {:else}
                         <div
@@ -152,11 +183,26 @@
     </div>
 
     {#snippet Footer()}
-        <Button onclick={save} disabled={saving || !editName.trim()}>
-            {#if saving}
-                <LoaderCircle size={14} class="animate-spin" />
-            {/if}
-            Save
-        </Button>
+        <div class="flex justify-between w-full">
+            <Button
+                variant="ghost"
+                size="sm"
+                onclick={fetchFromInternet}
+                disabled={fetching || !editName.trim()}
+            >
+                {#if fetching}
+                    <LoaderCircle size={14} class="animate-spin" />
+                {:else}
+                    <CloudDownload size={14} />
+                {/if}
+                Fetch from Internet
+            </Button>
+            <Button onclick={save} disabled={saving || !editName.trim()}>
+                {#if saving}
+                    <LoaderCircle size={14} class="animate-spin" />
+                {/if}
+                Save
+            </Button>
+        </div>
     {/snippet}
 </Dialog>
