@@ -22,7 +22,6 @@ import type {
   Track,
   Album,
   Artist,
-  TrackDetails,
   Lyrics,
 } from "./types.d.ts";
 
@@ -263,6 +262,13 @@ export async function setTrackGenre(trackId: number, genreName: string): Promise
 // Track editing commands
 // ---------------------------------------------------------------------------
 
+export async function fetchArtistImage(
+  artistId: number,
+  artistName: string,
+): Promise<string | null> {
+  return invoke("fetch_artist_image", { artistId, artistName });
+}
+
 export async function setTrackCoverArt(trackId: number, coverArt: string | null): Promise<void> {
   await invoke("set_track_cover_art", { trackId, coverArt });
 }
@@ -273,4 +279,8 @@ export async function setTrackArtists(trackId: number, artistIds: number[]): Pro
 
 export async function setTrackAlbum(trackId: number, albumId: number): Promise<void> {
   await invoke("set_track_album", { trackId, albumId });
+}
+
+export async function getUpdateInstallSupport(): Promise<boolean> {
+  return invoke("get_update_install_support");
 }
