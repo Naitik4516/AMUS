@@ -51,50 +51,51 @@
 <div
     class="relative flex flex-col h-full w-full overflow-y-scroll px-6 pb-10 z-1"
 >
-    <div
-        class="flex gap-15 items-end p-5 pb-6"
-        transition:fade={{ duration: 500, delay: 100 }}
-    >
+    <div class="flex gap-10 items-end p-5 pb-6" in:fade>
         <img
             src={coverArt ? coverArt : "/PhonographRecord.webp"}
             alt={name}
             class="w-64 {coverArt
-                ? 'rounded-xl shadow-xl'
+                ? 'rounded-2xl shadow-xl'
                 : 'drop-shadow-xl drop-shadow-black/50'}"
             crossorigin="anonymous"
             {@attach CoverImage}
         />
 
-        <div class="flex flex-col gap-4 min-w-0 pb-2">
+        <div class="flex flex-col gap-4 min-w-0 pb-1">
             <h1
-                class="text-3xl md:text-5xl lg:text-[5cqw] max-text-[6rem] font-switzer font-black drop-shadow-lg line-clamp-2"
+                class="text-3xl md:text-5xl lg:text-6xl xl:text-7xl max-text-[7rem] text-left font-switzer font-black drop-shadow-lg line-clamp-2"
             >
                 {name}
             </h1>
-            {#if albumArtist.length > 0}
-                {#each albumArtist as artist (artist.id)}
-                    <div class="flex gap-1 items-center font-medium">
-                        {#if artist.profile_image}
-                            <img
-                                src={store.getImageSrc(artist.profile_image) ??
-                                    ""}
-                                alt={artist.name}
-                                class="w-6 h-6 rounded-full object-cover"
-                            />
-                        {:else}
-                            <Artist size={24} class="text-gray-400" />
-                        {/if}
-                        <a
-                            href={`/library/artists/${artist.id}`}
-                            class="hover:text-white text-sm transition-colors"
-                            >{artist.name}</a
-                        >
-                    </div>
-                {/each}
-            {/if}
-            <span class="text-gray-300">
-                {tracks.length} songs, {formatDuration(totalDuration)}
-            </span>
+            <div class="ml-2 flex flex-col gap-1">
+                {#if albumArtist.length > 0}
+                    {#each albumArtist as artist (artist.id)}
+                        <div class="flex gap-1 items-center font-medium">
+                            {#if artist.profile_image}
+                                <img
+                                    src={store.getImageSrc(
+                                        artist.profile_image,
+                                        "artist",
+                                    ) ?? ""}
+                                    alt={artist.name}
+                                    class="w-6 h-6 rounded-full object-cover"
+                                />
+                            {:else}
+                                <Artist size={24} class="text-gray-400" />
+                            {/if}
+                            <a
+                                href={`/library/artists/${artist.id}`}
+                                class="hover:text-white text-sm transition-colors"
+                                >{artist.name}</a
+                            >
+                        </div>
+                    {/each}
+                {/if}
+                <span class="text-gray-300 font-mono font-medium pl-1">
+                    {tracks.length} songs, {formatDuration(totalDuration)}
+                </span>
+            </div>
         </div>
     </div>
 
@@ -113,27 +114,27 @@
         </div>
     {:else}
         <div
-            class="flex flex-col items-center justify-center py-20 text-gray-500 w-full"
+            class="flex flex-col items-center justify-center py-20 text-gray-400 w-full"
         >
-            <Disc size={64} class="mb-4 opacity-20" />
-            <p class="text-xl font-medium">No tracks in this album</p>
-            <p class="text-sm">This album doesn't have any tracks yet.</p>
+            <Disc size={80} class="mb-4 text-gray-600" />
+            <p class="text-2xl font-semibold">No tracks in this album</p>
+            <p class="text-base font-medium">This album doesn't have any tracks yet.</p>
         </div>
     {/if}
 </div>
 <div
     class="fixed w-100 h-100 blur-[180px] -bottom-40 left-30 rounded-full"
     style:background="{color1?.hex()}4D"
-    transition:fade={{ duration: 300 }}
+    in:fade={{ duration: 300, delay: 200 }}
 ></div>
 <div
     class="absolute w-90 h-90 blur-[150px] bottom-10 right-20 rounded-full"
     style:background="{color2?.hex()}99"
-    transition:fade={{ duration: 300 }}
+    in:fade={{ duration: 300, delay: 200 }}
 ></div>
 
 <div
     class="fixed w-[80vw] h-50 top-30 right-5 blur-[150px]"
     style:background={dominantColor?.css()}
-    transition:fade={{ duration: 300 }}
+    in:fade={{ duration: 300, delay: 200 }}
 ></div>
