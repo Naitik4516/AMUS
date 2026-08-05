@@ -216,14 +216,12 @@
                 </button>
             </div>
 
-            <div
-                class="absolute bottom-full left-24 right-1 flex mb-3 justify-end items-end"
-            >
-                {#if showLyrics}
-                    <div
-                        class="relative h-[60vh] max-w-2/3 w-full bg-card/60 backdrop-saturate-200 backdrop-blur-3xl border-2 border-border/70 rounded-2xl shadow-2xl flex flex-col overflow-hidden mx-auto"
-                        transition:slide
-                    >
+            {#if showLyrics}
+                <div
+                    class="absolute bottom-full right-1/3 mb-2 h-[60vh] max-w-1/2  w-full bg-card/60 backdrop-saturate-200 backdrop-blur-3xl border-2 border-border/70 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+                    transition:slide
+                >
+                    <div class="relative flex-1 min-h-0 flex flex-col">
                         <Button
                             onclick={() => (showLyrics = false)}
                             class="text-gray-300 hover:text-white absolute top-1 right-1 "
@@ -232,26 +230,27 @@
                         >
                             <X size={20} />
                         </Button>
-                        <div class="flex-1 overflow-hidden px-1 pb-1 pt-10">
+                        <div class="flex-1 min-h-0 overflow-hidden px-1 pb-1 pt-10">
                             <LyricsView
                                 trackId={player.currentTrack?.id ?? 0}
                                 position={displayPosition}
                                 isPlaying={player.isPlaying}
                                 onSeek={(sec: number) => player.seek(sec)}
+                                fontSize={24}
                             />
                         </div>
                     </div>
-                {/if}
+                </div>
+            {/if}
 
-                {#if showQueue}
-                    <div
-                        class="w-[30%] ml-3 h-[60vh] relative bg-card/60 backdrop-blur-2xl backdrop-saturate-200 border-2 border-border/70 rounded-2xl shadow-2xl overflow-hidden"
-                        transition:slide
-                    >
-                        <QueueView bind:showQueue />
-                    </div>
-                {/if}
-            </div>
+            {#if showQueue}
+                <div
+                    class="absolute bottom-full right-2 mb-2 w-[30%] ml-3 h-[60vh] bg-card/60 backdrop-blur-2xl backdrop-saturate-200 border-2 border-border/70 rounded-2xl shadow-2xl overflow-hidden"
+                    transition:slide
+                >
+                    <QueueView bind:showQueue />
+                </div>
+            {/if}
         </div>
     </div>
 {/if}
