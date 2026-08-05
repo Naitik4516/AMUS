@@ -24,14 +24,14 @@ AMUS is built for people who own their music library. It runs completely offline
 - [Features](#-features)
   - [Playback & Queue](#playback--queue)
   - [Library & Metadata](#library--metadata)
-  - [Lyrics & UI](#lyrics--ui)
+  - [Lyrics & UI](#lyrics--interface)
 - [Advanced Search](#-advanced-search)
 - [CLI Interface](#-cli-interface)
 - [Installation](#-installation)
-- [Build & Run](#-build--run)
-- [Architecture & Tech Stack](#-architecture--tech-stack)
-- [Roadmap](#-roadmap)
-- [Troubleshooting & FAQ](#-troubleshooting--faq)
+- [Build & Run](#%EF%B8%8F-build--run-from-source)
+- [Architecture & Tech Stack](#-tech-stack--architecture)
+- [Roadmap](#%EF%B8%8F-roadmap)
+- [Troubleshooting & FAQ](#-faq--troubleshooting)
 
 ---
 
