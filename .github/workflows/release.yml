@@ -58,7 +58,8 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
-            libasound2-dev
+            libasound2-dev \
+            libgtk-layer-shell-dev
 
       - uses: oven-sh/setup-bun@v2
 

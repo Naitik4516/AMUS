@@ -1,32 +1,39 @@
 <script lang="ts">
-    import { Music, Play } from "@lucide/svelte";
-    import type { Track, Context } from "$lib/types";
-    import { player } from "$lib/player.svelte";
-    import { store } from "$lib/stores.svelte";
-    import PlayingVisualizer from "./PlayingVisualizer.svelte";
-    import { fade } from "svelte/transition";
     import TrackMenu from "$components/ui/Menu/TrackMenu.svelte";
     import { openContextMenu } from "$lib/context-menu.svelte";
+    import { player } from "$lib/player.svelte";
+    import { store } from "$lib/stores.svelte";
+    import type { Context, Track } from "$lib/types";
+    import { Music, Play } from "@lucide/svelte";
+    import { fade } from "svelte/transition";
+    import PlayingVisualizer from "./PlayingVisualizer.svelte";
 
     let {
         track,
         titleColor = "text-white",
-        coverArtSize = "w-12 h-12",
+        coverArtSize = 48,
         styled = true,
         onclick,
+        context = null,
         ...props
     }: {
         track: Track;
         titleColor?: string;
-        coverArtSize?: string;
+        coverArtSize?: number;
         styled?: boolean;
         onclick?: () => void;
+        context?: Context | null;
     } = $props();
 
     let hovering = $state(false);
 
     let trackContext = $derived<Context>(
-        { type: "Album", id: track.album.id, name: track.album.name, coverArt: track.album.cover_art ?? null },
+        context ?? {
+            type: "Album",
+            id: track.album.id,
+            name: track.album.name,
+            coverArt: track.album.cover_art ?? null,
+        },
     );
 
     function handleContextMenu(e: MouseEvent) {
@@ -47,7 +54,8 @@
     {...props}
 >
     <button
-        class="{coverArtSize} relative rounded-lg flex items-center justify-center overflow-hidden shrink-0"
+        class="relative rounded-lg flex items-center justify-center overflow-hidden shrink-0"
+        style="width: {coverArtSize}px; height: {coverArtSize}px;"
         onclick={() => (onclick ? onclick() : player.play([track]))}
         onmouseenter={() => (hovering = true)}
         onmouseleave={() => (hovering = false)}
@@ -60,9 +68,9 @@
             />
         {:else if !hovering}
             <div
-                class="absolute inset-0 flex items-center justify-center border bg-gray-700/60"
+                class="absolute inset-0 flex items-center justify-center border bg-gray-700/60 inset-shadow-xs"
             >
-                <Music size={24} class="text-gray-300" />
+                <Music size={coverArtSize / 2.5} strokeWidth={2.5} class="text-gray-300" />
             </div>
         {/if}
         {#if player.isPlaying && player.currentTrack?.id === track.id}
@@ -81,7 +89,7 @@
             </div>
         {/if}
     </button>
-    <div class="flex flex-col min-w-0 flex-1 font-switzer">
+    <div class="flex flex-col min-w-0 flex-1 font-satoshi">
         <span class="truncate block">
             <a
                 href="/library/track/{track.id}"

@@ -1,10 +1,16 @@
 <script lang="ts">
     import { Button } from "$components/ui/button/index.js";
     import { selectAndUploadImage } from "$lib/edit-helpers";
+    import { fetchArtistImage } from "$lib/commands.svelte";
     import { store } from "$lib/stores.svelte";
-    import { ImagePlus, LoaderCircle, User } from "@lucide/svelte";
+    import {
+        CloudDownload,
+        ImagePlus,
+        LoaderCircle,
+        User,
+    } from "@lucide/svelte";
+    import { toast } from "svelte-sonner";
     import Dialog from "$components/Dialog.svelte";
-    import { onMount } from "svelte";
     import Input from "../input/input.svelte";
     import EditImage from "../EditImage.svelte";
 
@@ -26,11 +32,14 @@
     let editProfileImage = $state<string | null>(null);
     let editBannerImage = $state<string | null>(null);
     let saving = $state(false);
+    let fetching = $state(false);
 
-    onMount(() => {
-        editName = name;
-        editProfileImage = profileImage;
-        editBannerImage = bannerImage;
+    $effect(() => {
+        if (open) {
+            editName = name;
+            editProfileImage = profileImage;
+            editBannerImage = bannerImage;
+        }
     });
 
     async function pickProfile() {
@@ -55,6 +64,26 @@
         editBannerImage = null;
     }
 
+    async function fetchFromInternet() {
+        if (!editName.trim()) return;
+        fetching = true;
+        try {
+            const filename = await fetchArtistImage(artistId, editName.trim());
+            if (filename) {
+                editProfileImage = filename;
+                editBannerImage = filename;
+                toast.success("Artist image fetched from the internet");
+                window.location.reload();
+            } else {
+                toast.error("Could not find an artist image online");
+            }
+        } catch (e) {
+            toast.error(String(e));
+        } finally {
+            fetching = false;
+        }
+    }
+
     async function save() {
         saving = true;
         try {
@@ -73,7 +102,7 @@
     }
 </script>
 
-<Dialog bind:open title="Edit Artist">
+<Dialog bind:open title="Edit Artist" maxWidth="xl">
     <div class="flex flex-col gap-5 mb-5 font-satoshi">
         <div class="flex flex-col gap-2">
             <Input
@@ -84,12 +113,16 @@
             />
         </div>
 
-        <div class="flex justify-around items-center mx-5">
-            <div class="flex flex-col gap-2 justify-between h-46">
+        <div
+            class="flex justify-around mx-5 h-70"
+            transition:fade={{ duration: 200, delay: 100 }}
+        >
+            <div class="flex flex-col gap-2 h-full">
                 <EditImage
                     onclick={pickProfile}
                     removeCover={removeProfile}
-                    class="h-30 w-30 shrink-0 rounded-full shadow-lg overflow-hidden mt-5"
+                    class="h-40 w-40 shrink-0 rounded-full shadow-lg overflow-hidden border my-auto"
+                    closeButtonClass="top-2 right-2"
                 >
                     {#if editProfileImage || profileImage}
                         <img
@@ -103,9 +136,9 @@
                         />
                     {:else}
                         <div
-                            class="bg-zinc-800 flex items-center justify-center text-zinc-500"
+                            class="bg-zinc-800 flex items-center justify-center text-zinc-300 h-full"
                         >
-                            <User size={20} />
+                            <User size={32} strokeWidth={3} />
                         </div>
                     {/if}
                 </EditImage>
@@ -115,11 +148,13 @@
                 >
             </div>
 
-            <div class="flex flex-col gap-2 h-46 justify-between items-center">
+            <div
+                class="flex flex-col gap-2 h-full max-w-1/2 justify-between items-center"
+            >
                 <EditImage
                     onclick={pickBanner}
                     removeCover={removeBanner}
-                    class="h-38 max-w-2/3 ml-auto  shrink-0 rounded-xl shadow-lg overflow-hidden "
+                    class="h-70 rounded-2xl shadow-lg overflow-hidden bg-neutral-800/50"
                 >
                     {#if editBannerImage || bannerImage}
                         <img
@@ -129,13 +164,13 @@
                             )}
                             alt="Banner preview"
                             id="banner-image"
-                            class=""
+                            class="object-cover h-full"
                         />
                     {:else}
                         <div
-                            class="w-24 bg-zinc-800 flex items-center justify-center text-zinc-500"
+                            class="w-50 h-full bg-zinc-800 flex items-center justify-center text-zinc-300"
                         >
-                            <ImagePlus size={20} />
+                            <ImagePlus size={40} strokeWidth={2.5} />
                         </div>
                     {/if}
                 </EditImage>
@@ -148,11 +183,26 @@
     </div>
 
     {#snippet Footer()}
-        <Button onclick={save} disabled={saving || !editName.trim()}>
-            {#if saving}
-                <LoaderCircle size={14} class="animate-spin" />
-            {/if}
-            Save
-        </Button>
+        <div class="flex justify-between w-full">
+            <Button
+                variant="ghost"
+                size="sm"
+                onclick={fetchFromInternet}
+                disabled={fetching || !editName.trim()}
+            >
+                {#if fetching}
+                    <LoaderCircle size={14} class="animate-spin" />
+                {:else}
+                    <CloudDownload size={14} />
+                {/if}
+                Fetch from Internet
+            </Button>
+            <Button onclick={save} disabled={saving || !editName.trim()}>
+                {#if saving}
+                    <LoaderCircle size={14} class="animate-spin" />
+                {/if}
+                Save
+            </Button>
+        </div>
     {/snippet}
 </Dialog>

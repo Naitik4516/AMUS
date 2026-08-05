@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
-import * as shortcuts from "./shortcuts.svelte";
-import type { ShortcutBinding, ShortcutAction } from "./shortcuts.svelte";
 import { load as storeLoad } from "@tauri-apps/plugin-store";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ShortcutBinding } from "./shortcuts.svelte";
+import * as shortcuts from "./shortcuts.svelte";
 
 function binding(k: string, mods?: Partial<ShortcutBinding>): ShortcutBinding {
   return { key: k, ...mods };

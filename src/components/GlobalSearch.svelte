@@ -9,8 +9,7 @@
     import { slide } from "svelte/transition";
     import { flip } from "svelte/animate";
     import TrackMenu from "$components/ui/Menu/TrackMenu.svelte";
-    import AlbumMenu from "$components/ui/Menu/AlbumMenu.svelte";
-    import ArtistMenu from "$components/ui/Menu/ArtistMenu.svelte";
+    import CollectionMenu from "$components/ui/Menu/CollectionMenu.svelte";
     import { openContextMenu } from "$lib/context-menu.svelte";
 
     type SearchableItem =
@@ -34,46 +33,64 @@
     let searchQuery = $state("");
     let results = $state<SearchableItem[]>([]);
     let showResults = $state(false);
-    let searchTimeout: any;
+    let searchTimeout: ReturnType<typeof setTimeout> | undefined;
     let selectedIndex = $state(0);
     let resultsContainer: HTMLDivElement | undefined = $state();
 
     let ghostSuggestion = $state("");
 
-    let fuse: Fuse<SearchableItem>;
+    let fuseCache: {
+        key: unknown[];
+        instance: Fuse<SearchableItem>;
+    } | null = null;
 
-    let searchIndex = $derived([
-        ...store.tracks.map((track) => ({
-            ...track,
-            type: "track" as const,
-        })),
-        ...store.artists.map((artist) => ({
-            ...artist,
-            type: "artist" as const,
-        })),
-        ...store.albums.map((album) => ({
-            ...album,
-            type: "album" as const,
-        })),
-        ...store.playlists.map((playlist) => ({
-            ...playlist,
-            type: "playlist" as const,
-        })),
-    ]);
-
-    $effect(() => {
-        fuse = new Fuse(searchIndex, {
-            keys: [
-                { name: "title", weight: 2 },
-                { name: "name", weight: 2 },
-                { name: "artists.name", weight: 0.8 },
-                { name: "album.name", weight: 0.8 },
-                { name: "album_artist.name", weight: 0.5 },
-            ],
-            threshold: 0.3,
-            useExtendedSearch: true,
-        });
-    });
+    function getFuse(): Fuse<SearchableItem> {
+        const key: unknown[] = [
+            store.tracks,
+            store.artists,
+            store.albums,
+            store.playlists,
+        ];
+        if (
+            fuseCache &&
+            key.every((arr, i) => arr === fuseCache!.key[i])
+        ) {
+            return fuseCache.instance;
+        }
+        const index: SearchableItem[] = [
+            ...store.tracks.map((track) => ({
+                ...track,
+                type: "track" as const,
+            })),
+            ...store.artists.map((artist) => ({
+                ...artist,
+                type: "artist" as const,
+            })),
+            ...store.albums.map((album) => ({
+                ...album,
+                type: "album" as const,
+            })),
+            ...store.playlists.map((playlist) => ({
+                ...playlist,
+                type: "playlist" as const,
+            })),
+        ];
+        fuseCache = {
+            key,
+            instance: new Fuse(index, {
+                keys: [
+                    { name: "title", weight: 2 },
+                    { name: "name", weight: 2 },
+                    { name: "artists.name", weight: 0.8 },
+                    { name: "album.name", weight: 0.8 },
+                    { name: "album_artist.name", weight: 0.5 },
+                ],
+                threshold: 0.3,
+                useExtendedSearch: true,
+            }),
+        };
+        return fuseCache.instance;
+    }
 
     $effect(() => {
         if (showResults && results.length > 0 && resultsContainer) {
@@ -81,6 +98,12 @@
                 HTMLElement | undefined;
             child?.scrollIntoView({ block: "nearest" });
         }
+    });
+
+    $effect(() => {
+        return () => {
+            if (searchTimeout) clearTimeout(searchTimeout);
+        };
     });
 
     function parseSlashCommand(raw: string): {
@@ -155,7 +178,9 @@
         selectedIndex = 0;
 
         searchTimeout = setTimeout(() => {
-            let raw = fuse.search(trimmed).map((r) => r.item);
+            let raw = getFuse()
+                .search(trimmed)
+                .map((r) => r.item);
             if (filter) {
                 raw = raw.filter((item) => item.type === filter);
             }
@@ -224,17 +249,33 @@
             });
         } else if (result.type === "album") {
             const album = result as Album;
-            openContextMenu(AlbumMenu, {
+            openContextMenu(CollectionMenu, {
                 position: { type: "coordinates", x: e.clientX, y: e.clientY },
-                album,
+                type: "album",
+                id: album.id,
+                name: album.name,
+                detailsHref: `/library/albums/${album.id}`,
                 onEdit: () => {},
             });
         } else if (result.type === "artist") {
             const artist = result as Artist;
-            openContextMenu(ArtistMenu, {
+            openContextMenu(CollectionMenu, {
                 position: { type: "coordinates", x: e.clientX, y: e.clientY },
-                artist,
+                type: "artist",
+                id: artist.id,
+                name: artist.name,
+                detailsHref: `/library/artists/${artist.id}`,
                 onEdit: () => {},
+            });
+        } else if (result.type === "playlist") {
+            const playlist = result as Playlist;
+            openContextMenu(CollectionMenu, {
+                position: { type: "coordinates", x: e.clientX, y: e.clientY },
+                type: "playlist",
+                id: playlist.id,
+                name: playlist.name,
+                onEdit: () => {},
+                onDelete: () => {},
             });
         }
     }
@@ -287,6 +328,13 @@
                 class="w-full py-4 outline-none bg-transparent text-transparent caret-white placeholder-muted-foreground placeholder:drop-shadow-lg text-sm"
                 autocomplete="off"
                 spellcheck="false"
+                role="combobox"
+                aria-expanded={showResults}
+                aria-controls="global-search-results"
+                aria-autocomplete="list"
+                aria-activedescendant={showResults && results.length > 0
+                    ? `global-search-option-${selectedIndex}`
+                    : undefined}
             />
 
             {#if searchQuery}
@@ -321,7 +369,7 @@
         {/if}
 
         {#if searchQuery}
-            <button onclick={() => (searchQuery = "")}>
+            <button onclick={closeDropdown} aria-label="Clear search">
                 <X size={14} class="text-gray-400 hover:text-white" />
             </button>
         {/if}
@@ -331,6 +379,7 @@
         <div
             class="overflow-hidden max-h-[60vh] h-auto overflow-y-auto p-2"
             bind:this={resultsContainer}
+            id="global-search-results"
             role="listbox"
             in:slide
         >
@@ -348,6 +397,7 @@
                         onclick={() => handleResultClick(result)}
                         oncontextmenu={(e) => handleContextMenu(e, result)}
                         role="option"
+                        id="global-search-option-{i}"
                         aria-selected={i === selectedIndex}
                         animate:flip={{ duration: 200, easing: cubicOut }}
                     >

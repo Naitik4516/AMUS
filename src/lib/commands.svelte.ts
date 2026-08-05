@@ -2,12 +2,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   Timeframe,
+  TopSort,
   DataAge,
   StatsOverview,
   FormatStat,
   TopTrack,
   TopArtist,
   TopAlbum,
+  TopGenre,
+  TopRankItem,
   TimeSeriesPoint,
   StreakData,
   GrowthPoint,
@@ -17,18 +20,22 @@ import type {
   BlacklistedEntry,
   Genre,
   Track,
-  TrackDetails,
+  Album,
+  Artist,
   Lyrics,
 } from "./types.d.ts";
 
 export type {
   Timeframe,
+  TopSort,
   DataAge,
   StatsOverview,
   FormatStat,
   TopTrack,
   TopArtist,
   TopAlbum,
+  TopGenre,
+  TopRankItem,
   TimeSeriesPoint,
   StreakData,
   GrowthPoint,
@@ -44,14 +51,12 @@ export async function importAudioLibrary() {
     title: "Select Audio Library Folder",
   });
 
-  if (selected) {
-    const results = await Promise.allSettled(
-      selected.map((path) => invoke("add_source", { path })),
-    );
-    const failures = results.filter((r) => r.status === "rejected");
-    if (failures.length > 0) {
-      console.warn(`${failures.length} source path(s) failed to add`);
-    }
+  if (!selected) return;
+
+  const results = await Promise.allSettled(selected.map((path) => invoke("add_source", { path })));
+  const failures = results.filter((r) => r.status === "rejected");
+  if (failures.length > 0) {
+    console.warn(`${failures.length} source path(s) failed to add`);
   }
   await invoke("scan_library");
 }
@@ -66,6 +71,38 @@ export async function removeSource(path: string): Promise<void> {
 
 export async function scanLibrary(): Promise<void> {
   await invoke("scan_library");
+}
+
+export async function getRecentlyPlayed(limit: number): Promise<Track[]> {
+  return invoke("get_recently_played", { limit });
+}
+
+export async function getMostPlayedTracks(limit: number, timeframe?: string): Promise<Track[]> {
+  return invoke("get_most_played_tracks", { limit, timeframe });
+}
+
+export async function getFavoriteTracks(limit: number): Promise<Track[]> {
+  return invoke("get_favorite_tracks", { limit });
+}
+
+export async function getForgottenTracks(limit: number): Promise<Track[]> {
+  return invoke("get_forgotten_tracks", { limit });
+}
+
+export async function getUnplayedTracks(limit: number): Promise<Track[]> {
+  return invoke("get_unplayed_tracks", { limit });
+}
+
+export async function getRecentlyAddedTracks(limit: number): Promise<Track[]> {
+  return invoke("get_recently_added", { limit });
+}
+
+export async function getTopArtists(limit: number): Promise<Artist[]> {
+  return invoke("get_top_artists", { limit });
+}
+
+export async function getTopAlbums(limit: number): Promise<Album[]> {
+  return invoke("get_top_albums", { limit });
 }
 
 export async function refreshWatcher(): Promise<void> {
@@ -83,22 +120,33 @@ export async function getStatsOverview(timeframe: Timeframe): Promise<StatsOverv
 export async function getTopTracksWithStats(
   timeframe: Timeframe,
   limit: number,
+  sortBy: TopSort = "plays",
 ): Promise<TopTrack[]> {
-  return invoke("get_top_tracks_with_stats", { timeframe, limit });
+  return invoke("get_top_tracks_with_stats", { timeframe, limit, sortBy });
 }
 
 export async function getTopArtistsWithStats(
   timeframe: Timeframe,
   limit: number,
+  sortBy: TopSort = "plays",
 ): Promise<TopArtist[]> {
-  return invoke("get_top_artists_with_stats", { timeframe, limit });
+  return invoke("get_top_artists_with_stats", { timeframe, limit, sortBy });
 }
 
 export async function getTopAlbumsWithStats(
   timeframe: Timeframe,
   limit: number,
+  sortBy: TopSort = "plays",
 ): Promise<TopAlbum[]> {
-  return invoke("get_top_albums_with_stats", { timeframe, limit });
+  return invoke("get_top_albums_with_stats", { timeframe, limit, sortBy });
+}
+
+export async function getTopGenresWithStats(
+  timeframe: Timeframe,
+  limit: number,
+  sortBy: TopSort = "plays",
+): Promise<TopGenre[]> {
+  return invoke("get_top_genres_with_stats", { timeframe, limit, sortBy });
 }
 
 export async function getListeningTimeTrend(timeframe: Timeframe): Promise<TimeSeriesPoint[]> {
@@ -109,8 +157,8 @@ export async function getStreakData(timeframe: Timeframe): Promise<StreakData> {
   return invoke("get_streak_data", { timeframe });
 }
 
-export async function getLibraryGrowth(timeframe: Timeframe): Promise<GrowthPoint[]> {
-  return invoke("get_library_growth", { timeframe });
+export async function getLibraryGrowth(): Promise<GrowthPoint[]> {
+  return invoke("get_library_growth");
 }
 
 export async function getFormatDistribution(): Promise<FormatStat[]> {
@@ -214,6 +262,13 @@ export async function setTrackGenre(trackId: number, genreName: string): Promise
 // Track editing commands
 // ---------------------------------------------------------------------------
 
+export async function fetchArtistImage(
+  artistId: number,
+  artistName: string,
+): Promise<string | null> {
+  return invoke("fetch_artist_image", { artistId, artistName });
+}
+
 export async function setTrackCoverArt(trackId: number, coverArt: string | null): Promise<void> {
   await invoke("set_track_cover_art", { trackId, coverArt });
 }
@@ -224,4 +279,8 @@ export async function setTrackArtists(trackId: number, artistIds: number[]): Pro
 
 export async function setTrackAlbum(trackId: number, albumId: number): Promise<void> {
   await invoke("set_track_album", { trackId, albumId });
+}
+
+export async function getUpdateInstallSupport(): Promise<boolean> {
+  return invoke("get_update_install_support");
 }

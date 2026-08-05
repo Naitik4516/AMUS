@@ -6,7 +6,7 @@
     import { ArrowLeft } from "@lucide/svelte";
     import type { Track, MenuPosition, Context } from "$lib/types";
 
-    interface MenuItem {
+    export interface MenuItem {
         label?: string;
         icon?: string;
         onClick?: () => void;
@@ -15,8 +15,9 @@
         disabled?: boolean;
         type?: "separator";
         items?: MenuItem[];
-        submenu?: Component;
+        submenu?: Component<any>;
         track?: Track;
+        tracks?: Track[];
         context?: Context;
     }
 
@@ -36,6 +37,8 @@
 
     let menuWidth = $state(0);
     let menuHeight = $state(0);
+
+    let menuEl = $state<HTMLDivElement | null>(null);
 
     let { x, y } = $derived.by(() => {
         let x, y;
@@ -62,6 +65,36 @@
             onClose();
         }
     };
+
+    $effect(() => {
+        const el = menuEl;
+        if (!el) return;
+        el.querySelector<HTMLElement>('[role="menuitem"]')?.focus({
+            preventScroll: true,
+        });
+
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape" || e.key === "Tab") {
+                onClose();
+                return;
+            }
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                const items = [
+                    ...el.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+                ].filter((el) => !(el as HTMLButtonElement).disabled);
+                if (items.length === 0) return;
+                const current = document.activeElement;
+                const idx = items.indexOf(current as HTMLElement);
+                const next = e.key === "ArrowDown" ? idx + 1 : idx - 1;
+                const target =
+                    next > items.length - 1 ? 0 : next < 0 ? items.length - 1 : next;
+                items[target]?.focus();
+            }
+        };
+        el.addEventListener("keydown", onKey);
+        return () => el.removeEventListener("keydown", onKey);
+    });
 </script>
 
 <svelte:document
@@ -75,14 +108,20 @@
             onClose();
         }
     }}
-    onscroll={() => onClose()}
+    onscroll={(e) => {
+        const target = e.target as HTMLElement | Document;
+        if (target instanceof Element && target.closest(".dropdown-menu")) {
+            return;
+        }
+        onClose();
+    }}
 />
 
 {#snippet MenuItem(item: MenuItem)}
     {#if item.type === "separator"}
         <div class="my-1.5 h-px bg-white/10" role="separator"></div>
     {:else}
-        <div role="menu" tabindex="-1" class="relative">
+        <div class="relative">
             {#if item.href}
                 <a
                     href={item.href}
@@ -131,7 +170,7 @@
 
 <div
     class="dropdown-menu fixed z-100 min-w-55 max-w-75 rounded-2xl border border-white/10 bg-white/5  shadow-lg backdrop-blur-xl"
-    role="menu"
+    bind:this={menuEl}
     bind:offsetWidth={menuWidth}
     bind:offsetHeight={menuHeight}
     style="top: {y}px; left: {x}px;"
@@ -147,6 +186,7 @@
             <div class="p-2">
                 <subMenu.submenu
                     track={subMenu.track}
+                    tracks={subMenu.tracks}
                     context={subMenu.context}
                 />
             </div>

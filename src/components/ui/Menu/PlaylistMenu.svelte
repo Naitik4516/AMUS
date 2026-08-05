@@ -8,13 +8,29 @@
     import { toast } from "svelte-sonner";
     import PlaylistCoverArt from "$components/ui/PlaylistCoverArt.svelte";
 
-    let { track, context = null }: { track: Track; context?: Context | null } =
-        $props();
+    let {
+        track = null,
+        tracks = null,
+        context = null,
+    }: {
+        track?: Track | null;
+        tracks?: Track[] | null;
+        context?: Context | null;
+    } = $props();
 
     let playlists = $state<Playlist[]>([]);
     let searchQuery = $state("");
     let creating = $state(false);
     let newName = $state("");
+
+    let effectiveTracks = $derived(tracks ?? (track ? [track] : []));
+
+    function isInPlaylist(plId: number) {
+        return (
+            effectiveTracks.length > 0 &&
+            effectiveTracks.every((t) => t.playlist_ids.includes(plId))
+        );
+    }
 
     let filtered = $derived(
         playlists.filter((p) => {
@@ -29,19 +45,20 @@
     });
 
     async function togglePlaylist(plId: number) {
-        const wasIn = track.playlist_ids.includes(plId);
+        const allIn = isInPlaylist(plId);
+        const ids = effectiveTracks.map((t) => t.id);
         try {
-            if (wasIn) {
-                await store.removeTrackFromPlaylist(track.id, plId);
+            if (allIn) {
+                await store.removeTracksFromPlaylist(ids, plId);
                 toast.success("Removed from playlist");
             } else {
-                await store.addTrackToPlaylist(track.id, plId);
+                await store.addTracksToPlaylist(ids, plId);
                 toast.success("Added to playlist");
             }
         } catch (e) {
             console.error("Failed to update playlist", e);
             toast.error(
-                wasIn
+                allIn
                     ? "Failed to remove from playlist"
                     : "Failed to add to playlist",
             );
@@ -118,7 +135,7 @@
                         <div class="flex-1 truncate text-left">
                             {playlist.name}
                         </div>
-                        {#if track.playlist_ids.includes(playlist.id)}
+                        {#if isInPlaylist(playlist.id)}
                             <CircleCheck
                                 size={24}
                                 fill="var(--color-accent)"

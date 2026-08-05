@@ -14,7 +14,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use walkdir::WalkDir;
 
@@ -65,7 +64,6 @@ pub(crate) struct TrackMetadata {
     pub(crate) lyrics_source: String,
 }
 
-
 fn split_artists(input: &str) -> Vec<String> {
     let normalized = input
         .replace(" feat. ", ", ")
@@ -78,6 +76,26 @@ fn split_artists(input: &str) -> Vec<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect()
+}
+
+/// lofty exposes container file types, not codecs; map to a human-readable
+/// codec label. MPEG containers cover MP2/MP3 (lofty 0.21 limitation).
+fn file_type_to_codec(file_type: lofty::file::FileType) -> Option<String> {
+    let label = match file_type {
+        lofty::file::FileType::Mpeg => "MPEG Audio",
+        lofty::file::FileType::Mp4 | lofty::file::FileType::Aac => "AAC",
+        lofty::file::FileType::Flac => "FLAC",
+        lofty::file::FileType::Opus => "Opus",
+        lofty::file::FileType::Vorbis => "Vorbis",
+        lofty::file::FileType::Speex => "Speex",
+        lofty::file::FileType::Wav | lofty::file::FileType::Aiff => "PCM",
+        lofty::file::FileType::WavPack => "WavPack",
+        lofty::file::FileType::Ape => "Monkey's Audio",
+        lofty::file::FileType::Mpc => "Musepack",
+        lofty::file::FileType::Custom(_) => return None,
+        _ => return None,
+    };
+    Some(label.to_string())
 }
 
 pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
@@ -110,112 +128,136 @@ pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
         None
     };
 
-    let (title, artists, album, album_artist, release_year, picture, track_number,
-         genre, bpm, rg_track_gain, rg_track_peak,
-         rg_album_gain, rg_album_peak, encoder,
-         plain_lyrics, synced_lyrics, lyrics_source) =
-        if let Some(t) = tag {
-            let embedded_plain = t.get_string(&ItemKey::Lyrics).map(|s| s.to_owned());
+    let (
+        title,
+        artists,
+        album,
+        album_artist,
+        release_year,
+        picture,
+        track_number,
+        genre,
+        bpm,
+        rg_track_gain,
+        rg_track_peak,
+        rg_album_gain,
+        rg_album_peak,
+        encoder,
+        plain_lyrics,
+        synced_lyrics,
+        lyrics_source,
+    ) = if let Some(t) = tag {
+        let embedded_plain = t.get_string(&ItemKey::Lyrics).map(|s| s.to_owned());
 
-            let tag_bpm = t.get_string(&ItemKey::Bpm)
-                .or_else(|| t.get_string(&ItemKey::IntegerBpm))
-                .and_then(|s| s.parse::<f32>().ok());
-            let tag_rg_track_gain = t.get_string(&ItemKey::ReplayGainTrackGain).and_then(|s| s.parse::<f32>().ok());
-            let tag_rg_track_peak = t.get_string(&ItemKey::ReplayGainTrackPeak).and_then(|s| s.parse::<f32>().ok());
-            let tag_rg_album_gain = t.get_string(&ItemKey::ReplayGainAlbumGain).and_then(|s| s.parse::<f32>().ok());
-            let tag_rg_album_peak = t.get_string(&ItemKey::ReplayGainAlbumPeak).and_then(|s| s.parse::<f32>().ok());
+        let tag_bpm = t
+            .get_string(&ItemKey::Bpm)
+            .or_else(|| t.get_string(&ItemKey::IntegerBpm))
+            .and_then(|s| s.parse::<f32>().ok());
+        let tag_rg_track_gain = t
+            .get_string(&ItemKey::ReplayGainTrackGain)
+            .and_then(|s| s.parse::<f32>().ok());
+        let tag_rg_track_peak = t
+            .get_string(&ItemKey::ReplayGainTrackPeak)
+            .and_then(|s| s.parse::<f32>().ok());
+        let tag_rg_album_gain = t
+            .get_string(&ItemKey::ReplayGainAlbumGain)
+            .and_then(|s| s.parse::<f32>().ok());
+        let tag_rg_album_peak = t
+            .get_string(&ItemKey::ReplayGainAlbumPeak)
+            .and_then(|s| s.parse::<f32>().ok());
 
-            let lyrics_src;
-            let (tag_plain, tag_synced) = match (&embedded_plain, &lrc_content) {
-                (Some(p), Some(lrc)) => {
-                    lyrics_src = "embedded+lrc";
-                    (Some(p.clone()), Some(lrc.clone()))
-                }
-                (Some(p), None) => {
-                    lyrics_src = "embedded";
-                    (Some(p.clone()), None)
-                }
-                (None, Some(lrc)) => {
-                    lyrics_src = "lrc_file";
-                    (None, Some(lrc.clone()))
-                }
-                (None, None) => {
-                    lyrics_src = "embedded";
-                    (None, None)
-                }
-            };
+        let lyrics_src;
+        let (tag_plain, tag_synced) = match (&embedded_plain, &lrc_content) {
+            (Some(p), Some(lrc)) => {
+                lyrics_src = "embedded+lrc";
+                (Some(p.clone()), Some(lrc.clone()))
+            }
+            (Some(p), None) => {
+                lyrics_src = "embedded";
+                (Some(p.clone()), None)
+            }
+            (None, Some(lrc)) => {
+                lyrics_src = "lrc_file";
+                (None, Some(lrc.clone()))
+            }
+            (None, None) => {
+                lyrics_src = "embedded";
+                (None, None)
+            }
+        };
 
-            (
-                t.title().map(|s| s.into_owned()).unwrap_or_else(|| {
-                    path.file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("Unknown")
-                        .to_string()
-                }),
-                split_artists(
-                    t.artist()
-                        .map(|s| s.into_owned())
-                        .unwrap_or_else(|| "Unknown Artist".to_string())
-                        .as_str(),
-                ),
-                t.album()
-                    .map(|s| s.into_owned())
-                    .unwrap_or_else(|| "Unknown Album".to_string()),
-                t.get_string(&ItemKey::AlbumArtist)
-                    .map(|s| s.to_owned())
-                    .or_else(|| t.artist().map(|s| s.into_owned())),
-                t.get_string(&ItemKey::RecordingDate)
-                    .and_then(|s| s.parse::<u32>().ok())
-                    .or_else(|| t.year().map(|y| y as u32)),
-                t.pictures().first().cloned(),
-                t.track(),
-                t.get_string(&ItemKey::Genre).map(|s| s.to_owned()),
-                tag_bpm,
-                tag_rg_track_gain,
-                tag_rg_track_peak,
-                tag_rg_album_gain,
-                tag_rg_album_peak,
-                t.get_string(&ItemKey::EncoderSoftware).map(|s| s.to_owned()),
-                tag_plain,
-                tag_synced,
-                lyrics_src.to_string(),
-            )
-        } else {
-            let lyrics_src;
-            let (tag_plain, tag_synced) = match &lrc_content {
-                Some(lrc) => {
-                    lyrics_src = "lrc_file";
-                    (None, Some(lrc.clone()))
-                }
-                None => {
-                    lyrics_src = "embedded";
-                    (None, None)
-                }
-            };
-
-            (
+        (
+            t.title().map(|s| s.into_owned()).unwrap_or_else(|| {
                 path.file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("Unknown")
-                    .to_string(),
-                vec!["Unknown Artist".to_string()],
-                "Unknown Album".to_string(),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                tag_plain,
-                tag_synced,
-                lyrics_src.to_string(),
-            )
+                    .to_string()
+            }),
+            split_artists(
+                t.artist()
+                    .map(|s| s.into_owned())
+                    .unwrap_or_else(|| "Unknown Artist".to_string())
+                    .as_str(),
+            ),
+            t.album()
+                .map(|s| s.into_owned())
+                .unwrap_or_else(|| "Unknown Album".to_string()),
+            t.get_string(&ItemKey::AlbumArtist)
+                .map(|s| s.to_owned())
+                .or_else(|| t.artist().map(|s| s.into_owned())),
+            t.get_string(&ItemKey::RecordingDate)
+                .and_then(|s| s.parse::<u32>().ok())
+                .or_else(|| t.year().map(|y| y as u32)),
+            t.pictures().first().cloned(),
+            t.track(),
+            t.get_string(&ItemKey::Genre).map(|s| s.to_owned()),
+            tag_bpm,
+            tag_rg_track_gain,
+            tag_rg_track_peak,
+            tag_rg_album_gain,
+            tag_rg_album_peak,
+            t.get_string(&ItemKey::EncoderSoftware)
+                .map(|s| s.to_owned()),
+            tag_plain,
+            tag_synced,
+            lyrics_src.to_string(),
+        )
+    } else {
+        let lyrics_src;
+        let (tag_plain, tag_synced) = match &lrc_content {
+            Some(lrc) => {
+                lyrics_src = "lrc_file";
+                (None, Some(lrc.clone()))
+            }
+            None => {
+                lyrics_src = "embedded";
+                (None, None)
+            }
         };
+
+        (
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+                .to_string(),
+            vec!["Unknown Artist".to_string()],
+            "Unknown Album".to_string(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            tag_plain,
+            tag_synced,
+            lyrics_src.to_string(),
+        )
+    };
 
     Ok(TrackMetadata {
         path: path.to_string_lossy().to_string(),
@@ -235,7 +277,7 @@ pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
         bit_depth,
         channels,
         audio_format,
-        codec: None,
+        codec: file_type_to_codec(tagged_file.file_type()),
         bpm,
         replaygain_track_gain: rg_track_gain,
         replaygain_track_peak: rg_track_peak,
@@ -379,7 +421,9 @@ pub fn ensure_track_in_db(conn: &Connection, path: &Path, app_dir: &Path) -> Res
 
     let cover_url = meta.picture.as_ref().and_then(|pic| {
         save_picture(app_dir, pic)
-            .inspect_err(|e| eprintln!("Failed to save picture for {}: {e}", path.display()))
+            .inspect_err(
+                |e| tracing::warn!(error = %e, path = %path.display(), "failed to save picture"),
+            )
             .ok()
     });
     if let Some(ref url) = cover_url {
@@ -404,7 +448,8 @@ pub fn ensure_track_in_db(conn: &Connection, path: &Path, app_dir: &Path) -> Res
     )?;
 
     if let Some(ref genre_str) = meta.genre {
-        let genre_names: Vec<&str> = genre_str.split(['/', ','].as_ref())
+        let genre_names: Vec<&str> = genre_str
+            .split(['/', ','].as_ref())
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
             .collect();
@@ -428,11 +473,35 @@ pub fn ensure_track_in_db(conn: &Connection, path: &Path, app_dir: &Path) -> Res
     Ok(track_id)
 }
 
-pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result<()> {
-    // Pause realtime file watcher while scanning to avoid redundant processing
-    if let Some(sync_manager) = app_handle.try_state::<SyncManager>() {
-        sync_manager.set_scanning(true);
+/// True if `path` is exactly `dir` or nested directly under it.
+/// Unlike a naive `starts_with`, `/music` does not match `/music2/...`.
+fn is_path_within(path: &str, dir: &str) -> bool {
+    let dir = dir.trim_end_matches(['/', '\\']);
+    if dir.is_empty() {
+        return true;
     }
+    path == dir
+        || path
+            .strip_prefix(dir)
+            .is_some_and(|rest| rest.starts_with('/') || rest.starts_with('\\'))
+}
+
+pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result<()> {
+    // Pause realtime file watcher while scanning. The flag is cleared on every
+    // exit path — success, error or panic — when the guard drops.
+    struct ScanFlagGuard<'a>(Option<&'a SyncManager>);
+    impl Drop for ScanFlagGuard<'_> {
+        fn drop(&mut self) {
+            if let Some(m) = self.0 {
+                m.set_scanning(false);
+            }
+        }
+    }
+    let sync_manager = app_handle.try_state::<SyncManager>();
+    if let Some(m) = &sync_manager {
+        m.set_scanning(true);
+    }
+    let _scan_flag_guard = sync_manager.map(|s| ScanFlagGuard(Some(s.inner())));
 
     let source_dirs = db::get_source_dirs(conn)?;
     let audio_extensions = ["mp3", "flac", "wav", "ogg", "m4a", "aac", "opus"];
@@ -446,7 +515,6 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
         },
     );
 
-    println!("Starting scan of source directories: {:?}", source_dirs);
     // 1. Discovery
     let mut files_on_disk = Vec::new();
     for dir in &source_dirs {
@@ -508,7 +576,6 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
         true
     });
 
-    println!("Discovered {} audio files on disk after blacklist filter", files_on_disk.len());
     // 2. Differential Analysis
     let _ = app_handle.emit(
         "scan-progress",
@@ -546,7 +613,7 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
     // Identify removed tracks
     let mut removed_paths = Vec::new();
     for path in db_tracks.keys() {
-        let is_in_source = source_dirs.iter().any(|d| path.starts_with(d));
+        let is_in_source = source_dirs.iter().any(|d| is_path_within(path, d));
         if is_in_source && !disk_paths_set.contains_key(path) {
             removed_paths.push(path.clone());
         }
@@ -577,11 +644,6 @@ pub fn scan_directories(conn: &mut Connection, app_handle: &AppHandle) -> Result
         },
     );
     let _ = app_handle.emit("library-updated", ());
-
-    // Resume realtime file watcher after scan completes
-    if let Some(sync_manager) = app_handle.try_state::<SyncManager>() {
-        sync_manager.set_scanning(false);
-    }
 
     Ok(())
 }
@@ -623,7 +685,7 @@ pub fn scan_files(
             match extract_metadata(&path) {
                 Ok(m) => Some(m),
                 Err(e) => {
-                    eprintln!("Failed to scan {:?}: {}", path, e);
+                    tracing::warn!(error = %e, path = %path.display(), "failed to scan");
                     failed_paths
                         .lock()
                         .unwrap()
@@ -644,7 +706,6 @@ pub fn scan_files(
     }
 
     emit_scan_progress(app_handle, PHASE_COVER_START, 100, "Saving cover art...");
-    let cover_start = Instant::now();
 
     let covers_dir = app_dir.join("covers");
     fs::create_dir_all(&covers_dir).map_err(Error::Io)?;
@@ -678,7 +739,7 @@ pub fn scan_files(
 
         to_encode.into_par_iter().for_each(|(hash, pic)| {
             if let Err(e) = encode_and_save_cover(&covers_dir, &hash, &pic) {
-                eprintln!("Failed to save picture {hash}: {e}");
+                tracing::warn!(error = %e, hash = %hash, "failed to save picture");
             }
             let n = progress.fetch_add(1, Ordering::Relaxed) + 1;
             if n == 1 || n % progress_step == 0 || n == encode_total {
@@ -703,12 +764,6 @@ pub fn scan_files(
         })
         .collect();
 
-    println!(
-        "Cover art phase: {} unique encodes for {} tracks in {:?}",
-        encode_total,
-        track_count,
-        cover_start.elapsed()
-    );
     emit_scan_progress(app_handle, PHASE_COVER_END, 100, "Cover art saved");
 
     let mut artist_cache = HashMap::new();
@@ -719,7 +774,6 @@ pub fn scan_files(
     let mut track_artist_pairs: Vec<(i64, i64)> = Vec::new();
     let mut track_album_entries: Vec<(i64, i64, i32)> = Vec::new();
 
-    let save_start = Instant::now();
     const BATCH_SIZE: usize = 100;
     let mut tx = conn.transaction().map_err(Error::Db)?;
     let progress_step = (track_count / 20).max(1);
@@ -756,9 +810,7 @@ pub fn scan_files(
         };
 
         if let Some(ref aa) = meta.album_artist {
-            album_artists
-                .entry(album_id)
-                .or_insert_with(|| aa.clone());
+            album_artists.entry(album_id).or_insert_with(|| aa.clone());
         }
 
         let track_id = match db::update_track(
@@ -786,7 +838,7 @@ pub fn scan_files(
         ) {
             Ok(id) => id,
             Err(e) => {
-                eprintln!("Error writing track to DB for {}: {e}", meta.path);
+                tracing::warn!(error = %e, path = %meta.path, "failed to write track to DB");
                 continue;
             }
         };
@@ -800,7 +852,8 @@ pub fn scan_files(
         track_album_entries.push((album_id, track_id, meta.track_number.unwrap_or(1) as i32));
 
         if let Some(ref genre_str) = meta.genre {
-            let genre_names: Vec<&str> = genre_str.split(['/', ','].as_ref())
+            let genre_names: Vec<&str> = genre_str
+                .split(['/', ','].as_ref())
                 .map(|s| s.trim())
                 .filter(|s| !s.is_empty())
                 .collect();
@@ -855,7 +908,6 @@ pub fn scan_files(
     }
 
     tx.commit().map_err(Error::Db)?;
-    println!("DB save completed in {:?}", save_start.elapsed());
 
     emit_scan_progress(app_handle, 100, 100, "Updates saved");
     let _ = app_handle.emit("library-updated", ());
@@ -864,25 +916,27 @@ pub fn scan_files(
         let fetch_pic = sync::get_setting(app_handle, "autoFetchArtistPic", true).unwrap_or(true);
 
         if fetch_pic {
-            let n_artists = unique_artists_to_fetch.len();
-            let pool = app_handle.state::<db::DbPool>();
-            let app_handle_clone = app_handle.clone();
-            let app_dir_clone = app_dir.clone();
-            let pool_clone = pool.inner().clone();
+            let ids: Vec<i64> = unique_artists_to_fetch.keys().copied().collect();
+            if let Ok(needed) = db::get_artists_missing_images(conn, &ids) {
+                unique_artists_to_fetch.retain(|id, _| needed.contains(id));
+            }
 
-            tokio::spawn(async move {
-                let _ = artist_pic_fetcher::fetch_artist_images(
-                    &unique_artists_to_fetch,
-                    &app_dir_clone,
-                    pool_clone,
-                    &app_handle_clone,
-                )
-                .await;
-            });
-            println!(
-                "Scheduled fetch for {} unique artists (pic: {})",
-                n_artists, fetch_pic
-            );
+            if !unique_artists_to_fetch.is_empty() {
+                let pool = app_handle.state::<db::DbPool>();
+                let app_handle_clone = app_handle.clone();
+                let app_dir_clone = app_dir.clone();
+                let pool_clone = pool.inner().clone();
+
+                tokio::spawn(async move {
+                    let _ = artist_pic_fetcher::fetch_artist_images(
+                        &unique_artists_to_fetch,
+                        &app_dir_clone,
+                        pool_clone,
+                        &app_handle_clone,
+                    )
+                    .await;
+                });
+            }
         }
     }
 
@@ -902,7 +956,7 @@ pub fn scan_files(
                 .unwrap_or(now);
 
             if let Err(e) = db::add_to_scan_blacklist(conn, path, mtime, reason) {
-                eprintln!("Failed to blacklist {path}: {e}");
+                tracing::warn!(error = %e, path = %path, "failed to blacklist");
             }
         }
     }

@@ -1,30 +1,20 @@
 <script lang="ts">
-    import { onMount } from "svelte";
-    import { getCurrentWindow } from "@tauri-apps/api/window";
-    import {
-        Play,
-        Pause,
-        SkipBack,
-        SkipForward,
-        Shuffle,
-        Repeat,
-        Repeat1,
-        Heart,
-        X,
-        Volume,
-        Volume1,
-        Volume2,
-        VolumeX,
-        Music2,
-        Maximize2,
-        MicVocal,
-    } from "@lucide/svelte";
+    import Slider from "$components/ui/Slider.svelte";
+    import { fullscreen } from "$lib/fullscreen.svelte";
     import { player } from "$lib/player.svelte";
     import { store } from "$lib/stores.svelte";
     import { formatDurationColon } from "$lib/utils";
-    import { fullscreen } from "$lib/fullscreen.svelte";
-    import Slider from "$components/ui/Slider.svelte";
+    import { Heart, MicVocal, Music2, X } from "@lucide/svelte";
+    import { getCurrentWindow } from "@tauri-apps/api/window";
+    import { gsap } from "gsap";
+    import { Flip } from "gsap/Flip";
+    import { fade } from "svelte/transition";
     import LyricsView from "./LyricsView.svelte";
+    import TransportControls from "./TransportControls.svelte";
+    import VolumeControl from "./VolumeControl.svelte";
+    import Button from "./ui/button/button.svelte";
+
+    gsap.registerPlugin(Flip);
 
     let { onExit = () => {} } = $props();
 
@@ -36,14 +26,45 @@
 
     let showLyrics = $state(false);
 
+    let flipTarget: HTMLDivElement | null = $state(null);
+    let flipSnapshot: Flip.FlipState | null = null;
+    let prevLyrics = false;
+
+    $effect.pre(() => {
+        if (showLyrics !== prevLyrics) {
+            if (flipTarget) {
+                flipSnapshot = Flip.getState(flipTarget);
+            }
+            prevLyrics = showLyrics;
+        }
+    });
+
+    $effect(() => {
+        if (flipSnapshot && flipTarget) {
+            Flip.from(flipSnapshot, {
+                targets: flipTarget,
+                duration: 0.55,
+                ease: "power3.inOut",
+                scale: true,
+                clearProps: "transform",
+            });
+            flipSnapshot = null;
+        }
+    });
+
+    let displayPosition = $derived(Math.round(player.position * 4) / 4);
+
     function exit() {
         getCurrentWindow().setFullscreen(false);
         fullscreen.active = false;
         onExit();
     }
 
-    onMount(() => {
+    $effect(() => {
         getCurrentWindow().setFullscreen(true);
+        return () => {
+            getCurrentWindow().setFullscreen(false);
+        };
     });
 
     async function toggleFavorite() {
@@ -59,8 +80,8 @@
     }}
 />
 
-<div class="fixed inset-0 z-50 bg-neutral-900">
-    <div class="absolute inset-0 -z-10">
+<div class="fixed inset-0 z-50 bg-neutral-900" out:fade>
+    <div class="absolute inset-0 -z-10" in:fade={{ delay: 300 }}>
         {#if coverUrl}
             <img
                 src={coverUrl}
@@ -86,15 +107,20 @@
         <X size={18} />
     </button>
 
-    <div class="z-10 h-full">
+    <div class="z-10 h-full" in:fade={{ duration: 300 }}>
         {#if player.currentTrack}
             {@const track = player.currentTrack}
-            <div class="grid grid-cols-[2fr_3fr] h-full">
+            <div
+                bind:this={flipTarget}
+                class="{!showLyrics
+                    ? 'flex justify-center'
+                    : 'grid grid-cols-[2fr_3fr]'} h-full"
+            >
                 <div
                     class="flex flex-col items-center justify-center gap-6 px-8 py-16"
                 >
                     <div
-                        class="size-72 rounded-3xl shadow-2xl overflow-hidden shrink-0 ring-1 ring-white/10"
+                        class="size-80 rounded-3xl shadow-2xl overflow-hidden shrink-0 inset-shadow-sm"
                     >
                         {#if coverUrl}
                             <img
@@ -113,7 +139,7 @@
 
                     <div class="text-center max-w-md">
                         <h1
-                            class="text-3xl font-black text-white font-switzer truncate"
+                            class="text-4xl font-black text-white font-switzer truncate"
                         >
                             {track.title}
                         </h1>
@@ -133,13 +159,15 @@
                     </div>
 
                     <div
-                        class="w-full max-w-md flex flex-col gap-5 items-center px-4"
+                        class="{!showLyrics
+                            ? 'w-lg'
+                            : 'w-md'}  flex flex-col gap-5 items-center px-4"
                     >
                         <div class="flex w-full items-center gap-3">
                             <span
-                                class="text-xs font-medium text-gray-400 w-10 text-right tabular-nums"
+                                class="text-xs font-medium text-gray-300 w-10 text-right tabular-nums"
                             >
-                                {formatDurationColon(player.position)}
+                                {formatDurationColon(displayPosition)}
                             </span>
                             <div class="flex-1">
                                 <Slider
@@ -162,130 +190,50 @@
                             </span>
                         </div>
                         <div class="flex items-center gap-8">
-                            <button
-                                class="text-gray-300 hover:text-white transition-colors"
-                                onclick={() => player.previous()}
-                                aria-label="Previous track"
-                            >
-                                <SkipBack size={28} fill="currentColor" />
-                            </button>
-                            <button
-                                class="bg-white text-black rounded-full p-4 hover:scale-105 transition-transform shadow-lg"
-                                onclick={() => player.playPause()}
-                                aria-label={player.isPlaying ? "Pause" : "Play"}
-                            >
-                                {#if player.isPlaying}
-                                    <Pause size={32} fill="currentColor" />
-                                {:else}
-                                    <Play
-                                        size={32}
-                                        fill="currentColor"
-                                        class="ml-0.5"
-                                    />
-                                {/if}
-                            </button>
-                            <button
-                                class="text-gray-300 hover:text-white transition-colors"
-                                onclick={() => player.next()}
-                                aria-label="Next track"
-                            >
-                                <SkipForward size={28} fill="currentColor" />
-                            </button>
+                            <TransportControls size="lg" />
                         </div>
 
                         <div
                             class="flex items-center w-full justify-evenly mt-3"
                         >
-                            <button
+                            <Button
+                                variant="outline"
+                                size="icon-xl"
                                 onclick={toggleFavorite}
-                                class="transition-colors"
-                                class:text-rose-600={track.is_favorite}
-                                class:text-gray-400={!track.is_favorite}
                                 aria-label="Toggle favorite"
                             >
                                 <Heart
                                     size={20}
                                     class={track.is_favorite
-                                        ? "fill-rose-600"
+                                        ? "fill-rose-600 text-rose-600"
                                         : ""}
                                 />
-                            </button>
-                            <button
-                                class="text-gray-400 hover:text-white transition-colors"
-                                class:text-white={player.shuffleEnabled}
-                                onclick={() => player.toggleShuffle()}
-                                aria-label="Toggle shuffle"
-                            >
-                                <Shuffle size={20} />
-                            </button>
-                            <button
-                                class="hover:text-white transition-colors"
-                                class:text-accent={player.repeatMode !== "OFF"}
-                                class:text-gray-400={player.repeatMode ===
-                                    "OFF"}
-                                onclick={() => player.cycleRepeat()}
-                                aria-label="Cycle repeat mode"
-                            >
-                                {#if player.repeatMode === "ONE"}
-                                    <Repeat1 size={20} />
-                                {:else}
-                                    <Repeat size={20} />
-                                {/if}
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="icon-xl"
                                 onclick={() => (showLyrics = !showLyrics)}
                                 class="text-gray-300 hover:text-white transition-colors"
-                                class:text-accent={showLyrics}
                                 aria-label="Show lyrics"
                             >
-                                <MicVocal size={18} />
-                            </button>
-                            <div
-                                class="flex items-center gap-2"
-                                onwheel={(e) => {
-                                    e.preventDefault();
-                                    const delta = e.deltaY > 0 ? -0.05 : 0.05;
-                                    player.setVolume(
-                                        Math.max(
-                                            0,
-                                            Math.min(1, player.volume + delta),
-                                        ),
-                                    );
-                                }}
-                            >
-                                <button
-                                    class="text-gray-400 hover:text-white transition-colors"
-                                    onclick={() => player.toggleMute()}
-                                    aria-label="Toggle mute"
-                                >
-                                    {#if player.volume === 0}
-                                        <VolumeX size={20} />
-                                    {:else if player.volume < 0.33}
-                                        <Volume size={20} />
-                                    {:else if player.volume < 0.66}
-                                        <Volume1 size={20} />
-                                    {:else}
-                                        <Volume2 size={20} />
-                                    {/if}
-                                </button>
-                                <div class="w-18">
-                                    <Slider
-                                        value={player.volume}
-                                        onValueChange={(val) =>
-                                            player.setVolume(val)}
-                                    />
-                                </div>
+                                <MicVocal size={20} />
+                            </Button>
+                            <div class="bg-white/5 px-6 py-4 rounded-full">
+                                <VolumeControl width="w-20" />
                             </div>
                         </div>
                     </div>
                 </div>
-                {#if true}
-                    <div class="relative overflow-hidden">
+                {#if showLyrics}
+                    <div
+                        class="relative overflow-hidden"
+                        in:fade={{ duration: 400, delay: 100 }}
+                        out:fade={{ duration: 200 }}
+                    >
                         <LyricsView
                             trackId={track.id ?? 0}
-                            position={player.position}
+                            position={displayPosition}
                             isPlaying={player.isPlaying}
-                            durationSec={player.duration}
                             onSeek={(sec: number) => player.seek(sec)}
                         />
                     </div>
@@ -319,8 +267,8 @@
 
 <style>
     .bg-image {
-        will-change: transform opacity;
-        animation: slow-zoom 30s ease-in-out infinite alternate;
+        will-change: transform, opacity;
+        animation: animate-bg 24s ease-in-out infinite alternate;
         animation-play-state: paused;
     }
 
@@ -328,18 +276,18 @@
         animation-play-state: running;
     }
 
-    @keyframes slow-zoom {
+    @keyframes animate-bg {
         0% {
-            transform: rotate(0deg)  scale(1);
-            opacity: 0.8;
-        }
-        50% {
-            transform: rotate(90deg) scale(1.3);
+            transform: scale(1) rotate(45deg);
             opacity: 0.9;
         }
-        100% {
-            transform: rotate(180deg) scale(0.8);
+        50% {
+            transform: scale(1.3) rotate(0deg);
             opacity: 1;
+        }
+        100% {
+            transform: scale(0.8) rotate(-90deg);
+            opacity: 0.8;
         }
     }
 </style>

@@ -52,6 +52,13 @@
     let conflictWarning = $state<string | null>(null);
     let pendingBindings = $state<ShortcutBinding[]>([]);
     let activeTab = $state<"local" | "global">("local");
+    let dialogEl = $state<HTMLDialogElement | null>(null);
+
+    $effect(() => {
+        if (open && dialogEl && !dialogEl.open) {
+            dialogEl.showModal();
+        }
+    });
 
     $effect(() => {
         if (!capturing) return;
@@ -192,6 +199,7 @@
 
 {#if open}
     <dialog
+        bind:this={dialogEl}
         id="shortcut-settings-modal"
         onclose={() => {
             open = false;
@@ -210,8 +218,6 @@
                 variant="ghost"
                 size="icon"
                 title="Close"
-                command="close"
-                commandfor="shortcut-settings-modal"
                 onclick={() => (open = false)}
             >
                 <X size={16} />

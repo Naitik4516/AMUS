@@ -4,7 +4,6 @@
     import { store } from "$lib/stores.svelte";
     import { Pen, X, LoaderCircle, ImagePlus } from "@lucide/svelte";
     import Dialog from "$components/Dialog.svelte";
-    import { onMount } from "svelte";
     import EditImage from "../EditImage.svelte";
 
     let {
@@ -24,7 +23,7 @@
     let coverChanged = $state(false);
     let saving = $state(false);
 
-    onMount(() => {
+    $effect(() => {
         if (open) {
             editName = name;
             editCoverArt = coverArt;

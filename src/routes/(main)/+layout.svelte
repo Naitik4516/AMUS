@@ -77,6 +77,7 @@
                     return (
                         node.classList.contains("vlist") ||
                         node.classList.contains("virtualizer") ||
+                        node.classList.contains("no-smooth-scroll") ||
                         node.tagName === "INPUT" ||
                         node.tagName === "TEXTAREA"
                     );
@@ -113,13 +114,18 @@
                 },
             });
 
-            ScrollTrigger.addEventListener("refresh", () => newLenis.resize());
+            const onRefresh = () => newLenis.resize();
+            ScrollTrigger.addEventListener("refresh", onRefresh);
             ScrollTrigger.refresh();
 
             return () => {
                 newLenis.destroy();
                 lenis = undefined;
                 gsap.ticker.remove(updateTick);
+                gsap.ticker.lagSmoothing(true);
+                ScrollTrigger.removeEventListener("refresh", onRefresh);
+                ScrollTrigger.clearScrollMemory();
+                ScrollTrigger.scrollerProxy(scrollContainer!, undefined);
             };
         });
     };
@@ -220,7 +226,19 @@
                                 action: {
                                     label: "Install",
                                     onClick: async () => {
-                                        await updater.downloadAndInstall();
+                                        try {
+                                            await updater.downloadAndInstall();
+                                        } catch (error) {
+                                            const reason =
+                                                error instanceof Error
+                                                    ? error.message
+                                                    : String(error);
+                                            console.error("Update install failed:", error);
+                                            toast.error(reason, {
+                                                description:
+                                                    "The update was not installed. Check the logs for details.",
+                                            });
+                                        }
                                     },
                                 },
                                 duration: 10000,
@@ -322,8 +340,8 @@
     title={confirmDialog.title}
     message={confirmDialog.message}
     confirmLabel={confirmDialog.confirmLabel}
-    onConfirm={() => {
-        confirmDialog.onConfirm();
+    onConfirm={async () => {
+        await confirmDialog.onConfirm();
         closeConfirmDialog();
     }}
 />

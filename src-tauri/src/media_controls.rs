@@ -1,5 +1,3 @@
-//! OS media controls integration via souvlaki (MPRIS / SMTC / macOS Now Playing).
-
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
@@ -16,6 +14,8 @@ static INSTANCE: LazyLock<Mutex<Option<MediaControlsManager>>> = LazyLock::new(|
 struct MediaControlsManager {
     controls: MediaControls,
     _listener_guard: tauri::EventId,
+    last_progress: Duration,
+    last_is_playing: bool,
 }
 
 pub fn init(app: AppHandle) -> Result<(), String> {
@@ -88,6 +88,8 @@ pub fn init(app: AppHandle) -> Result<(), String> {
     *guard = Some(MediaControlsManager {
         controls,
         _listener_guard: listener_guard,
+        last_progress: Duration::ZERO,
+        last_is_playing: false,
     });
 
     Ok(())
@@ -150,17 +152,15 @@ fn update_controls(payload: &serde_json::Value, _app: &AppHandle) {
                 .and_then(|d| d.get("is_playing"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
+            mgr.last_is_playing = is_playing;
+            let progress = Some(MediaPosition(mgr.last_progress));
             if is_playing {
                 mgr.controls
-                    .set_playback(MediaPlayback::Playing {
-                        progress: Some(MediaPosition(Duration::ZERO)),
-                    })
+                    .set_playback(MediaPlayback::Playing { progress })
                     .ok();
             } else {
                 mgr.controls
-                    .set_playback(MediaPlayback::Paused {
-                        progress: Some(MediaPosition(Duration::ZERO)),
-                    })
+                    .set_playback(MediaPlayback::Paused { progress })
                     .ok();
             }
         }
@@ -169,17 +169,19 @@ fn update_controls(payload: &serde_json::Value, _app: &AppHandle) {
                 .and_then(|d| d.get("pos_sec"))
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
-            let playback = if payload
-                .get("is_playing")
+            let is_playing = data
+                .and_then(|d| d.get("is_playing"))
                 .and_then(|v| v.as_bool())
-                .unwrap_or(true)
-            {
+                .unwrap_or(mgr.last_is_playing);
+            mgr.last_progress = Duration::from_secs_f64(pos_sec);
+            mgr.last_is_playing = is_playing;
+            let playback = if is_playing {
                 MediaPlayback::Playing {
-                    progress: Some(MediaPosition(Duration::from_secs_f64(pos_sec))),
+                    progress: Some(MediaPosition(mgr.last_progress)),
                 }
             } else {
                 MediaPlayback::Paused {
-                    progress: Some(MediaPosition(Duration::from_secs_f64(pos_sec))),
+                    progress: Some(MediaPosition(mgr.last_progress)),
                 }
             };
             mgr.controls.set_playback(playback).ok();

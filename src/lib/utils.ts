@@ -44,8 +44,29 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
+export function sumDuration(tracks: { duration_seconds: number }[]): number {
+  return tracks.reduce((sum, track) => sum + track.duration_seconds, 0);
+}
+
 export function formatPercentage(value: number): string {
   return `${value.toFixed(1)}%`;
+}
+
+export function toLocalDateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = `${date.getMonth() + 1}`.padStart(2, "0");
+  const d = `${date.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function formatDateShort(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function sortTracks(tracks: Track[], sortBy: SortBy): Track[] {
@@ -68,4 +89,90 @@ export function sortTracks(tracks: Track[], sortBy: SortBy): Track[] {
       break;
   }
   return sortedTracks;
+}
+
+export type CollectionSortField =
+  | "name"
+  | "added_at"
+  | "last_played_at"
+  | "total_plays"
+  | "track_count"
+  | "year";
+
+export type CollectionSortDir = "asc" | "desc";
+
+export interface CollectionSortPref {
+  field: CollectionSortField;
+  dir: CollectionSortDir;
+}
+
+export function loadSortPref(key: string, fallback: CollectionSortPref): CollectionSortPref {
+  try {
+    const raw = localStorage.getItem(`amus.sortPrefs.${key}`);
+    if (raw) {
+      const parsed = JSON.parse(raw) as CollectionSortPref;
+      if (
+        parsed &&
+        typeof parsed.field === "string" &&
+        (parsed.dir === "asc" || parsed.dir === "desc")
+      ) {
+        return parsed;
+      }
+    }
+  } catch {
+    // ignore malformed prefs
+  }
+  return fallback;
+}
+
+export function saveSortPref(key: string, pref: CollectionSortPref): void {
+  try {
+    localStorage.setItem(`amus.sortPrefs.${key}`, JSON.stringify(pref));
+  } catch {
+    // storage unavailable; sort still works for this session
+  }
+}
+
+interface SortableCollection {
+  name: string;
+  added_at?: string;
+  last_played_at?: string;
+  total_plays?: number;
+  track_count?: number;
+  year?: number;
+}
+
+/** Sort collections (albums/artists/playlists/genres) by the given field. */
+export function sortCollectionItems<T extends SortableCollection>(
+  items: T[],
+  field: CollectionSortField,
+  dir: CollectionSortDir,
+): T[] {
+  const factor = dir === "asc" ? 1 : -1;
+  const itemsToSort = [...items];
+  itemsToSort.sort((a, b) => {
+    let cmp = 0;
+    if (field === "name") {
+      cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) * factor;
+    } else {
+      cmp = compareSortField(a[field], b[field], factor);
+    }
+    return cmp === 0 ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : cmp;
+  });
+  return itemsToSort;
+}
+
+/** Values that are missing/null sort last regardless of direction. */
+function compareSortField(
+  a: string | number | undefined,
+  b: string | number | undefined,
+  factor: number,
+): number {
+  if (a === undefined && b === undefined) return 0;
+  if (a === undefined) return 1;
+  if (b === undefined) return -1;
+  if (typeof a === "string" && typeof b === "string") {
+    return (new Date(a).getTime() - new Date(b).getTime()) * factor;
+  }
+  return ((a as number) - (b as number)) * factor;
 }

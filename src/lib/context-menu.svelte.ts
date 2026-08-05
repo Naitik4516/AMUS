@@ -8,7 +8,7 @@ export interface ConfirmDialogState {
   title: string;
   message: string;
   confirmLabel: string;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 }
 
 export const contextMenu = $state<{ current: ContextMenuState | null }>({ current: null });

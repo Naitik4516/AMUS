@@ -1,14 +1,22 @@
 <script lang="ts">
-    import PlaylistCard from "$components/ui/Card/PlaylistCard.svelte";
-    import { Plus } from "@lucide/svelte";
-    import { fly, blur } from "svelte/transition";
-    import { Button } from "$components/ui/button/index.js";
-    import { Input } from "$components/ui/input/index.js";
-    import { store } from "$lib/stores.svelte";
     import Dialog from "$components/Dialog.svelte";
+    import { Button } from "$components/ui/button/index.js";
+    import PlaylistCard from "$components/ui/Card/PlaylistCard.svelte";
+    import { Input } from "$components/ui/input/index.js";
+    import SortControl from "$components/ui/SortControl.svelte";
+    import { store } from "$lib/stores.svelte";
+    import type { CollectionSortDir, CollectionSortField } from "$lib/utils";
+    import { sortCollectionItems } from "$lib/utils";
+    import { Plus } from "@lucide/svelte";
 
     let showCreateModal = $state(false);
     let newPlaylistName = $state("");
+    let sortField = $state<CollectionSortField>("name");
+    let sortDir = $state<CollectionSortDir>("asc");
+
+    let sortedPlaylists = $derived(
+        sortCollectionItems(store.playlists, sortField, sortDir),
+    );
 
     async function createPlaylist() {
         if (!newPlaylistName.trim()) return;
@@ -25,18 +33,32 @@
 <div class="p-8">
     <div class="flex items-center justify-between mb-8">
         <h1 class="text-7xl font-black text-white">Playlists</h1>
-        <Button
-            onclick={() => (showCreateModal = true)}
-            title="Create New Playlist"
-            size="lg"
-        >
-            <Plus class="w-4 h-4" />
-            Create New Playlist
-        </Button>
+        <div class="flex items-center gap-3">
+            <SortControl
+                sortKey="playlists"
+                bind:field={sortField}
+                bind:dir={sortDir}
+                options={[
+                    { value: "name", label: "Name" },
+                    { value: "added_at", label: "Date Added" },
+                    { value: "last_played_at", label: "Recently Played" },
+                    { value: "total_plays", label: "Most Played" },
+                    { value: "track_count", label: "Track Count" },
+                ]}
+            />
+            <Button
+                onclick={() => (showCreateModal = true)}
+                title="Create New Playlist"
+                size="lg"
+            >
+                <Plus class="w-4 h-4" />
+                Create New Playlist
+            </Button>
+        </div>
     </div>
 
     <div class="flex flex-wrap w-full">
-        {#each store.playlists as playlist}
+        {#each sortedPlaylists as playlist}
             <div class="mx-5 my-4">
                 <PlaylistCard data={playlist} />
             </div>

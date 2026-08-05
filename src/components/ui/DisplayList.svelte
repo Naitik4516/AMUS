@@ -1,19 +1,32 @@
 <script lang="ts">
     import { Search } from "@lucide/svelte";
-    import type { Album, Artist, Playlist } from "$lib/types";
+    import type { Album, Artist, Genre, Playlist } from "$lib/types";
     import { Virtualizer, type VirtualizerHandle } from "virtua/svelte";
     import Button from "./button/button.svelte";
-    import { fade, fly } from "svelte/transition";
+    import { fly } from "svelte/transition";
     import { MoveUp } from "@lucide/svelte";
     import type { Snippet } from "svelte";
+    import SortControl from "./SortControl.svelte";
+    import type {
+        CollectionSortDir,
+        CollectionSortField,
+    } from "$lib/utils";
+    import { sortCollectionItems } from "$lib/utils";
+
+    interface SortOption {
+        value: CollectionSortField;
+        label: string;
+    }
 
     interface DisplayListProps {
-        listItems: (Album | Artist | Playlist)[];
+        listItems: (Album | Artist | Playlist | Genre)[];
         title: string;
         Card: any;
         fallBack: Snippet;
         cellHeight?: number;
         cellWidth?: number;
+        sortOptions?: SortOption[];
+        sortKey?: string;
     }
 
     let {
@@ -23,25 +36,36 @@
         fallBack,
         cellHeight = 340,
         cellWidth = 265,
+        sortOptions = [
+            { value: "name", label: "Name" },
+            { value: "added_at", label: "Date Added" },
+            { value: "last_played_at", label: "Recently Played" },
+            { value: "total_plays", label: "Most Played" },
+            { value: "track_count", label: "Track Count" },
+        ],
+        sortKey,
     }: DisplayListProps = $props();
 
     let searchQuery = $state("");
     let showFAB = $state(false);
     let grid: VirtualizerHandle | null = $state(null);
+    let sortField = $state<CollectionSortField>("name");
+    let sortDir = $state<CollectionSortDir>("asc");
 
-    let filteredItems = $derived(
-        listItems.filter((a) =>
+    let visibleItems = $derived.by(() => {
+        const filtered = listItems.filter((a) =>
             a.name.toLowerCase().includes(searchQuery.toLowerCase()),
-        ),
-    );
+        );
+        return sortCollectionItems(filtered, sortField, sortDir);
+    });
 
     let gridWidth = $state(500);
     let cols = $derived(Math.max(1, Math.floor(gridWidth / cellWidth)));
 
     const data = $derived.by(() => {
         const result = [];
-        for (let i = 0; i < filteredItems.length; i += cols) {
-            result.push(filteredItems.slice(i, i + cols));
+        for (let i = 0; i < visibleItems.length; i += cols) {
+            result.push(visibleItems.slice(i, i + cols));
         }
         return result;
     });
@@ -51,16 +75,20 @@
     <div class="flex items-center justify-between py-4 mt-5">
         <h1 class="text-7xl font-black font-switzer text-white">{title}</h1>
 
-        <div
-            class="flex items-center gap-2 bg-secondary rounded-full px-6 py-5 w-60 ring-gray-600 focus-within:ring-2 focus-within:w-80 transition-all duration-300 mr-14"
-        >
-            <Search size={18} class="text-gray-400" />
-            <input
-                type="text"
-                placeholder="Search {title.toLowerCase()}..."
-                bind:value={searchQuery}
-                class="bg-transparent border-none outline-none text-sm text-white w-full"
-            />
+        <div class="flex items-center gap-3 mr-14">
+            <SortControl options={sortOptions} {sortKey} bind:field={sortField} bind:dir={sortDir} />
+
+            <div
+                class="flex items-center gap-2 bg-secondary/60 rounded-full px-6 py-5 w-60 ring-gray-600 focus-within:bg-secondary focus-within:ring-2 focus-within:w-80 transition-all duration-300"
+            >
+                <Search size={18} class="text-gray-400" />
+                <input
+                    type="text"
+                    placeholder="Search {title.toLowerCase()}..."
+                    bind:value={searchQuery}
+                    class="bg-transparent border-none outline-none text-sm text-white w-full"
+                />
+            </div>
         </div>
     </div>
 
@@ -70,7 +98,7 @@
         >
             {@render fallBack()}
         </div>
-    {:else if filteredItems.length === 0}
+    {:else if visibleItems.length === 0}
         <div
             class="flex flex-col items-center justify-center py-20 text-gray-500"
         >
@@ -91,10 +119,7 @@
                 bind:this={grid}
             >
                 {#snippet children(rowItems, rowIndex)}
-                    <div
-                        style="display: flex; height: {cellHeight}px;"
-                        transition:fade={{ delay: 50 }}
-                    >
+                    <div style="display: flex; height: {cellHeight}px;">
                         {#each rowItems as item, colIndex (colIndex)}
                             <div style="padding: 8px; flex: 1;">
                                 <Card data={item} />
@@ -115,7 +140,7 @@
 
 {#if showFAB}
     <div
-        class="fixed {true ? 'bottom-30' : 'bottom-5'} right-8 z-50"
+        class="fixed bottom-30 right-8 z-50"
         transition:fly={{ duration: 300, y: 150 }}
     >
         <Button

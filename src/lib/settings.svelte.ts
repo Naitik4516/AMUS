@@ -4,7 +4,6 @@ interface SettingsMap {
   realtimeSync: boolean;
   syncOnStartup: boolean;
   autoFetchArtistPic: boolean;
-  autoFetchArtistBanner: boolean;
   autoFetchLyrics: boolean;
   keepRunningInBg: boolean;
   autoCheckUpdates: boolean;
@@ -22,7 +21,6 @@ const DEFAULTS: SettingsMap = {
   realtimeSync: true,
   syncOnStartup: true,
   autoFetchArtistPic: true,
-  autoFetchArtistBanner: true,
   autoFetchLyrics: true,
   keepRunningInBg: true,
   autoCheckUpdates: true,

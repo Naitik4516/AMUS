@@ -1,14 +1,12 @@
 <script lang="ts">
     import TrackList from "$components/ui/TrackList.svelte";
     import { Heart } from "@lucide/svelte";
-    import { formatDuration } from "$lib/utils";
+    import { formatDuration, sumDuration } from "$lib/utils";
     import { store } from "$lib/stores.svelte";
 
     let tracks = $derived(store.favoriteTracks);
 
-    let totalDuration = $derived(
-        tracks.reduce((sum, track) => sum + track.duration_seconds, 0),
-    );
+    let totalDuration = $derived(sumDuration(tracks));
 </script>
 
 <div

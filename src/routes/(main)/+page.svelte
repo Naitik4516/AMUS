@@ -25,6 +25,9 @@
             args: { timeframe: "this_month" },
         },
     ];
+
+    let recentlyAdded = $derived(store.recentlyAddedTracks.slice(0, 10));
+    let favorites = $derived(store.favoriteTracks.slice(0, 10));
 </script>
 
 <div class="pr-6">
@@ -44,25 +47,19 @@
         {/each}
 
         <div>
-            <TracksSection title="Recently Added" tracks={store.recentlyAddedTracks.slice(0,10)} />
+            <TracksSection title="Recently Added" tracks={recentlyAdded} />
         </div>
 
         <div>
-            <TracksSection title="Favorites" tracks={store.favoriteTracks.slice(0,10)} />
+            <TracksSection title="Favorites" tracks={favorites} />
         </div>
 
         <div>
-            <ArtistsSection
-                title="Your Top Artists"
-                loadFunction="get_top_artists"
-            />
+            <ArtistsSection title="Your Top Artists" />
         </div>
 
         <div>
-            <AlbumsSection
-                title="Albums You Love"
-                loadFunction="get_top_albums"
-            />
+            <AlbumsSection title="Albums You Love" />
         </div>
 
         <div>

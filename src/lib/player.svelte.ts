@@ -10,7 +10,10 @@ type PlayerEvent =
       payload: { track: Track; duration_sec: number; source: PlaybackSource };
     }
   | { event: "StateChanged"; payload: { is_playing: boolean } }
-  | { event: "Position"; payload: { pos_sec: number; at_epoch_ms: number } }
+  | {
+      event: "Position";
+      payload: { pos_sec: number; at_epoch_ms: number; is_playing: boolean };
+    }
   | {
       event: "QueueChanged";
       payload: {
@@ -140,24 +143,35 @@ class PlayerStore {
   }
 
   async #hydrate() {
-    try {
-      const snapshot = await invoke<StateSnapshot>("get_current_state");
-      this.currentTrack = snapshot.current_track;
-      this.isPlaying = snapshot.is_playing;
-      this.duration = snapshot.duration_sec;
-      this.repeatMode = snapshot.repeat;
-      this.shuffleEnabled = snapshot.shuffle;
-      this.volume = snapshot.volume;
-      this.muted = snapshot.muted;
-      this.userQueue = snapshot.user_queue;
-      this.#applyQueueView(snapshot.queue_view);
-      this.#setPosition(snapshot.position_sec);
-      if (this.isPlaying) {
-        this.#startTicking();
+    // The backend actor thread can briefly be unavailable right after a
+    // window loads (or after it recovers from an internal error), so retry a
+    // few times with backoff before giving up.
+    const maxAttempts = 5;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const snapshot = await invoke<StateSnapshot>("get_current_state");
+        this.currentTrack = snapshot.current_track;
+        this.isPlaying = snapshot.is_playing;
+        this.duration = snapshot.duration_sec;
+        this.repeatMode = snapshot.repeat;
+        this.shuffleEnabled = snapshot.shuffle;
+        this.volume = snapshot.volume;
+        this.muted = snapshot.muted;
+        this.userQueue = snapshot.user_queue;
+        this.#applyQueueView(snapshot.queue_view);
+        this.#setPosition(snapshot.position_sec);
+        if (this.isPlaying) {
+          this.#startTicking();
+        }
+        this.isReady = true;
+        return;
+      } catch (err) {
+        if (attempt === maxAttempts) {
+          console.error("failed to hydrate player state", err);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, Math.min(500 * attempt, 2000)));
       }
-      this.isReady = true;
-    } catch (err) {
-      console.error("failed to hydrate player state", err);
     }
   }
 

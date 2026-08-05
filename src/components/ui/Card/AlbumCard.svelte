@@ -2,7 +2,7 @@
     import { Play } from "@lucide/svelte";
     import { store } from "$lib/stores.svelte";
     import type { Album } from "$lib/types";
-    import AlbumMenu from "$components/ui/Menu/AlbumMenu.svelte";
+    import CollectionMenu from "$components/ui/Menu/CollectionMenu.svelte";
     import EditAlbumDialog from "$components/ui/Dialog/EditAlbumDialog.svelte";
     import { openContextMenu } from "$lib/context-menu.svelte";
 
@@ -12,9 +12,12 @@
 
     function handleContextMenu(e: MouseEvent) {
         e.preventDefault();
-        openContextMenu(AlbumMenu, {
+        openContextMenu(CollectionMenu, {
             position: { type: "coordinates", x: e.clientX, y: e.clientY },
-            album: data,
+            type: "album",
+            id: data.id,
+            name: data.name,
+            detailsHref: `/library/albums/${data.id}`,
             onEdit: () => {
                 editDialogOpen = true;
             },

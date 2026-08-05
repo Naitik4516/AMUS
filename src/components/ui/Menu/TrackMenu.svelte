@@ -1,5 +1,5 @@
 <script lang="ts">
-    import DropdownMenu from "./DropdownMenu.svelte";
+    import DropdownMenu, { type MenuItem } from "./DropdownMenu.svelte";
     import { player } from "$lib/player.svelte";
     import { toast } from "svelte-sonner";
     import type { Track, MenuPosition } from "$lib/types";
@@ -51,7 +51,7 @@
     }
 
     function buildItems() {
-        const items: any[] = [];
+        const items: MenuItem[] = [];
 
         if (!isExcluded("removeFromPlaylist") && context?.type === "Playlist") {
             items.push({
@@ -151,6 +151,8 @@
 
         return items;
     }
+
+    let items = $derived(buildItems());
 </script>
 
-<DropdownMenu {position} items={buildItems()} {onClose} />
+<DropdownMenu {position} items={items} {onClose} />

@@ -55,6 +55,22 @@
         }
     }
 
+    async function handleRestoreAllAndScan() {
+        const paths = entries.map((e) => e.path);
+        for (const p of paths) restoring.add(p);
+        try {
+            await Promise.all(paths.map((p) => unblacklistPath(p)));
+            await scanLibrary();
+            entries = [];
+            toast.success("All files restored and library scanned");
+        } catch (e) {
+            console.error("Failed to restore all:", e);
+            toast.error("Failed to restore files");
+        } finally {
+            for (const p of paths) restoring.delete(p);
+        }
+    }
+
     function reasonLabel(reason: string): string {
         if (reason === "user_deleted") return "Deleted by user";
         if (reason.startsWith("corrupted:")) return "Corrupted file";
@@ -62,7 +78,7 @@
     }
 
     function formatPath(path: string): string {
-        const parts = path.split("/");
+        const parts = path.split(/[\\/]/);
         const filename = parts.pop() || path;
         const dir = parts.slice(-2).join("/");
         return dir ? `${dir}/${filename}` : filename;
@@ -84,7 +100,7 @@
     }
 </script>
 
-<div class="p-8 max-w-4xl mx-auto">
+<div class="p-8 max-w-4xl mx-auto" aria-busy={loading}>
     <div class="flex items-center justify-between mb-8">
         <div>
             <h1 class="text-2xl font-bold text-white flex items-center gap-3">
@@ -98,6 +114,14 @@
         <Button variant="ghost" onclick={loadEntries} disabled={loading}>
             <RefreshCw size={16} class={loading ? "animate-spin" : ""} />
             Refresh
+        </Button>
+        <Button
+            variant="outline"
+            disabled={entries.length === 0}
+            onclick={handleRestoreAllAndScan}
+        >
+            <RefreshCw size={16} class="mr-1" />
+            Restore All & Rescan
         </Button>
     </div>
 

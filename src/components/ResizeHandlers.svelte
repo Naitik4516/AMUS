@@ -21,12 +21,12 @@
 
 <div
     role="presentation"
-    class="fixed top-0 left-0 right-0 h-1.5 cursor-s-resize z-999"
+    class="fixed top-0 left-0 right-0 h-1.5 cursor-ns-resize z-999"
     onmousedown={(e) => startResize("North", e)}
 ></div>
 <div
     role="presentation"
-    class="fixed bottom-0 left-0 right-0 h-1.5 cursor-s-resize z-999"
+    class="fixed bottom-0 left-0 right-0 h-1.5 cursor-ns-resize z-999"
     onmousedown={(e) => startResize("South", e)}
 ></div>
 <div

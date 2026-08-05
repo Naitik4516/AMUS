@@ -73,3 +73,7 @@ a {
   -webkit-user-select: text !important;
   user-select: text !important;
 }
+
+.no-scroll-smooth {
+  scroll-behavior: auto !important;
+}

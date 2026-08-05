@@ -34,6 +34,7 @@
         Zap,
     } from "@lucide/svelte";
     import { onMount } from "svelte";
+    import { toast } from "svelte-sonner";
 
     let sources = $state<string[]>([]);
     let loading = $state(true);
@@ -138,48 +139,6 @@
                                 </span>
                             </div>
 
-                            <style>
-                                .smooth-scroll-range {
-                                    -webkit-appearance: none;
-                                    appearance: none;
-                                    width: 100%;
-                                    height: 6px;
-                                    background: rgba(255, 255, 255, 0.15);
-                                    border-radius: 999px;
-                                    outline: none;
-                                    cursor: pointer;
-                                }
-
-                                .smooth-scroll-range::-webkit-slider-thumb {
-                                    -webkit-appearance: none;
-                                    appearance: none;
-                                    width: 18px;
-                                    height: 18px;
-                                    border-radius: 50%;
-                                    background: white;
-                                    cursor: pointer;
-                                    transition: transform 0.15s ease;
-                                }
-
-                                .smooth-scroll-range::-webkit-slider-thumb:hover {
-                                    transform: scale(1.15);
-                                }
-
-                                .smooth-scroll-range::-moz-range-thumb {
-                                    width: 18px;
-                                    height: 18px;
-                                    border-radius: 50%;
-                                    background: white;
-                                    cursor: pointer;
-                                    border: none;
-                                }
-
-                                .smooth-scroll-range::-moz-range-track {
-                                    height: 6px;
-                                    background: rgba(255, 255, 255, 0.15);
-                                    border-radius: 999px;
-                                }
-                            </style>
                             <button
                                 onclick={() => handleRemoveSource(source)}
                                 class="shrink-0 p-2 text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
@@ -273,7 +232,7 @@
                 />
                 <ToggleCard
                     title="OS Media Controls"
-                    description="Integrate with your OS media playback controls (MPRIS on Linux, SMTC on Windows, Now Playing on macOS)."
+                    description="Integrate with your OS media playback controls."
                     bind:checked={settings.osMediaControls}
                     onchange={(v) =>
                         setSetting("osMediaControls", v).then(() =>
@@ -303,7 +262,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <ToggleCard
                     title="Smooth Scrolling"
-                    description="Enable smooth scrolling throughout the app using Lenis."
+                    description="Enable smooth scrolling throughout the app."
                     bind:checked={settings.smoothScrollEnabled}
                     onchange={(v) => setSetting("smoothScrollEnabled", v)}
                     icon={Mouse}
@@ -374,8 +333,6 @@
             <h3 class="text-lg font-bold text-gray-300 mt-6">Shortcuts</h3>
             <button
                 class="flex items-center justify-between w-full px-8 py-4 bg-card/50 backdrop-blur-lg rounded-3xl shadow-lg border border-border cursor-pointer hover:bg-card/70 transition-colors text-left"
-                command="show-modal"
-                commandfor="shortcut-settings-modal"
                 onclick={() => (showShortcutModal = true)}
             >
                 <div class="flex items-center gap-3">
@@ -424,16 +381,25 @@
                             >{updater.currentVersion || "Loading..."}</span
                         >
                     </div>
-                    <div class="flex items-center gap-3">
+                    <div class="flex items-center justify-between gap-3">
                         {#if updater.updateAvailable}
                             <span class="text-sm text-emerald-400 font-medium">
                                 v{updater.updateAvailable.version} available
                             </span>
                             <Button
-                                onclick={() => updater.downloadAndInstall()}
+                                onclick={async () => {
+                                    try {
+                                        await updater.downloadAndInstall();
+                                    } catch (error) {
+                                        toast.error(
+                                            error instanceof Error
+                                                ? error.message
+                                                : String(error),
+                                        );
+                                    }
+                                }}
                                 disabled={updater.downloading}
                                 variant="default"
-                                size="lg"
                             >
                                 {updater.downloading
                                     ? "Installing..."
@@ -459,3 +425,46 @@
         </div>
     </div>
 </div>
+
+<style>
+    .smooth-scroll-range {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 999px;
+        outline: none;
+        cursor: pointer;
+    }
+
+    .smooth-scroll-range::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: white;
+        cursor: pointer;
+        transition: transform 0.15s ease;
+    }
+
+    .smooth-scroll-range::-webkit-slider-thumb:hover {
+        transform: scale(1.15);
+    }
+
+    .smooth-scroll-range::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: white;
+        cursor: pointer;
+        border: none;
+    }
+
+    .smooth-scroll-range::-moz-range-track {
+        height: 6px;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 999px;
+    }
+</style>

@@ -33,9 +33,11 @@ pub enum Commands {
     Next,
     Prev,
     Seek {
+        #[arg(allow_hyphen_values = true)]
         position: String,
     },
     Volume {
+        #[arg(allow_hyphen_values = true)]
         level: String,
     },
     Mute,

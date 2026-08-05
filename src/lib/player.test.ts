@@ -99,12 +99,37 @@ describe("init / lifecycle", () => {
   });
 
   it("handles hydration error gracefully", async () => {
-    mockInvoke.mockRejectedValueOnce(new Error("db error"));
-    await player.init();
+    vi.useFakeTimers();
+    try {
+      mockInvoke.mockRejectedValue(new Error("db error"));
+      const initPromise = player.init();
+      await vi.advanceTimersByTimeAsync(60_000);
+      await initPromise;
 
-    expect(player.isReady).toBe(false);
-    expect(player.currentTrack).toBeNull();
-    expect(player.isPlaying).toBe(false);
+      expect(player.isReady).toBe(false);
+      expect(player.currentTrack).toBeNull();
+      expect(player.isPlaying).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries hydration when the first attempt fails", async () => {
+    vi.useFakeTimers();
+    try {
+      mockInvoke
+        .mockRejectedValueOnce(new Error("player disconnected"))
+        .mockResolvedValueOnce(mockSnapshot({ current_track: mockTrack(7), is_playing: true }));
+      const initPromise = player.init();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await initPromise;
+
+      expect(player.isReady).toBe(true);
+      expect(player.currentTrack?.id).toBe(7);
+      expect(player.isPlaying).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("destroy cleans up listener", async () => {
@@ -161,7 +186,10 @@ describe("event handling — state machine", () => {
   });
 
   it("Position updates position with correct math", () => {
-    emitEvent({ event: "Position", payload: { pos_sec: 42.5, at_epoch_ms: Date.now() } });
+    emitEvent({
+      event: "Position",
+      payload: { pos_sec: 42.5, at_epoch_ms: Date.now(), is_playing: true },
+    });
     expect(player.position).toBe(42.5);
   });
 

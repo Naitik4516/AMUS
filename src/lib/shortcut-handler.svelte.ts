@@ -14,20 +14,26 @@ export function toggleQueue() {
 export const shortcutSettings = $state({ open: false });
 
 export function installHandlers() {
-  const seekSec = (sec: number) => {
+  const seekSec = async (sec: number) => {
     if (!player.currentTrack) return;
     const dur = player.currentTrack.duration_seconds;
     const currentSec = player.position;
     const newSec = Math.max(0, Math.min(dur, currentSec + sec));
-    player.seek(newSec);
+    await player.seek(newSec);
   };
 
-  handlerMap.set("play_pause", () => player.playPause());
-  handlerMap.set("next_track", () => player.next());
-  handlerMap.set("prev_track", () => player.previous());
+  handlerMap.set("play_pause", async () => {
+    await player.playPause();
+  });
+  handlerMap.set("next_track", async () => {
+    await player.next();
+  });
+  handlerMap.set("prev_track", async () => {
+    await player.previous();
+  });
   handlerMap.set("stop", () => player.close());
-  handlerMap.set("restart_track", () => {
-    if (player.currentTrack) player.seek(0);
+  handlerMap.set("restart_track", async () => {
+    if (player.currentTrack) await player.seek(0);
   });
 
   handlerMap.set("seek_forward_5", () => seekSec(5));
@@ -35,14 +41,14 @@ export function installHandlers() {
   handlerMap.set("seek_forward_10", () => seekSec(10));
   handlerMap.set("seek_backward_10", () => seekSec(-10));
 
-  handlerMap.set("volume_up", () => {
-    player.setVolume(Math.min(1, player.volume + 0.05));
+  handlerMap.set("volume_up", async () => {
+    await player.setVolume(Math.min(1, player.volume + 0.05));
   });
-  handlerMap.set("volume_down", () => {
-    player.setVolume(Math.max(0, player.volume - 0.05));
+  handlerMap.set("volume_down", async () => {
+    await player.setVolume(Math.max(0, player.volume - 0.05));
   });
-  handlerMap.set("mute", () => {
-    player.setVolume(player.volume > 0 ? 0 : 1);
+  handlerMap.set("mute", async () => {
+    await player.toggleMute();
   });
 
   handlerMap.set("focus_search", () => {
@@ -52,8 +58,8 @@ export function installHandlers() {
   handlerMap.set("refresh_page", () => {
     window.location.reload();
   });
-  handlerMap.set("rescan_music", () => {
-    scanLibrary();
+  handlerMap.set("rescan_music", async () => {
+    await scanLibrary();
   });
 
   handlerMap.set("toggle_shuffle", () => player.toggleShuffle());
@@ -70,14 +76,14 @@ export function installHandlers() {
   handlerMap.set("go_back", () => history.back());
   handlerMap.set("go_forward", () => history.forward());
 
-  handlerMap.set("minimize", () => {
-    getCurrentWindow().minimize();
+  handlerMap.set("minimize", async () => {
+    await getCurrentWindow().minimize();
   });
-  handlerMap.set("close_window", () => {
-    getCurrentWindow().close();
+  handlerMap.set("close_window", async () => {
+    await getCurrentWindow().close();
   });
-  handlerMap.set("quit_amus", () => {
-    invoke("quit_app");
+  handlerMap.set("quit_amus", async () => {
+    await invoke("quit_app");
   });
 
   // Global shortcut handlers
@@ -85,27 +91,32 @@ export function installHandlers() {
   handlerMap.set("global_next_track", () => player.next());
   handlerMap.set("global_prev_track", () => player.previous());
   handlerMap.set("global_stop", () => player.close());
-  handlerMap.set("global_volume_up", () => {
-    player.setVolume(Math.min(1, player.volume + 0.05));
+  handlerMap.set("global_volume_up", async () => {
+    await player.setVolume(Math.min(1, player.volume + 0.05));
   });
-  handlerMap.set("global_volume_down", () => {
-    player.setVolume(Math.max(0, player.volume - 0.05));
+  handlerMap.set("global_volume_down", async () => {
+    await player.setVolume(Math.max(0, player.volume - 0.05));
   });
-  handlerMap.set("global_toggle_mute", () => {
-    player.setVolume(player.volume > 0 ? 0 : 1);
+  handlerMap.set("global_toggle_mute", async () => {
+    await player.toggleMute();
   });
-  handlerMap.set("global_seek_forward", () => {
-    if (player.currentTrack) seekSec(5);
+  handlerMap.set("global_seek_forward", async () => {
+    if (player.currentTrack) await seekSec(5);
   });
-  handlerMap.set("global_seek_backward", () => {
-    if (player.currentTrack) seekSec(-5);
+  handlerMap.set("global_seek_backward", async () => {
+    if (player.currentTrack) await seekSec(-5);
   });
   handlerMap.set("global_toggle_shuffle", () => player.toggleShuffle());
   handlerMap.set("global_toggle_repeat", () => player.cycleRepeat());
-  handlerMap.set("global_show_hide", () => {
+  handlerMap.set("global_show_hide", async () => {
     const w = getCurrentWindow();
-    w.isVisible().then((visible) => {
-      visible ? w.hide() : w.show();
+    await w.isVisible().then(async (visible) => {
+      if (visible) {
+        await w.hide();
+      } else {
+        await w.show();
+        await w.setFocus();
+      }
     });
   });
   handlerMap.set("global_show_miniplayer", async () => {

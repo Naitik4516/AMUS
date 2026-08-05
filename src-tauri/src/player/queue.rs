@@ -29,6 +29,14 @@ pub enum PreviousOutcome {
     Track(Track, PlaybackSource),
 }
 
+pub enum RemoveFromContextOutcome {
+    /// A non-current track was removed; playback continues unchanged.
+    Removed,
+    /// The currently playing track was removed; `resume` is the next track to
+    /// play (None when the context is empty or the removed track was last).
+    RemovedCurrent { resume: Option<Track> },
+}
+
 pub struct PlaybackQueue {
     context: Vec<Track>,
     context_source: PlaybackSource,
@@ -187,16 +195,21 @@ impl PlaybackQueue {
         self.context = tracks;
         self.context_source = PlaybackSource::Direct;
         self.context_label = None;
-        self.shuffle_order = None; // recommendations are already varied
         self.context_custom_order = (0..self.context.len()).collect();
         self.context_position = if self.context.is_empty() {
             None
         } else {
             Some(0)
         };
+        // Keep the shuffle mode honest: pin the first recommendation as current
+        // and shuffle the rest, so the UI's shuffle state stays meaningful.
+        if self.shuffle_enabled && !self.context.is_empty() {
+            self.regenerate_shuffle_order(Some(0));
+        } else {
+            self.shuffle_order = None;
+        }
         self.set_current_from_context();
     }
-
 
     pub fn set_shuffle(&mut self, enabled: bool) {
         if enabled == self.shuffle_enabled {
@@ -255,45 +268,87 @@ impl PlaybackQueue {
         self.user_queue.remove(idx)
     }
 
-    pub fn remove_from_context(&mut self, track_id: i64) -> Option<Track> {
-        if let Some(idx) = self.context.iter().position(|t| t.id == track_id) {
-            let removed_track = self.context.remove(idx);
+    pub fn remove_from_context(&mut self, track_id: i64) -> Option<RemoveFromContextOutcome> {
+        let idx = self.context.iter().position(|t| t.id == track_id)?;
+        let is_current = self.context_position == Some(idx);
+        // Successor in the current playback order, computed BEFORE indices shift.
+        let successor = is_current.then(|| self.successor_index(idx)).flatten();
 
-            // Fix context_custom_order: remove idx and shift higher indices down
-            self.context_custom_order.retain(|&i| i != idx);
-            for i in &mut self.context_custom_order {
+        self.context.remove(idx);
+
+        // Fix context_custom_order: remove idx and shift higher indices down
+        self.context_custom_order.retain(|&i| i != idx);
+        for i in &mut self.context_custom_order {
+            if *i > idx {
+                *i -= 1;
+            }
+        }
+
+        // Fix shuffle_order if present
+        if let Some(order) = &mut self.shuffle_order {
+            // If the removed track was at or before shuffle_cursor, adjust cursor
+            if let Some(cursor_pos) = order.iter().position(|&i| i == idx) {
+                if cursor_pos <= self.shuffle_cursor {
+                    self.shuffle_cursor = self.shuffle_cursor.saturating_sub(1);
+                }
+            }
+            order.retain(|&i| i != idx);
+            for i in order.iter_mut() {
                 if *i > idx {
                     *i -= 1;
                 }
             }
+        }
 
-            // Fix shuffle_order if present
-            if let Some(order) = &mut self.shuffle_order {
-                // If the removed track was at or before shuffle_cursor, adjust cursor
-                if let Some(cursor_pos) = order.iter().position(|&i| i == idx) {
-                    if cursor_pos <= self.shuffle_cursor {
-                        self.shuffle_cursor = self.shuffle_cursor.saturating_sub(1);
+        if let Some(pos) = self.context_position {
+            if pos == idx {
+                // The currently playing track was removed: resume at the successor.
+                let resume = successor.map(|s| if s > idx { s - 1 } else { s });
+                self.context_position = resume;
+                if let Some(resume) = resume {
+                    if self.shuffle_order.is_some() {
+                        // Re-pin the shuffle order at the resume track so the
+                        // cursor/order invariants hold for the next advance.
+                        self.regenerate_shuffle_order(Some(resume));
                     }
                 }
-                order.retain(|&i| i != idx);
-                for i in order.iter_mut() {
-                    if *i > idx {
-                        *i -= 1;
-                    }
-                }
+                self.set_current_from_context();
+            } else if pos > idx {
+                self.context_position = Some(pos - 1);
             }
+        }
 
-            if let Some(pos) = self.context_position {
-                if pos == idx {
-                    self.context_position = None;
-                    self.current = None;
-                } else if pos > idx {
-                    self.context_position = Some(pos - 1);
-                }
-            }
-            Some(removed_track)
+        if is_current {
+            Some(RemoveFromContextOutcome::RemovedCurrent {
+                resume: self.current().map(|(t, _)| t.clone()),
+            })
         } else {
-            None
+            Some(RemoveFromContextOutcome::Removed)
+        }
+    }
+
+    /// Original context index that would play after `idx` in the current
+    /// playback order (respecting repeat mode at the end of the order).
+    fn successor_index(&self, idx: usize) -> Option<usize> {
+        if let Some(order) = &self.shuffle_order {
+            let pos_in_order = order.iter().position(|&i| i == idx)?;
+            if pos_in_order + 1 < order.len() {
+                return Some(order[pos_in_order + 1]);
+            }
+            return match self.repeat_mode {
+                RepeatMode::All if !order.is_empty() => Some(order[0]),
+                _ => None,
+            };
+        }
+        let pos_in_order = self.context_custom_order.iter().position(|&i| i == idx)?;
+        if pos_in_order + 1 < self.context_custom_order.len() {
+            return Some(self.context_custom_order[pos_in_order + 1]);
+        }
+        match self.repeat_mode {
+            RepeatMode::All if !self.context_custom_order.is_empty() => {
+                Some(self.context_custom_order[0])
+            }
+            _ => None,
         }
     }
 
@@ -322,9 +377,7 @@ impl PlaybackQueue {
             .unwrap_or(0);
         let from_abs = start_in_order + from_rel;
         let to_abs = start_in_order + to_rel;
-        if from_abs < self.context_custom_order.len()
-            && to_abs < self.context_custom_order.len()
-        {
+        if from_abs < self.context_custom_order.len() && to_abs < self.context_custom_order.len() {
             let item = self.context_custom_order.remove(from_abs);
             self.context_custom_order.insert(to_abs, item);
         }
@@ -382,7 +435,17 @@ impl PlaybackQueue {
                     None
                 }
             }
-            (None, None) => Some(0),
+            (None, None) => {
+                // No current position (e.g. the playing track was removed and
+                // there was no successor): treat as end of context.
+                return match self.repeat_mode {
+                    RepeatMode::All if !self.context.is_empty() => {
+                        self.context_position = Some(0);
+                        NextOutcome::Track(self.context[0].clone(), self.context_source.clone())
+                    }
+                    _ => NextOutcome::NeedsAutoplay,
+                };
+            }
         };
 
         match next_index {
@@ -491,6 +554,7 @@ mod tests {
                 name: "Test Artist".to_string(),
                 profile_image: None,
                 banner_image: None,
+                ..Default::default()
             }],
             album: Album {
                 id: 1,
@@ -498,6 +562,7 @@ mod tests {
                 cover_art: None,
                 album_artist: None,
                 year: None,
+                ..Default::default()
             },
             duration_seconds: 200,
             is_favorite: false,
@@ -743,8 +808,7 @@ mod tests {
 
         // Remove track 30 (index 2) — after current position
         let removed = q.remove_from_context(30);
-        assert!(removed.is_some());
-        assert_eq!(removed.unwrap().id, 30);
+        assert!(matches!(removed, Some(RemoveFromContextOutcome::Removed)));
         assert_eq!(q.context_position(), Some(1)); // unchanged
         assert_eq!(q.current().unwrap().0.id, 20);
 
@@ -755,19 +819,38 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_from_context_at_current() {
+    fn test_remove_from_context_at_current_resumes_next() {
         let mut q = PlaybackQueue::new();
         let tracks = vec![make_track(10), make_track(20), make_track(30)];
         q.load_context(tracks, PlaybackSource::Album(1), 1, None);
         assert_eq!(q.current().unwrap().0.id, 20);
 
-        // Remove the currently playing track
-        q.remove_from_context(20);
-        assert!(q.current().is_none());
-        assert_eq!(q.context_position(), None);
+        // Remove the currently playing track — playback resumes at the next one
+        let removed = q.remove_from_context(20);
+        assert!(matches!(
+            removed,
+            Some(RemoveFromContextOutcome::RemovedCurrent { resume: Some(_) })
+        ));
+        assert_eq!(q.current().unwrap().0.id, 30);
+        assert_eq!(q.context_position(), Some(1));
 
         // Should not panic
         let _ = q.upcoming_context(10);
+    }
+
+    #[test]
+    fn test_remove_current_at_context_end_has_no_resume() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![make_track(10), make_track(20)];
+        q.load_context(tracks, PlaybackSource::Album(1), 1, None); // current = 20 (last)
+
+        let removed = q.remove_from_context(20);
+        assert!(matches!(
+            removed,
+            Some(RemoveFromContextOutcome::RemovedCurrent { resume: None })
+        ));
+        assert!(q.current().is_none());
+        assert_eq!(q.context_position(), None);
     }
 
     #[test]
@@ -778,7 +861,8 @@ mod tests {
         assert_eq!(q.current().unwrap().0.id, 30);
 
         // Remove track before current position
-        q.remove_from_context(10);
+        let removed = q.remove_from_context(10);
+        assert!(matches!(removed, Some(RemoveFromContextOutcome::Removed)));
         assert_eq!(q.context_position(), Some(1)); // shifted down from 2 to 1
         assert_eq!(q.current().unwrap().0.id, 30);
 
@@ -792,7 +876,11 @@ mod tests {
         let tracks = vec![make_track(10)];
         q.load_context(tracks, PlaybackSource::Album(1), 0, None);
 
-        q.remove_from_context(10);
+        let removed = q.remove_from_context(10);
+        assert!(matches!(
+            removed,
+            Some(RemoveFromContextOutcome::RemovedCurrent { resume: None })
+        ));
         assert!(q.current().is_none());
         assert_eq!(q.context_position(), None);
         assert_eq!(q.context_len(), 0);
@@ -815,16 +903,53 @@ mod tests {
         q.set_shuffle(true);
 
         // Remove a track from the middle
-        q.remove_from_context(30);
+        let removed = q.remove_from_context(30);
+        assert!(matches!(removed, Some(RemoveFromContextOutcome::Removed)));
 
         // All indices in shuffle_order should be valid
         if let Some(order) = &q.shuffle_order {
             for &i in order {
-                assert!(i < q.context.len(), "index {} out of bounds for len {}", i, q.context.len());
+                assert!(
+                    i < q.context.len(),
+                    "index {} out of bounds for len {}",
+                    i,
+                    q.context.len()
+                );
             }
         }
 
         // Should not panic
         let _ = q.upcoming_context(10);
+    }
+
+    #[test]
+    fn test_remove_current_track_with_shuffle_resumes_next() {
+        let mut q = PlaybackQueue::new();
+        let tracks = vec![
+            make_track(10),
+            make_track(20),
+            make_track(30),
+            make_track(40),
+        ];
+        q.load_context(tracks, PlaybackSource::Album(1), 0, None);
+        q.set_shuffle(true);
+
+        // Removing the current track must still yield a valid resume track.
+        let removed = q.remove_from_context(10);
+        let Some(RemoveFromContextOutcome::RemovedCurrent {
+            resume: Some(track),
+        }) = removed
+        else {
+            panic!("expected RemovedCurrent with resume");
+        };
+        assert_ne!(track.id, 10);
+        assert!(q.current().is_some());
+
+        // Advancing after the removal must not replay the resume track.
+        let outcome = q.advance_next();
+        match outcome {
+            NextOutcome::Track(t, _) => assert_ne!(t.id, track.id),
+            _ => panic!("expected next track"),
+        }
     }
 }

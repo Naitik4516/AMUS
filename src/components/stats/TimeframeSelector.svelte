@@ -25,12 +25,14 @@
   const options = $derived(allOptions.filter((o) => available.includes(o.value)));
 </script>
 
-<div class="flex items-center gap-1 bg-card/50 backdrop-blur-lg border border-border rounded-3xl shadow-lg p-1 overflow-x-auto">
+<div class="flex items-center gap-1 bg-card/50 border border-border rounded-3xl shadow-lg p-1 overflow-x-auto">
   {#each options as opt}
     <button
       onclick={() => onchange(opt.value)}
       class="px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors
         {value === opt.value ? 'bg-accent text-black' : 'text-gray-400 hover:text-white hover:bg-neutral-700/50'}"
+      aria-pressed={value === opt.value}
+      aria-label={opt.label}
     >
       {opt.label}
     </button>

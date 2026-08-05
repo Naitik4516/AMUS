@@ -2,7 +2,7 @@
     import { page } from "$app/state";
     import TrackList from "$components/ui/TrackList.svelte";
     import AlbumRow from "$components/ui/AlbumRow.svelte";
-    import { formatDuration } from "$lib/utils";
+    import { formatDuration, sumDuration } from "$lib/utils";
     import { store } from "$lib/stores.svelte";
     import { onMount } from "svelte";
     import type { Artist } from "$lib/types";
@@ -26,9 +26,7 @@
     let tracks = $derived(store.tracksByArtist(artistId));
     let albums = $derived(store.albumsByArtist(artistId));
 
-    let totalDuration = $derived(
-        tracks.reduce((acc, track) => acc + track.duration_seconds, 0),
-    );
+    let totalDuration = $derived(sumDuration(tracks));
 
     let gColor = $state<Color>();
     let aColor = $state<Color>();
@@ -75,8 +73,6 @@
             }
         });
     };
-
-    $inspect(gColor?.hex());
 </script>
 
 <div

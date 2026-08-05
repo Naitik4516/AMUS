@@ -1,9 +1,14 @@
 <script>
-    import { page } from "$app/stores";
+    import { page } from "$app/state";
+    import { invoke } from "@tauri-apps/api/core";
     import Button from "$components/ui/button/button.svelte";
 
-    let error = $derived($page.error);
-    let status = $derived($page.status);
+    let error = $derived(page.error);
+    let status = $derived(page.status);
+
+    function quitApp() {
+        invoke("quit_app");
+    }
 </script>
 
 <div
@@ -41,6 +46,9 @@
             >
             <Button variant="outline" onclick={() => history.back()} size="lg">
                 Go Back
+            </Button>
+            <Button variant="destructive" onclick={quitApp} size="lg">
+                Close App
             </Button>
         </div>
     </div>

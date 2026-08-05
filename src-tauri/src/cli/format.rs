@@ -1,5 +1,3 @@
-//! Human-readable CLI output.
-
 use super::protocol::{CliData, QueueTrackLine, SearchNamedLine, SearchTrackLine};
 
 pub fn format_data(data: &CliData) -> String {

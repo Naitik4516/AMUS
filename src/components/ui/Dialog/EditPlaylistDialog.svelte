@@ -32,7 +32,6 @@
 
     async function pickCover() {
         const filename = await selectAndUploadImage("cover");
-        console.log("Selected cover art:", filename);
         if (filename) {
             editCoverArt = filename;
         }

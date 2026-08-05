@@ -23,7 +23,7 @@
     import { formatDuration } from "$lib/utils";
     import { invoke } from "@tauri-apps/api/core";
     import { store } from "$lib/stores.svelte";
-    import { invalidate } from "$app/navigation";
+    import { goto, invalidate } from "$app/navigation";
     import { openConfirmDialog } from "$lib/context-menu.svelte";
     import { toast } from "svelte-sonner";
     import * as commands from "$lib/commands.svelte";
@@ -183,45 +183,71 @@
             message: `Are you sure you want to delete "${title}" from your library? This will also remove it from all playlists.`,
             confirmLabel: "Delete",
             onConfirm: async () => {
-                await store.deleteTrack(id);
-                toast.success("Track deleted from library");
+                try {
+                    await store.deleteTrack(id);
+                    toast.success("Track deleted from library");
+                    goto("/library");
+                } catch (e) {
+                    console.error("Failed to delete track:", e);
+                    toast.error("Failed to delete track");
+                }
             },
         });
     }
 
     async function pickCover() {
-        const filename = await selectAndUploadImage("cover");
-        if (filename) {
-            coverArtFile = filename;
-            await commands.setTrackCoverArt(track.id, filename);
-            invalidate("app:track-details");
-            toast.success("Cover updated");
+        try {
+            const filename = await selectAndUploadImage("cover");
+            if (filename) {
+                coverArtFile = filename;
+                await commands.setTrackCoverArt(track.id, filename);
+                invalidate("app:track-details");
+                toast.success("Cover updated");
+            }
+        } catch (e) {
+            console.error("Failed to update cover:", e);
+            toast.error("Failed to update cover");
         }
     }
 
     async function removeCover() {
-        coverArtFile = null;
-        await commands.setTrackCoverArt(track.id, null);
-        invalidate("app:track-details");
-        toast.success("Cover removed");
+        try {
+            coverArtFile = null;
+            await commands.setTrackCoverArt(track.id, null);
+            invalidate("app:track-details");
+            toast.success("Cover removed");
+        } catch (e) {
+            console.error("Failed to remove cover:", e);
+            toast.error("Failed to remove cover");
+        }
     }
 
     async function saveTitle() {
         if (titleEdit.trim() && titleEdit !== track.title) {
-            await store.updateTrackMetadata(
-                track.id,
-                titleEdit.trim(),
-                track.year,
-            );
-            invalidate("app:track-details");
+            try {
+                await store.updateTrackMetadata(
+                    track.id,
+                    titleEdit.trim(),
+                    track.year,
+                );
+                invalidate("app:track-details");
+            } catch (e) {
+                console.error("Failed to save title:", e);
+                toast.error("Failed to save title");
+            }
         }
     }
 
     async function saveYear() {
         const y = yearEdit ? parseInt(yearEdit) : null;
         if (y !== track.year) {
-            await store.updateTrackMetadata(track.id, track.title, y);
-            invalidate("app:track-details");
+            try {
+                await store.updateTrackMetadata(track.id, track.title, y);
+                invalidate("app:track-details");
+            } catch (e) {
+                console.error("Failed to save year:", e);
+                toast.error("Failed to save year");
+            }
         }
     }
 
@@ -281,8 +307,12 @@
         }
     }
 
-    function handleShowInFileManager() {
-        revealItemInDir(track.path);
+    async function handleShowInFileManager() {
+        try {
+            await revealItemInDir(track.path);
+        } catch (e) {
+            console.error("Failed to reveal in file manager:", e);
+        }
     }
 
     let audioFormatLabel = $derived(track.audio_format?.toUpperCase() ?? "—");

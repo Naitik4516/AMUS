@@ -5,6 +5,10 @@ export interface Artist {
   name: string;
   profile_image?: string;
   banner_image?: string;
+  track_count?: number;
+  total_plays?: number;
+  last_played_at?: string;
+  added_at?: string;
 }
 
 export interface Album {
@@ -13,18 +17,30 @@ export interface Album {
   cover_art?: string;
   album_artist?: Artist[];
   year?: number;
+  track_count?: number;
+  total_plays?: number;
+  last_played_at?: string;
+  added_at?: string;
 }
 
 export interface Playlist {
   id: number;
   name: string;
   cover_art?: string | null;
+  track_count?: number;
+  total_plays?: number;
+  last_played_at?: string;
+  added_at?: string;
 }
 
 export interface Genre {
   id: number;
   name: string;
   thumbnail?: string;
+  track_count?: number;
+  total_plays?: number;
+  last_played_at?: string;
+  added_at?: string;
 }
 
 export interface Lyrics {
@@ -122,6 +138,8 @@ export type Timeframe =
   | "last_5_years"
   | "all_time";
 
+export type TopSort = "plays" | "time";
+
 export interface DataAge {
   min_track_added_at: string | null;
   min_played_at: string | null;
@@ -141,6 +159,11 @@ export interface StatsOverview {
   format_distribution: FormatStat[];
   pct_library_played: number;
   unplayed_tracks: number;
+  avg_bitrate_kbps: number | null;
+  avg_sample_rate: number | null;
+  avg_bit_depth: number | null;
+  avg_completion_pct: number | null;
+  skip_rate: number | null;
 }
 
 export interface FormatStat {
@@ -148,6 +171,9 @@ export interface FormatStat {
   count: number;
   percentage: number;
   total_bytes: number;
+  avg_bitrate_kbps: number | null;
+  avg_sample_rate: number | null;
+  avg_bit_depth: number | null;
 }
 
 export interface TopTrack {
@@ -170,6 +196,15 @@ export interface TopAlbum {
   total_listening_time_sec: number;
   tracks_played: number;
 }
+
+export interface TopGenre {
+  genre: Genre;
+  play_count: number;
+  total_listening_time_sec: number;
+  tracks_played: number;
+}
+
+export type TopRankItem = TopTrack | TopArtist | TopAlbum | TopGenre;
 
 export interface TimeSeriesPoint {
   date: string;
