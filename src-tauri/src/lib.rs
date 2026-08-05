@@ -631,9 +631,10 @@ pub fn run() {
             linux_tray::spawn_ksni_tray(app_handle);
 
             #[cfg(not(target_os = "linux"))]
-            {
-                let (tray_menu, show_item, show_miniplayer_item) = build_tray_menu(app_handle)?;
+            let (tray_menu, show_item, show_miniplayer_item) = build_tray_menu(app_handle)?;
 
+            #[cfg(not(target_os = "linux"))]
+            {
                 let show_for_events = show_item.clone();
                 let show_miniplayer_for_events = show_miniplayer_item.clone();
 
@@ -654,13 +655,15 @@ pub fn run() {
                             } => {
                                 let app = app.clone();
                                 click_state.run_single(move || {
+                                    let pos = rect.position.to_physical(1.0);
+                                    let size = rect.size.to_physical(1.0);
                                     toggle_miniplayer_from_tray(
                                         &app,
                                         Some(TrayAnchor::Rect {
-                                            x: rect.position.x,
-                                            y: rect.position.y,
-                                            width: rect.size.width,
-                                            height: rect.size.height,
+                                            x: pos.x,
+                                            y: pos.y,
+                                            width: size.width,
+                                            height: size.height,
                                         }),
                                     )
                                 });
