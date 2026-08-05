@@ -1,7 +1,7 @@
 <script lang="ts">
+    import TrackListSmall from "$components/ui/TrackListSmall.svelte";
     import type { PlaybackEvent } from "$lib/commands.svelte";
     import { formatDateShort } from "$lib/utils";
-    import TrackListSmall from "$components/ui/TrackListSmall.svelte";
 
     let {
         events,
@@ -12,13 +12,9 @@
         canLoadMore: boolean;
         onLoadMore: () => void;
     } = $props();
-
-
 </script>
 
-<div
-    class="bg-card/50 backdrop-blur-lg border border-border rounded-3xl shadow-lg p-5"
->
+<div class="bg-card/50 border border-border rounded-3xl shadow-lg p-5">
     <h3 class="text-xl font-extrabold text-white mb-4 font-switzer">
         Playback History
     </h3>

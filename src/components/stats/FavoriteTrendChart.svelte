@@ -4,7 +4,7 @@
   let { data, title = "Favorite Trends" }: { data: FavoriteTrend[]; title?: string } = $props();
 </script>
 
-<div class="bg-card/50 backdrop-blur-lg border border-border rounded-3xl shadow-lg p-5">
+<div class="bg-card/50 border border-border rounded-3xl shadow-lg p-5">
   <h3 class="text-lg font-bold text-white mb-4">{title}</h3>
   {#if data.length === 0}
     <div class="flex items-center justify-center text-gray-500 text-sm py-4">No trend data</div>

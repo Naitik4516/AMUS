@@ -45,7 +45,7 @@
   );
 </script>
 
-<div class="bg-card/50 backdrop-blur-lg border border-border rounded-3xl shadow-lg p-5">
+<div class="bg-card/50  border border-border rounded-3xl shadow-lg p-5">
   <div class="flex items-center justify-between mb-4">
     <h3 class="text-lg font-bold text-white">{title}</h3>
     <div class="flex items-center gap-3 text-xs text-gray-400">

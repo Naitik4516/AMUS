@@ -321,7 +321,7 @@
 
 {#snippet DNDTrackList(tracks: Track[], section: "user" | "context")}
     <VList
-        class="vlist pr-1 pt-1 mask-y-from-95% scroll-smooth"
+        class="vlist pr-1 py-1 mask-y-from-95% scroll-smooth"
         data={tracks}
         style="height: {calcHeight(tracks.length)}px"
         getKey={(track, _i) => track.queue_id ?? track.id}
@@ -380,7 +380,7 @@
     </VList>
 {/snippet}
 
-<div class="flex flex-col">
+<div class="flex flex-col ">
     <Button
         onclick={() => {
             showQueue = false;
@@ -392,7 +392,7 @@
     >
         <X size={18} />
     </Button>
-    <div class="flex flex-col gap-1 px-3 pb-4 pt-4 overflow-y-scroll">
+    <div class="flex flex-col gap-1 px-3  pt-4 overflow-y-scroll">
         {#if player.currentTrack}
             <section>
                 <h4

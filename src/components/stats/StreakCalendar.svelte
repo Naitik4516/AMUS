@@ -28,14 +28,13 @@
     }
   });
 
-  // GitHub-style: weeks as columns, one cell per day (Sun..Sat).
   const weeks = $derived.by<{ date: string; count: number }[][]>(() => {
     if (!data) return [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const start = new Date(today);
     start.setDate(start.getDate() - (windowDays - 1));
-    start.setDate(start.getDate() - start.getDay()); // align to Sunday
+    start.setDate(start.getDate() - start.getDay()); 
 
     const weeks: { date: string; count: number }[][] = [];
     let week: { date: string; count: number }[] = [];
@@ -60,7 +59,7 @@
   }
 </script>
 
-<div class="bg-card/50 backdrop-blur-lg border border-border rounded-3xl shadow-lg p-5">
+<div class="bg-card/50  border border-border rounded-3xl shadow-lg p-5">
   <div class="flex items-center justify-between mb-1">
     <h3 class="text-lg font-bold text-white">Activity Streak</h3>
     {#if data}
