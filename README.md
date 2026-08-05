@@ -12,7 +12,7 @@ AMUS is built for people who own their music library. It runs completely offline
 [![Rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-FFC131?style=for-the-badge&logo=tauri&logoColor=white)](https://tauri.app/)
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://kit.svelte.dev/)
-[![GitHub release](https://img.shields.io/github/v/release/Naitik4516/AMUS?style=for-the-badge&label=v0.5.0)](https://github.com/Naitik4516/AMUS/releases/latest)
+[![GitHub release](https://img.shields.io/github/v/release/Naitik4516/AMUS?style=for-the-badge)](https://github.com/Naitik4516/AMUS/releases/latest)
 
 </div>
 
@@ -271,7 +271,7 @@ amus/
 
 ### Recently completed
 
-- [x] OS media controls (MPRIS/SMTC/Now Playing)
+- [x] OS media controls
 - [x] Command-line interface for remote control
 - [x] File associations (open audio files with AMUS)
 - [x] Mini player with always-on-top option
@@ -282,6 +282,9 @@ amus/
 - [x] Startup library cache for snappier UI
 - [x] Comprehensive frontend test coverage (Vitest)
 - [x] Player subsystem refactor for better architecture
+- [x] Lyrics support
+- [x] Improved UI animations
+- [x] Better OS integration
 
 ### Library & playback
 
@@ -297,13 +300,10 @@ amus/
 ### Library management
 
 - [ ] Automatic metadata tagging
-- [ ] Lyrics support
 
 ### User experience
 
 - [ ] Dynamic theming
-- [ ] Improved UI animations
-- [ ] Better OS integration
 - [ ] Auto-start and scheduled playback
 
 ### Media
