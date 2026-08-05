@@ -1,15 +1,13 @@
 <script lang="ts">
+    import AlbumRow from "$components/ui/AlbumRow.svelte";
     import { getTopAlbums } from "$lib/commands.svelte";
     import type { Album } from "$lib/types";
-    import AlbumRow from "$components/ui/AlbumRow.svelte";
-    import { store } from "$lib/stores.svelte";
 
     let { title }: { title: string } = $props();
 
     let albums = $state([] as Album[]);
 
     $effect(() => {
-        store.tracks;
         getTopAlbums(8)
             .then((data) => {
                 albums = data;

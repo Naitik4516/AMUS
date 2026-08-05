@@ -80,7 +80,7 @@
   {:else}
     <div class="overflow-x-auto">
       <div class="flex gap-1 w-max">
-        <div class="flex flex-col gap-[3px] pt-[3px] pr-1 text-[9px] text-gray-500 leading-none">
+        <div class="flex flex-col gap-0.75 pt-0.75 pr-1 text-[9px] text-gray-500 leading-none">
           <span class="size-2.5"></span>
           <span class="h-2.5 flex items-center">Mon</span>
           <span class="size-2.5"></span>
@@ -90,10 +90,10 @@
           <span class="size-2.5"></span>
         </div>
         {#each weeks as week}
-          <div class="flex flex-col gap-[3px]">
+          <div class="flex flex-col gap-0.75">
             {#each week as cell}
               <div
-                class={cn("size-2.5 rounded-[2px]", intensity(cell.count))}
+                class={cn("size-2.5 rounded-xs", intensity(cell.count))}
                 title="{cell.date}: {cell.count} plays"
               ></div>
             {/each}

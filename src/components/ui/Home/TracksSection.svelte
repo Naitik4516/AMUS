@@ -57,7 +57,6 @@
         if (tracksProp) {
             tracks = tracksProp;
         } else if (loadFunction) {
-            store.tracks;
             LOADERS[loadFunction](10, args)
                 .then((data) => {
                     tracks = data;
@@ -70,5 +69,10 @@
 </script>
 
 {#if tracks.length > 0}
-    <HorizontalScroll {title} data={tracks} Card={TrackCard} class={className} />
+    <HorizontalScroll
+        {title}
+        data={tracks}
+        Card={TrackCard}
+        class={className}
+    />
 {/if}

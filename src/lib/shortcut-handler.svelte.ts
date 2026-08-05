@@ -110,8 +110,13 @@ export function installHandlers() {
   handlerMap.set("global_toggle_repeat", () => player.cycleRepeat());
   handlerMap.set("global_show_hide", async () => {
     const w = getCurrentWindow();
-    await w.isVisible().then((visible) => {
-      visible ? w.hide() : w.show();
+    await w.isVisible().then(async (visible) => {
+      if (visible) {
+        await w.hide();
+      } else {
+        await w.show();
+        await w.setFocus();
+      }
     });
   });
   handlerMap.set("global_show_miniplayer", async () => {
