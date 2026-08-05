@@ -226,7 +226,19 @@
                                 action: {
                                     label: "Install",
                                     onClick: async () => {
-                                        await updater.downloadAndInstall();
+                                        try {
+                                            await updater.downloadAndInstall();
+                                        } catch (error) {
+                                            const reason =
+                                                error instanceof Error
+                                                    ? error.message
+                                                    : String(error);
+                                            console.error("Update install failed:", error);
+                                            toast.error(reason, {
+                                                description:
+                                                    "The update was not installed. Check the logs for details.",
+                                            });
+                                        }
                                     },
                                 },
                                 duration: 10000,

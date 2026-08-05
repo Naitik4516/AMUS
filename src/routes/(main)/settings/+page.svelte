@@ -34,6 +34,7 @@
         Zap,
     } from "@lucide/svelte";
     import { onMount } from "svelte";
+    import { toast } from "svelte-sonner";
 
     let sources = $state<string[]>([]);
     let loading = $state(true);
@@ -386,7 +387,17 @@
                                 v{updater.updateAvailable.version} available
                             </span>
                             <Button
-                                onclick={() => updater.downloadAndInstall()}
+                                onclick={async () => {
+                                    try {
+                                        await updater.downloadAndInstall();
+                                    } catch (error) {
+                                        toast.error(
+                                            error instanceof Error
+                                                ? error.message
+                                                : String(error),
+                                        );
+                                    }
+                                }}
                                 disabled={updater.downloading}
                                 variant="default"
                             >
