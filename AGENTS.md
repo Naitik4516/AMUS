@@ -10,15 +10,15 @@
 
 ## Commands
 
-| Command           | Purpose                                                |
-| ----------------- | ------------------------------------------------------ |
-| `bun tauri dev`   | Run full dev (Vite + Tauri backend with hot-reload)    |
-| `bun run dev`     | Vite frontend only (no Tauri backend)                  |
-| `bun run build`   | Build frontend only (output: `build/`)                 |
-| `bun run check`   | Typecheck frontend (`svelte-kit sync && svelte-check`) |
-| `bun run test`    | Vitest frontend tests (183 tests across 6 files)       |
-| `cargo test`      | Rust backend tests (162 tests across 6 files) — run from `src-tauri/` |
-| `bun run test:watch` / `bun run check:watch` | Watch modes for the above |
+| Command                                      | Purpose                                                               |
+| -------------------------------------------- | --------------------------------------------------------------------- |
+| `bun tauri dev`                              | Run full dev (Vite + Tauri backend with hot-reload)                   |
+| `bun run dev`                                | Vite frontend only (no Tauri backend)                                 |
+| `bun run build`                              | Build frontend only (output: `build/`)                                |
+| `bun run check`                              | Typecheck frontend (`svelte-kit sync && svelte-check`)                |
+| `bun run test`                               | Vitest frontend tests (183 tests across 6 files)                      |
+| `cargo test`                                 | Rust backend tests (162 tests across 6 files) — run from `src-tauri/` |
+| `bun run test:watch` / `bun run check:watch` | Watch modes for the above                                             |
 
 Linux system deps for `bun tauri dev` / release builds (from `.github/workflows/release.yml`): `libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libgtk-layer-shell-dev`.
 
