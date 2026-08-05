@@ -1,20 +1,23 @@
 use crate::error::Result;
 use crate::models::Lyrics;
 use serde::Deserialize;
+use std::time::Duration;
+use tracing::warn;
 
 const LRCLIB_API: &str = "https://lrclib.net/api/search";
 const DURATION_TOLERANCE: f64 = 2.0;
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 #[allow(dead_code)]
 struct LrclibResponse {
-    id: u64,
+    id: Option<u64>,
     #[serde(alias = "trackName")]
-    track_name: String,
+    track_name: Option<String>,
     #[serde(alias = "artistName")]
-    artist_name: String,
-    duration: f64,
-    instrumental: bool,
+    artist_name: Option<String>,
+    duration: Option<f64>,
+    instrumental: Option<bool>,
     #[serde(alias = "plainLyrics")]
     plain_lyrics: Option<String>,
     #[serde(alias = "syncedLyrics")]
@@ -26,22 +29,23 @@ fn find_best_match(results: Vec<LrclibResponse>, target_duration: u32) -> Option
 
     let candidates: Vec<LrclibResponse> = results
         .into_iter()
-        .filter(|r| !r.instrumental)
-        .filter(|r| (r.duration - target).abs() <= DURATION_TOLERANCE)
+        .filter(|r| !r.instrumental.unwrap_or(false))
+        .filter(|r| {
+            r.duration
+                .is_some_and(|d| (d - target).abs() <= DURATION_TOLERANCE)
+        })
         .collect();
 
     if candidates.is_empty() {
         return None;
     }
 
-    candidates
-        .into_iter()
-        .min_by(|a, b| {
-            (a.duration - target)
-                .abs()
-                .partial_cmp(&(b.duration - target).abs())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
+    candidates.into_iter().min_by(|a, b| {
+        (a.duration.unwrap_or(0.0) - target)
+            .abs()
+            .partial_cmp(&(b.duration.unwrap_or(0.0) - target).abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })
 }
 
 pub async fn fetch_lyrics(
@@ -51,26 +55,41 @@ pub async fn fetch_lyrics(
 ) -> Result<Option<Lyrics>> {
     let encoded_artist = urlencoding::encode(artist_name);
     let encoded_track = urlencoding::encode(track_name);
-    let url = format!(
-        "{LRCLIB_API}?artist_name={encoded_artist}&track_name={encoded_track}"
-    );
+    let url = format!("{LRCLIB_API}?artist_name={encoded_artist}&track_name={encoded_track}");
 
-    let client = reqwest::Client::new();
-    let response = client
+    let client = reqwest::Client::builder()
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .map_err(|e| crate::error::Error::Unknown(format!("LRCLIB client failed: {e}")))?;
+
+    let response = match client
         .get(&url)
         .header("User-Agent", "AMUS/0.7.0 (music player)")
         .send()
         .await
-        .map_err(|e| crate::error::Error::Unknown(format!("LRCLIB request failed: {e}")))?;
+    {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(error = %e, "lrclib request failed");
+            return Ok(None);
+        }
+    };
 
     if !response.status().is_success() {
+        warn!(
+            status = response.status().as_u16(),
+            "lrclib returned a non-success status"
+        );
         return Ok(None);
     }
 
-    let results: Vec<LrclibResponse> = response
-        .json()
-        .await
-        .map_err(|e| crate::error::Error::Unknown(format!("LRCLIB parse failed: {e}")))?;
+    let results: Vec<LrclibResponse> = match response.json().await {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(error = %e, "lrclib returned a body that could not be parsed");
+            return Ok(None);
+        }
+    };
 
     let best = match find_best_match(results, duration_secs) {
         Some(r) => r,
