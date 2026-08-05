@@ -1,5 +1,3 @@
-//! CLI IPC server running inside the GUI process.
-
 use std::io::BufReader;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -43,7 +41,6 @@ fn start_unix(app: AppHandle) {
         }
     };
 
-    // Clean up socket on drop of process — also register a best-effort remove.
     let path_cleanup = path.clone();
     let app_for_exit = app.clone();
     app_for_exit.once("cli-server-stop", move |_| {
@@ -109,9 +106,7 @@ where
     S: std::io::Read + std::io::Write + Send,
 {
     let mut reader = BufReader::new(stream);
-    // We need Write on the same stream — re-split by taking ownership carefully.
-    // BufReader only reads; for simplicity re-open pattern: use a duplex by cloning on unix.
-    // Instead, read fully then write on the underlying stream via get_mut.
+
     loop {
         let frame = match read_frame(&mut reader) {
             Ok(f) => f,

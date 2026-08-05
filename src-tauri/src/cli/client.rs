@@ -1,5 +1,3 @@
-//! CLI client: connect to running instance, auto-start if needed.
-
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;

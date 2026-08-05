@@ -1,5 +1,3 @@
-//! Dispatch CLI commands against the running app state.
-
 use std::path::Path;
 use std::sync::mpsc::SyncSender;
 

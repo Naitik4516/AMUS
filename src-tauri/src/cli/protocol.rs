@@ -1,5 +1,3 @@
-//! CLI IPC protocol (length-prefixed JSON frames).
-
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -13,7 +11,6 @@ pub struct CliRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum CliCommand {
-    // Playback
     Play,
     Pause,
     Stop,
@@ -96,7 +93,6 @@ pub enum CliCommand {
     // Meta
     Update,
     Version,
-    /// Reset all app data and restart
     Reset {
         force: bool,
     },
