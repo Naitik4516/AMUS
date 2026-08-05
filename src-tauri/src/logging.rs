@@ -1,9 +1,9 @@
 #[cfg(debug_assertions)]
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use tracing_appender::non_blocking::WorkerGuard;
 #[cfg(debug_assertions)]
 use tracing_appender::non_blocking::NonBlocking;
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::SubscriberExt;
@@ -53,33 +53,19 @@ fn file_filter() -> EnvFilter {
     env_override().unwrap_or_else(|| EnvFilter::new("info"))
 }
 
-/// Filter for the debug console. Defaults to `info` for all targets plus
-/// `debug` for our own crate, keeping dev output readable while still
-/// showing AMUS debug logs; `AMUS_LOG`/`RUST_LOG` overrides.
 #[cfg(debug_assertions)]
 fn console_filter() -> EnvFilter {
     env_override().unwrap_or_else(|| EnvFilter::new("info,amus_lib=debug"))
 }
 
-/// Resolves the app data directory without a Tauri handle, mirroring
-/// `app.path().app_data_dir()` (identifier `AMUS`). Needed to initialize
-/// logging before the Tauri builder is constructed.
+
 pub fn early_app_data_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join(APP_DATA_DIR_NAME)
 }
 
-/// Installs the global tracing subscriber: daily-rotated file in
-/// `app_dir/logs/amus.log`, plus a stdout mirror in debug builds.
-/// The filter can be overridden via `AMUS_LOG` or `RUST_LOG`.
-///
-/// If a global subscriber already exists (the devtools plugin claims it in
-/// debug builds), this is a no-op — file logging is then handled by
-/// [`build_file_adapter`] through the devtools bridge.
-///
-/// Returns a `WorkerGuard` that must be kept alive for the app's lifetime
-/// (store it in Tauri state).
+
 pub fn init(app_dir: &Path) -> WorkerGuard {
     let logs_dir = app_dir.join("logs");
     let _ = std::fs::create_dir_all(&logs_dir);
@@ -111,18 +97,11 @@ pub fn init(app_dir: &Path) -> WorkerGuard {
     guard
 }
 
-/// A `log::Log` adapter that writes to the rotating log file (and stdout in
-/// debug builds). Attached to the devtools plugin via `attach_logger`, which
-/// forwards every traced event with a message to it — this is how file
-/// logging survives when the devtools plugin holds the global subscriber.
 #[cfg(debug_assertions)]
 pub struct FileLogAdapter {
     writer: std::sync::Mutex<NonBlocking>,
     file_level: log::LevelFilter,
     stdout_level: log::LevelFilter,
-    /// When set, DEBUG-level console output is limited to our own crate
-    /// (targets starting with `amus`), keeping third-party debug spam
-    /// (html5ever, rustls, ...) off the terminal.
     stdout_amus_only: bool,
 }
 
@@ -190,10 +169,6 @@ pub fn build_file_adapter(app_dir: &Path) -> Box<dyn log::Log> {
     })
 }
 
-/// The log file defaults to `info` so third-party crate noise (rustls, hyper,
-/// primp, html5ever, ...) doesn't flood it; the debug console mirrors our
-/// crate at `debug` and everything else at `info`. `AMUS_LOG`/`RUST_LOG`
-/// overrides both and disables the console target restriction.
 #[cfg(debug_assertions)]
 fn adapter_levels() -> (log::LevelFilter, log::LevelFilter, bool) {
     match std::env::var("AMUS_LOG").or_else(|_| std::env::var("RUST_LOG")) {

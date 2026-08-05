@@ -64,7 +64,6 @@ pub(crate) struct TrackMetadata {
     pub(crate) lyrics_source: String,
 }
 
-
 fn split_artists(input: &str) -> Vec<String> {
     let normalized = input
         .replace(" feat. ", ", ")
@@ -129,112 +128,136 @@ pub(crate) fn extract_metadata(path: &Path) -> anyhow::Result<TrackMetadata> {
         None
     };
 
-    let (title, artists, album, album_artist, release_year, picture, track_number,
-         genre, bpm, rg_track_gain, rg_track_peak,
-         rg_album_gain, rg_album_peak, encoder,
-         plain_lyrics, synced_lyrics, lyrics_source) =
-        if let Some(t) = tag {
-            let embedded_plain = t.get_string(&ItemKey::Lyrics).map(|s| s.to_owned());
+    let (
+        title,
+        artists,
+        album,
+        album_artist,
+        release_year,
+        picture,
+        track_number,
+        genre,
+        bpm,
+        rg_track_gain,
+        rg_track_peak,
+        rg_album_gain,
+        rg_album_peak,
+        encoder,
+        plain_lyrics,
+        synced_lyrics,
+        lyrics_source,
+    ) = if let Some(t) = tag {
+        let embedded_plain = t.get_string(&ItemKey::Lyrics).map(|s| s.to_owned());
 
-            let tag_bpm = t.get_string(&ItemKey::Bpm)
-                .or_else(|| t.get_string(&ItemKey::IntegerBpm))
-                .and_then(|s| s.parse::<f32>().ok());
-            let tag_rg_track_gain = t.get_string(&ItemKey::ReplayGainTrackGain).and_then(|s| s.parse::<f32>().ok());
-            let tag_rg_track_peak = t.get_string(&ItemKey::ReplayGainTrackPeak).and_then(|s| s.parse::<f32>().ok());
-            let tag_rg_album_gain = t.get_string(&ItemKey::ReplayGainAlbumGain).and_then(|s| s.parse::<f32>().ok());
-            let tag_rg_album_peak = t.get_string(&ItemKey::ReplayGainAlbumPeak).and_then(|s| s.parse::<f32>().ok());
+        let tag_bpm = t
+            .get_string(&ItemKey::Bpm)
+            .or_else(|| t.get_string(&ItemKey::IntegerBpm))
+            .and_then(|s| s.parse::<f32>().ok());
+        let tag_rg_track_gain = t
+            .get_string(&ItemKey::ReplayGainTrackGain)
+            .and_then(|s| s.parse::<f32>().ok());
+        let tag_rg_track_peak = t
+            .get_string(&ItemKey::ReplayGainTrackPeak)
+            .and_then(|s| s.parse::<f32>().ok());
+        let tag_rg_album_gain = t
+            .get_string(&ItemKey::ReplayGainAlbumGain)
+            .and_then(|s| s.parse::<f32>().ok());
+        let tag_rg_album_peak = t
+            .get_string(&ItemKey::ReplayGainAlbumPeak)
+            .and_then(|s| s.parse::<f32>().ok());
 
-            let lyrics_src;
-            let (tag_plain, tag_synced) = match (&embedded_plain, &lrc_content) {
-                (Some(p), Some(lrc)) => {
-                    lyrics_src = "embedded+lrc";
-                    (Some(p.clone()), Some(lrc.clone()))
-                }
-                (Some(p), None) => {
-                    lyrics_src = "embedded";
-                    (Some(p.clone()), None)
-                }
-                (None, Some(lrc)) => {
-                    lyrics_src = "lrc_file";
-                    (None, Some(lrc.clone()))
-                }
-                (None, None) => {
-                    lyrics_src = "embedded";
-                    (None, None)
-                }
-            };
+        let lyrics_src;
+        let (tag_plain, tag_synced) = match (&embedded_plain, &lrc_content) {
+            (Some(p), Some(lrc)) => {
+                lyrics_src = "embedded+lrc";
+                (Some(p.clone()), Some(lrc.clone()))
+            }
+            (Some(p), None) => {
+                lyrics_src = "embedded";
+                (Some(p.clone()), None)
+            }
+            (None, Some(lrc)) => {
+                lyrics_src = "lrc_file";
+                (None, Some(lrc.clone()))
+            }
+            (None, None) => {
+                lyrics_src = "embedded";
+                (None, None)
+            }
+        };
 
-            (
-                t.title().map(|s| s.into_owned()).unwrap_or_else(|| {
-                    path.file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("Unknown")
-                        .to_string()
-                }),
-                split_artists(
-                    t.artist()
-                        .map(|s| s.into_owned())
-                        .unwrap_or_else(|| "Unknown Artist".to_string())
-                        .as_str(),
-                ),
-                t.album()
-                    .map(|s| s.into_owned())
-                    .unwrap_or_else(|| "Unknown Album".to_string()),
-                t.get_string(&ItemKey::AlbumArtist)
-                    .map(|s| s.to_owned())
-                    .or_else(|| t.artist().map(|s| s.into_owned())),
-                t.get_string(&ItemKey::RecordingDate)
-                    .and_then(|s| s.parse::<u32>().ok())
-                    .or_else(|| t.year().map(|y| y as u32)),
-                t.pictures().first().cloned(),
-                t.track(),
-                t.get_string(&ItemKey::Genre).map(|s| s.to_owned()),
-                tag_bpm,
-                tag_rg_track_gain,
-                tag_rg_track_peak,
-                tag_rg_album_gain,
-                tag_rg_album_peak,
-                t.get_string(&ItemKey::EncoderSoftware).map(|s| s.to_owned()),
-                tag_plain,
-                tag_synced,
-                lyrics_src.to_string(),
-            )
-        } else {
-            let lyrics_src;
-            let (tag_plain, tag_synced) = match &lrc_content {
-                Some(lrc) => {
-                    lyrics_src = "lrc_file";
-                    (None, Some(lrc.clone()))
-                }
-                None => {
-                    lyrics_src = "embedded";
-                    (None, None)
-                }
-            };
-
-            (
+        (
+            t.title().map(|s| s.into_owned()).unwrap_or_else(|| {
                 path.file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("Unknown")
-                    .to_string(),
-                vec!["Unknown Artist".to_string()],
-                "Unknown Album".to_string(),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                tag_plain,
-                tag_synced,
-                lyrics_src.to_string(),
-            )
+                    .to_string()
+            }),
+            split_artists(
+                t.artist()
+                    .map(|s| s.into_owned())
+                    .unwrap_or_else(|| "Unknown Artist".to_string())
+                    .as_str(),
+            ),
+            t.album()
+                .map(|s| s.into_owned())
+                .unwrap_or_else(|| "Unknown Album".to_string()),
+            t.get_string(&ItemKey::AlbumArtist)
+                .map(|s| s.to_owned())
+                .or_else(|| t.artist().map(|s| s.into_owned())),
+            t.get_string(&ItemKey::RecordingDate)
+                .and_then(|s| s.parse::<u32>().ok())
+                .or_else(|| t.year().map(|y| y as u32)),
+            t.pictures().first().cloned(),
+            t.track(),
+            t.get_string(&ItemKey::Genre).map(|s| s.to_owned()),
+            tag_bpm,
+            tag_rg_track_gain,
+            tag_rg_track_peak,
+            tag_rg_album_gain,
+            tag_rg_album_peak,
+            t.get_string(&ItemKey::EncoderSoftware)
+                .map(|s| s.to_owned()),
+            tag_plain,
+            tag_synced,
+            lyrics_src.to_string(),
+        )
+    } else {
+        let lyrics_src;
+        let (tag_plain, tag_synced) = match &lrc_content {
+            Some(lrc) => {
+                lyrics_src = "lrc_file";
+                (None, Some(lrc.clone()))
+            }
+            None => {
+                lyrics_src = "embedded";
+                (None, None)
+            }
         };
+
+        (
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+                .to_string(),
+            vec!["Unknown Artist".to_string()],
+            "Unknown Album".to_string(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            tag_plain,
+            tag_synced,
+            lyrics_src.to_string(),
+        )
+    };
 
     Ok(TrackMetadata {
         path: path.to_string_lossy().to_string(),
@@ -398,7 +421,9 @@ pub fn ensure_track_in_db(conn: &Connection, path: &Path, app_dir: &Path) -> Res
 
     let cover_url = meta.picture.as_ref().and_then(|pic| {
         save_picture(app_dir, pic)
-            .inspect_err(|e| tracing::warn!(error = %e, path = %path.display(), "failed to save picture"))
+            .inspect_err(
+                |e| tracing::warn!(error = %e, path = %path.display(), "failed to save picture"),
+            )
             .ok()
     });
     if let Some(ref url) = cover_url {
@@ -423,7 +448,8 @@ pub fn ensure_track_in_db(conn: &Connection, path: &Path, app_dir: &Path) -> Res
     )?;
 
     if let Some(ref genre_str) = meta.genre {
-        let genre_names: Vec<&str> = genre_str.split(['/', ','].as_ref())
+        let genre_names: Vec<&str> = genre_str
+            .split(['/', ','].as_ref())
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
             .collect();
@@ -784,9 +810,7 @@ pub fn scan_files(
         };
 
         if let Some(ref aa) = meta.album_artist {
-            album_artists
-                .entry(album_id)
-                .or_insert_with(|| aa.clone());
+            album_artists.entry(album_id).or_insert_with(|| aa.clone());
         }
 
         let track_id = match db::update_track(
@@ -828,7 +852,8 @@ pub fn scan_files(
         track_album_entries.push((album_id, track_id, meta.track_number.unwrap_or(1) as i32));
 
         if let Some(ref genre_str) = meta.genre {
-            let genre_names: Vec<&str> = genre_str.split(['/', ','].as_ref())
+            let genre_names: Vec<&str> = genre_str
+                .split(['/', ','].as_ref())
                 .map(|s| s.trim())
                 .filter(|s| !s.is_empty())
                 .collect();
@@ -891,8 +916,6 @@ pub fn scan_files(
         let fetch_pic = sync::get_setting(app_handle, "autoFetchArtistPic", true).unwrap_or(true);
 
         if fetch_pic {
-            // Skip artists that already have images or exhausted their fetch attempts,
-            // so incremental scans of changed files don't re-download everything.
             let ids: Vec<i64> = unique_artists_to_fetch.keys().copied().collect();
             if let Ok(needed) = db::get_artists_missing_images(conn, &ids) {
                 unique_artists_to_fetch.retain(|id, _| needed.contains(id));

@@ -30,8 +30,7 @@ pub enum TopSort {
     Time,
 }
 
-/// Window length (in days) used to normalize per-day averages. `AllTime` uses
-/// the span since the first recorded play instead.
+
 fn timeframe_window_days(timeframe: Timeframe) -> Option<i64> {
     match timeframe {
         Timeframe::Today => Some(1),
@@ -46,8 +45,6 @@ fn timeframe_window_days(timeframe: Timeframe) -> Option<i64> {
 }
 
 pub fn timeframe_where_clause(alias: &str, timeframe: Timeframe) -> String {
-    // Timestamps are stored in UTC; every boundary is evaluated in local time
-    // so "today", streaks, heatmaps and trends match the user's clock.
     match timeframe {
         Timeframe::Today => {
             format!("{} >= datetime('now', 'localtime', 'start of day')", alias)
@@ -79,12 +76,10 @@ pub fn timeframe_where_clause(alias: &str, timeframe: Timeframe) -> String {
 
 fn top_order_by(sort: TopSort, name_col: &str) -> String {
     match sort {
-        TopSort::Plays => format!(
-            "play_count DESC, total_time DESC, {name_col} COLLATE NOCASE ASC"
-        ),
-        TopSort::Time => format!(
-            "total_time DESC, play_count DESC, {name_col} COLLATE NOCASE ASC"
-        ),
+        TopSort::Plays => {
+            format!("play_count DESC, total_time DESC, {name_col} COLLATE NOCASE ASC")
+        }
+        TopSort::Time => format!("total_time DESC, play_count DESC, {name_col} COLLATE NOCASE ASC"),
     }
 }
 
@@ -146,8 +141,7 @@ pub fn get_source_dirs(conn: &Connection) -> Result<Vec<String>> {
 pub fn remove_source_dir(conn: &mut Connection, path: &str) -> Result<()> {
     let tx = conn.transaction().map_err(Error::Db)?;
 
-    // Delete the exact path plus anything nested under it, never a sibling
-    // that merely shares a prefix (e.g. /music must not match /music2).
+
     let path = path.trim_end_matches(['/', '\\']);
 
     tx.execute(
@@ -250,9 +244,7 @@ pub fn delete_track_by_id(conn: &Connection, id: i64) -> Result<String> {
             row.get(0)
         })
         .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => {
-                Error::Unknown(format!("Track {id} not found"))
-            }
+            rusqlite::Error::QueryReturnedNoRows => Error::Unknown(format!("Track {id} not found")),
             e => Error::Db(e),
         })?;
 
@@ -289,17 +281,16 @@ pub fn add_to_scan_blacklist(
 }
 
 pub fn remove_from_scan_blacklist(conn: &Connection, path: &str) -> Result<()> {
-    conn.execute(
-        "DELETE FROM scan_blacklist WHERE path = ?1",
-        params![path],
-    )
-    .map_err(Error::Db)?;
+    conn.execute("DELETE FROM scan_blacklist WHERE path = ?1", params![path])
+        .map_err(Error::Db)?;
     Ok(())
 }
 
 pub fn get_scan_blacklist(conn: &Connection) -> Result<Vec<BlacklistedEntry>> {
     let mut stmt = conn
-        .prepare("SELECT path, mtime, reason, created_at FROM scan_blacklist ORDER BY created_at DESC")
+        .prepare(
+            "SELECT path, mtime, reason, created_at FROM scan_blacklist ORDER BY created_at DESC",
+        )
         .map_err(Error::Db)?;
     let rows = stmt
         .query_map([], |row| {
@@ -414,7 +405,10 @@ pub fn get_artists_needing_fetch(conn: &Connection) -> Result<Vec<(i64, String)>
 
 /// Returns the subset of `ids` that still need an artist image fetched
 /// (missing profile/banner and fetch attempts not exhausted).
-pub fn get_artists_missing_images(conn: &Connection, ids: &[i64]) -> Result<std::collections::HashSet<i64>> {
+pub fn get_artists_missing_images(
+    conn: &Connection,
+    ids: &[i64],
+) -> Result<std::collections::HashSet<i64>> {
     if ids.is_empty() {
         return Ok(std::collections::HashSet::new());
     }
@@ -446,12 +440,10 @@ pub fn set_album_artist(conn: &Connection, name: &str, album_artist: &str) -> Re
 }
 
 pub fn set_album_artist_by_id(conn: &Connection, album_id: i64, album_artist: &str) -> Result<()> {
-    conn.prepare_cached(
-        "UPDATE album SET album_artist = ? WHERE id = ? AND album_artist IS NULL",
-    )
-    .map_err(Error::Db)?
-    .execute(params![album_artist, album_id])
-    .map_err(Error::Db)?;
+    conn.prepare_cached("UPDATE album SET album_artist = ? WHERE id = ? AND album_artist IS NULL")
+        .map_err(Error::Db)?
+        .execute(params![album_artist, album_id])
+        .map_err(Error::Db)?;
     Ok(())
 }
 
@@ -511,10 +503,26 @@ pub fn update_track(
     .map_err(Error::Db)?
     .query_row(
         params![
-            path, title, duration_sec, year, mtime, file_size, cover_art,
-            genre, bitrate, sample_rate, bit_depth, channels, audio_format, codec,
-            bpm, replaygain_track_gain, replaygain_track_peak,
-            replaygain_album_gain, replaygain_album_peak, encoder
+            path,
+            title,
+            duration_sec,
+            year,
+            mtime,
+            file_size,
+            cover_art,
+            genre,
+            bitrate,
+            sample_rate,
+            bit_depth,
+            channels,
+            audio_format,
+            codec,
+            bpm,
+            replaygain_track_gain,
+            replaygain_track_peak,
+            replaygain_album_gain,
+            replaygain_album_peak,
+            encoder
         ],
         |row| row.get(0),
     )
@@ -636,7 +644,10 @@ pub fn bulk_insert_track_genres(conn: &Connection, pairs: &[(i64, i64)]) -> Resu
     Ok(())
 }
 
-pub fn get_genres_for_tracks(conn: &Connection, track_ids: &[i64]) -> Result<HashMap<i64, Vec<Genre>>> {
+pub fn get_genres_for_tracks(
+    conn: &Connection,
+    track_ids: &[i64],
+) -> Result<HashMap<i64, Vec<Genre>>> {
     let mut map = HashMap::new();
     if track_ids.is_empty() {
         return Ok(map);
@@ -654,15 +665,15 @@ pub fn get_genres_for_tracks(conn: &Connection, track_ids: &[i64]) -> Result<Has
         let mut stmt = conn.prepare(&sql).map_err(Error::Db)?;
         let rows = stmt
             .query_map(rusqlite::params_from_iter(chunk), |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        Genre {
-                            id: row.get(1)?,
-                            name: row.get(2)?,
-                            thumbnail: row.get(3)?,
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    Genre {
+                        id: row.get(1)?,
+                        name: row.get(2)?,
+                        thumbnail: row.get(3)?,
                         ..Default::default()
-                        },
-                    ))
+                    },
+                ))
             })
             .map_err(Error::Db)?;
 
@@ -765,7 +776,12 @@ pub fn get_tracks_by_genre(conn: &Connection, genre_id: i64) -> Result<Vec<Track
     prepare_tracks_list(conn, sql, params![genre_id])
 }
 
-pub fn update_genre(conn: &Connection, id: i64, name: &str, thumbnail: Option<&str>) -> Result<Genre> {
+pub fn update_genre(
+    conn: &Connection,
+    id: i64,
+    name: &str,
+    thumbnail: Option<&str>,
+) -> Result<Genre> {
     conn.prepare_cached(
         "UPDATE genre SET name = ?1, thumbnail = ?2 WHERE id = ?3 RETURNING id, name, thumbnail",
     )
@@ -775,7 +791,7 @@ pub fn update_genre(conn: &Connection, id: i64, name: &str, thumbnail: Option<&s
             id: row.get(0)?,
             name: row.get(1)?,
             thumbnail: row.get(2)?,
-        ..Default::default()
+            ..Default::default()
         })
     })
     .map_err(Error::Db)
@@ -804,7 +820,7 @@ pub fn get_all_genres(conn: &Connection) -> Result<Vec<Genre>> {
                 total_plays: row.get(4)?,
                 last_played_at: row.get(5)?,
                 added_at: row.get(6)?,
-            ..Default::default()
+                ..Default::default()
             })
         })
         .map_err(Error::Db)?;
@@ -814,8 +830,11 @@ pub fn get_all_genres(conn: &Connection) -> Result<Vec<Genre>> {
 
 pub fn delete_genre(conn: &Connection, genre_id: i64) -> Result<()> {
     let tx = conn.unchecked_transaction().map_err(Error::Db)?;
-    tx.execute("DELETE FROM track_genre WHERE genre_id = ?", params![genre_id])
-        .map_err(Error::Db)?;
+    tx.execute(
+        "DELETE FROM track_genre WHERE genre_id = ?",
+        params![genre_id],
+    )
+    .map_err(Error::Db)?;
     tx.execute("DELETE FROM genre WHERE id = ?", params![genre_id])
         .map_err(Error::Db)?;
     tx.commit().map_err(Error::Db)?;
@@ -833,7 +852,11 @@ pub fn get_track_number(conn: &Connection, track_id: i64) -> Result<Option<i32>>
     .map_err(Error::Db)
 }
 
-pub fn set_track_cover_art(conn: &Connection, track_id: i64, cover_art: Option<&str>) -> Result<()> {
+pub fn set_track_cover_art(
+    conn: &Connection,
+    track_id: i64,
+    cover_art: Option<&str>,
+) -> Result<()> {
     conn.prepare_cached("UPDATE track SET cover_art = ?1 WHERE id = ?2")
         .map_err(Error::Db)?
         .execute(params![cover_art, track_id])
@@ -931,7 +954,7 @@ pub fn get_all_albums(conn: &Connection) -> Result<Vec<Album>> {
                 total_plays: row.get(6)?,
                 last_played_at: row.get(7)?,
                 added_at: row.get(8)?,
-            ..Default::default()
+                ..Default::default()
             };
             let aa: Option<String> = row.get(3)?;
             Ok((album, aa))
@@ -971,7 +994,7 @@ pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
                 total_plays: row.get(4)?,
                 last_played_at: row.get(5)?,
                 added_at: row.get(6)?,
-            ..Default::default()
+                ..Default::default()
             })
         })
         .map_err(Error::Db)?;
@@ -1005,7 +1028,7 @@ pub fn get_all_artists(conn: &Connection) -> Result<Vec<Artist>> {
                 total_plays: row.get(5)?,
                 last_played_at: row.get(6)?,
                 added_at: row.get(7)?,
-            ..Default::default()
+                ..Default::default()
             })
         })
         .map_err(Error::Db)?;
@@ -1166,7 +1189,7 @@ pub fn get_playlist(conn: &Connection, playlist_id: i64) -> Result<Playlist> {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 cover_art: row.get(2)?,
-            ..Default::default()
+                ..Default::default()
             })
         },
     )
@@ -1183,7 +1206,7 @@ pub fn get_artist(conn: &Connection, artist_id: i64) -> Result<Artist> {
                 name: row.get(1)?,
                 profile_image: row.get(2)?,
                 banner_image: row.get(3)?,
-            ..Default::default()
+                ..Default::default()
             })
         },
     )
@@ -1202,7 +1225,7 @@ pub fn get_album(conn: &Connection, album_id: i64) -> Result<Album> {
                     cover_art: row.get(2)?,
                     album_artist: None,
                     year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
-                ..Default::default()
+                    ..Default::default()
                 };
                 Ok((album, row.get::<_, Option<String>>(3)?))
             },
@@ -1248,7 +1271,7 @@ pub fn get_track_details(conn: &Connection, track_id: i64) -> Result<TrackDetail
                 cover_art: album_art,
                 album_artist: None,
                 year: row.get::<_, Option<i32>>(8)?.map(|y| y as u32),
-            ..Default::default()
+                ..Default::default()
             };
 
             Ok((
@@ -1450,7 +1473,7 @@ pub fn search_artists(conn: &Connection, query: &str, limit: usize) -> Result<Ve
                 name: row.get(1)?,
                 profile_image: row.get(2)?,
                 banner_image: row.get(3)?,
-            ..Default::default()
+                ..Default::default()
             })
         })
         .map_err(Error::Db)?;
@@ -1480,7 +1503,7 @@ pub fn search_albums(conn: &Connection, query: &str, limit: usize) -> Result<Vec
                 cover_art: row.get(2)?,
                 album_artist: None,
                 year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
-            ..Default::default()
+                ..Default::default()
             };
             Ok((album, row.get::<_, Option<String>>(3)?))
         })
@@ -1505,7 +1528,7 @@ pub fn get_playlist_by_name(conn: &Connection, name: &str) -> Result<Playlist> {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 cover_art: row.get(2)?,
-            ..Default::default()
+                ..Default::default()
             })
         },
     )
@@ -1522,7 +1545,7 @@ pub fn get_artist_by_name(conn: &Connection, name: &str) -> Result<Artist> {
                 name: row.get(1)?,
                 profile_image: row.get(2)?,
                 banner_image: row.get(3)?,
-            ..Default::default()
+                ..Default::default()
             })
         },
     )
@@ -1541,7 +1564,7 @@ pub fn get_album_by_name(conn: &Connection, name: &str) -> Result<Album> {
                     cover_art: row.get(2)?,
                     album_artist: None,
                     year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
-                ..Default::default()
+                    ..Default::default()
                 };
                 Ok((album, row.get::<_, Option<String>>(3)?))
             },
@@ -1581,7 +1604,7 @@ fn resolve_album_artist(
                         name: row.get(1)?,
                         profile_image: row.get(2)?,
                         banner_image: row.get(3)?,
-                    ..Default::default()
+                        ..Default::default()
                     })
                 })
                 .map_err(Error::Db)?
@@ -1627,7 +1650,7 @@ fn batch_resolve_album_artists(
                     name: row.get(2)?,
                     profile_image: row.get(3)?,
                     banner_image: row.get(4)?,
-                ..Default::default()
+                    ..Default::default()
                 },
             ))
         }) {
@@ -1667,7 +1690,7 @@ pub fn prepare_tracks_list<P: Params>(
                 cover_art: album_art,
                 album_artist: None,
                 year: album_year.map(|y| y as u32),
-            ..Default::default()
+                ..Default::default()
             };
 
             Ok(RawTrack {
@@ -1764,7 +1787,7 @@ fn get_artists_for_tracks(
                         name: row.get(2)?,
                         profile_image: row.get(3)?,
                         banner_image: row.get(4)?,
-                    ..Default::default()
+                        ..Default::default()
                     },
                 ))
             })
@@ -1836,9 +1859,7 @@ fn get_genre_ids_for_tracks(
 
         for row in rows {
             let (track_id, genre_id) = row.map_err(Error::Db)?;
-            map.entry(track_id)
-                .or_insert_with(Vec::new)
-                .push(genre_id);
+            map.entry(track_id).or_insert_with(Vec::new).push(genre_id);
         }
     }
 
@@ -1924,7 +1945,7 @@ pub fn get_top_artists(conn: &Connection, limit: usize) -> Result<Vec<Artist>> {
                 name: row.get(1)?,
                 profile_image: row.get(2)?,
                 banner_image: row.get(3)?,
-            ..Default::default()
+                ..Default::default()
             })
         })
         .map_err(Error::Db)?;
@@ -1953,7 +1974,7 @@ pub fn get_top_albums(conn: &Connection, limit: usize) -> Result<Vec<Album>> {
                 cover_art: row.get(2)?,
                 album_artist: None,
                 year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
-            ..Default::default()
+                ..Default::default()
             };
             Ok((album, row.get::<_, Option<String>>(3)?))
         })
@@ -2073,7 +2094,11 @@ pub fn get_stats_overview(conn: &Connection, timeframe: Timeframe) -> Result<Sta
 
     let format_dist = get_format_distribution(conn)?;
 
-    let (avg_bitrate_kbps, avg_sample_rate, avg_bit_depth): (Option<f64>, Option<f64>, Option<f64>) = conn
+    let (avg_bitrate_kbps, avg_sample_rate, avg_bit_depth): (
+        Option<f64>,
+        Option<f64>,
+        Option<f64>,
+    ) = conn
         .query_row(
             "SELECT
                 AVG(CASE WHEN bitrate IS NOT NULL AND bitrate > 0 THEN bitrate / 1000.0 END),
@@ -2192,7 +2217,7 @@ fn batch_resolve_albums_for_tracks(
                             cover_art: row.get(3)?,
                             album_artist: None,
                             year: row.get::<_, Option<i32>>(6)?.map(|y| y as u32),
-                        ..Default::default()
+                            ..Default::default()
                         },
                         track_number: row.get::<_, Option<i64>>(4)?.map(|n| n as u32),
                         album_artist_name: row.get(5)?,
@@ -2249,7 +2274,7 @@ pub fn get_top_tracks_with_stats(
                     cover_art: None,
                     album_artist: None,
                     year: None,
-                ..Default::default()
+                    ..Default::default()
                 },
                 duration_seconds: row.get(2)?,
                 is_favorite: row.get(3)?,
@@ -2294,7 +2319,9 @@ pub fn get_top_tracks_with_stats(
     if !aa_names.is_empty() {
         let album_artist_map = batch_resolve_album_artists(conn, &aa_names)?;
         for (track_id, top) in &mut items {
-            if let Some(name) = album_map.get(track_id).and_then(|i| i.album_artist_name.as_deref())
+            if let Some(name) = album_map
+                .get(track_id)
+                .and_then(|i| i.album_artist_name.as_deref())
             {
                 if let Some(artists) = album_artist_map.get(name) {
                     top.track.album.album_artist = Some(artists.clone());
@@ -2348,7 +2375,7 @@ pub fn get_top_artists_with_stats(
                     name: row.get(1)?,
                     profile_image: row.get(2)?,
                     banner_image: row.get(3)?,
-                ..Default::default()
+                    ..Default::default()
                 },
                 play_count: row.get(4)?,
                 total_listening_time_sec: row.get::<_, f64>(5)? as i64,
@@ -2399,7 +2426,7 @@ pub fn get_top_albums_with_stats(
                         cover_art: row.get(2)?,
                         album_artist: None,
                         year: row.get::<_, Option<i32>>(4)?.map(|y| y as u32),
-                    ..Default::default()
+                        ..Default::default()
                     },
                     play_count: row.get(5)?,
                     total_listening_time_sec: row.get::<_, f64>(6)? as i64,
@@ -2454,7 +2481,7 @@ pub fn get_top_genres_with_stats(
                     id: row.get(0)?,
                     name: row.get(1)?,
                     thumbnail: row.get(2)?,
-                ..Default::default()
+                    ..Default::default()
                 },
                 play_count: row.get(3)?,
                 total_listening_time_sec: row.get::<_, f64>(4)? as i64,
@@ -2869,8 +2896,9 @@ pub fn get_favorite_trends(conn: &Connection, timeframe: Timeframe) -> Result<Ve
     }
 
     // Top artist per period: count plays per artist within the timeframe.
-    let top_artist_by_period =
-        collect_top_per_period(conn, &format!(
+    let top_artist_by_period = collect_top_per_period(
+        conn,
+        &format!(
             "SELECT {pe} as period, ar.id as id, ar.name as name, COUNT(ph.id) as plays
              FROM playback_history ph
              JOIN track t ON t.id = ph.track_id
@@ -2881,11 +2909,13 @@ pub fn get_favorite_trends(conn: &Connection, timeframe: Timeframe) -> Result<Ve
              ORDER BY period ASC, plays DESC",
             time_filter,
             pe = period_expr
-        ))?;
+        ),
+    )?;
 
     // Top album per period: count plays per album within the timeframe.
-    let top_album_by_period =
-        collect_top_per_period(conn, &format!(
+    let top_album_by_period = collect_top_per_period(
+        conn,
+        &format!(
             "SELECT {pe} as period, al.id as id, al.name as name, COUNT(ph.id) as plays
              FROM playback_history ph
              JOIN track t ON t.id = ph.track_id
@@ -2896,7 +2926,8 @@ pub fn get_favorite_trends(conn: &Connection, timeframe: Timeframe) -> Result<Ve
              ORDER BY period ASC, plays DESC",
             time_filter,
             pe = period_expr
-        ))?;
+        ),
+    )?;
 
     let mut result = Vec::new();
     for period in &periods {
@@ -2929,10 +2960,7 @@ pub fn get_favorite_trends(conn: &Connection, timeframe: Timeframe) -> Result<Ve
 
 /// Runs a `(period, id, name, plays)` query ordered by plays desc and keeps
 /// the top row (highest plays) per period.
-fn collect_top_per_period(
-    conn: &Connection,
-    sql: &str,
-) -> Result<HashMap<String, (i64, String)>> {
+fn collect_top_per_period(conn: &Connection, sql: &str) -> Result<HashMap<String, (i64, String)>> {
     let mut stmt = conn.prepare(sql).map_err(Error::Db)?;
     let rows = stmt
         .query_map([], |row| {
@@ -2985,7 +3013,7 @@ pub fn get_playback_history_timeline(
                     cover_art: None,
                     album_artist: None,
                     year: None,
-                ..Default::default()
+                    ..Default::default()
                 },
                 duration_seconds: row.get(3)?,
                 is_favorite: row.get(4)?,
@@ -3028,8 +3056,9 @@ pub fn get_playback_history_timeline(
         if !aa_names.is_empty() {
             let album_artist_map = batch_resolve_album_artists(conn, &aa_names)?;
             for (track_id, event) in &mut raw_events {
-                if let Some(name) =
-                    album_map.get(track_id).and_then(|i| i.album_artist_name.as_deref())
+                if let Some(name) = album_map
+                    .get(track_id)
+                    .and_then(|i| i.album_artist_name.as_deref())
                 {
                     if let Some(artists) = album_artist_map.get(name) {
                         event.track.album.album_artist = Some(artists.clone());
@@ -3128,9 +3157,10 @@ mod tests {
         for idx in 0..600 {
             let path = format!("/tmp/track_{idx}.flac");
             let tid = update_track(
-                &conn, &path, "Title", 180, None, 1000, 1000, None, None,
-                None, 44100, None, 2, "flac", None, None, None, None, None, None, None,
-            ).unwrap();
+                &conn, &path, "Title", 180, None, 1000, 1000, None, None, None, 44100, None, 2,
+                "flac", None, None, None, None, None, None, None,
+            )
+            .unwrap();
             tracks.push(tid);
         }
 
@@ -3139,7 +3169,8 @@ mod tests {
         assert!(bulk_insert_track_artists(&conn, &artist_pairs).is_ok());
 
         // Test bulk album insert with 600 entries (1800 params > 999 limit)
-        let album_entries: Vec<(i64, i64, i32)> = tracks.iter().map(|&tid| (album_id, tid, 1)).collect();
+        let album_entries: Vec<(i64, i64, i32)> =
+            tracks.iter().map(|&tid| (album_id, tid, 1)).collect();
         assert!(bulk_insert_track_albums(&conn, &album_entries).is_ok());
 
         // Test bulk genre insert with 600 pairs (1200 params > 999 limit)
@@ -3283,9 +3314,29 @@ mod tests {
     fn test_update_and_get_track() {
         let conn = setup_memory_db();
         let track_id = update_track(
-            &conn, "/music/test.mp3", "Test Song", 200, Some(2024), 1000, 5000,
-            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            "/music/test.mp3",
+            "Test Song",
+            200,
+            Some(2024),
+            1000,
+            5000,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         assert!(track_id > 0);
 
         let artist_id = get_or_create_artist(&conn, "Test Artist").unwrap();
@@ -3303,8 +3354,30 @@ mod tests {
     #[test]
     fn test_toggle_favorite() {
         let conn = setup_memory_db();
-        let track_id =
-            update_track(&conn, "/music/test.mp3", "Test", 100, None, 0, 100, None, None, None, 0, None, 0, "", None, None, None, None, None, None, None).unwrap();
+        let track_id = update_track(
+            &conn,
+            "/music/test.mp3",
+            "Test",
+            100,
+            None,
+            0,
+            100,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let artist_id = get_or_create_artist(&conn, "Artist").unwrap();
         set_track_artists(&conn, track_id, &[artist_id]).unwrap();
         let album_id = get_or_create_album(&conn, "Album", None, None).unwrap();
@@ -3379,11 +3452,30 @@ mod tests {
     fn test_search_tracks() {
         let conn = setup_memory_db();
         insert_basic_track(&conn);
-        // Second track with different artist/album so it doesn't match "Test"
         let track_id = update_track(
-            &conn, "/music/other.mp3", "Other Song", 200, Some(2024), 2000, 6000,
-            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            "/music/other.mp3",
+            "Other Song",
+            200,
+            Some(2024),
+            2000,
+            6000,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let artist_id = get_or_create_artist(&conn, "Other Artist").unwrap();
         set_track_artists(&conn, track_id, &[artist_id]).unwrap();
         let album_id = get_or_create_album(&conn, "Other Album", None, None).unwrap();
@@ -3409,9 +3501,29 @@ mod tests {
         add_source_dir(&conn, "/music/jazz").unwrap();
 
         let track_id = update_track(
-            &conn, "/music/rock/song.mp3", "Song", 100, None, 0, 100,
-            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            "/music/rock/song.mp3",
+            "Song",
+            100,
+            None,
+            0,
+            100,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let artist_id = get_or_create_artist(&conn, "Artist").unwrap();
         set_track_artists(&conn, track_id, &[artist_id]).unwrap();
 
@@ -3497,9 +3609,29 @@ mod tests {
 
     fn make_track(conn: &Connection, path: &str, title: &str, duration: u32, size: i64) -> i64 {
         update_track(
-            conn, path, title, duration, None, 0u64 as i64, size, None,
-            None, None, 0, None, 0, "", None, None, None, None, None, None, None,
-        ).unwrap()
+            conn,
+            path,
+            title,
+            duration,
+            None,
+            0u64 as i64,
+            size,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
     }
 
     fn insert_basic_track(conn: &Connection) -> i64 {
@@ -3546,10 +3678,7 @@ mod tests {
             .unwrap()
             .and_utc()
             .with_timezone(&chrono::Local);
-        (
-            dt.weekday().num_days_from_sunday() as i64,
-            dt.hour() as i64,
-        )
+        (dt.weekday().num_days_from_sunday() as i64, dt.hour() as i64)
     }
 
     // -----------------------------------------------------------------------
@@ -3617,13 +3746,53 @@ mod tests {
     fn test_stats_overview_file_size() {
         let conn = setup_memory_db();
         update_track(
-            &conn, "/music/small.mp3", "Small", 100, None, 0, 1048576,
-            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            "/music/small.mp3",
+            "Small",
+            100,
+            None,
+            0,
+            1048576,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         update_track(
-            &conn, "/music/large.flac", "Large", 200, None, 0, 5242880,
-            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            "/music/large.flac",
+            "Large",
+            200,
+            None,
+            0,
+            5242880,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let overview = get_stats_overview(&conn, Timeframe::AllTime).unwrap();
         assert_eq!(overview.total_tracks, 2);
         assert_eq!(overview.total_file_size_bytes, 6291456);
@@ -3638,7 +3807,8 @@ mod tests {
     #[test]
     fn test_top_tracks_with_stats_empty() {
         let conn = setup_memory_db();
-        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        let result =
+            get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert!(result.is_empty());
     }
 
@@ -3650,7 +3820,8 @@ mod tests {
         insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, t1, "2024-01-16 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 100.0);
-        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        let result =
+            get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].play_count, 2);
         assert_eq!(result[1].play_count, 1);
@@ -3663,7 +3834,8 @@ mod tests {
         let conn = setup_memory_db();
         let track_id = insert_basic_track(&conn);
         insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 50.0);
-        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        let result =
+            get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].total_listening_time_sec, 100);
     }
@@ -3675,7 +3847,8 @@ mod tests {
         let t2 = insert_basic_track_with_path(&conn, "/music/b.mp3", 2);
         insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 100.0);
-        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 1, TopSort::default()).unwrap();
+        let result =
+            get_top_tracks_with_stats(&conn, Timeframe::AllTime, 1, TopSort::default()).unwrap();
         assert_eq!(result.len(), 1);
     }
 
@@ -3685,7 +3858,8 @@ mod tests {
         let track_id = insert_basic_track(&conn);
         insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, track_id, "2024-06-20 15:30:00", "ALBUM", 100.0);
-        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        let result =
+            get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].play_count, 2);
         assert!(result[0].last_played_at.is_some());
@@ -3703,7 +3877,8 @@ mod tests {
         .unwrap();
         insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, track_id, "2024-01-16 10:00:00", "ALBUM", 50.0);
-        let result = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        let result =
+            get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 1);
         // One play per history row regardless of how many albums the track is in.
         assert_eq!(result[0].play_count, 2);
@@ -3719,14 +3894,36 @@ mod tests {
         let t1 = insert_basic_track(&conn);
         // t2: 2 plays of a 100s track at 50% => 100s total
         let t2 = update_track(
-            &conn, "/music/other.mp3", "Other Song", 100, Some(2024), 2000, 6000,
-            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            "/music/other.mp3",
+            "Other Song",
+            100,
+            Some(2024),
+            2000,
+            6000,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 50.0);
         insert_play_at(&conn, t2, "2024-01-16 10:00:00", "ALBUM", 50.0);
-        let by_plays = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::Plays).unwrap();
-        let by_time = get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::Time).unwrap();
+        let by_plays =
+            get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::Plays).unwrap();
+        let by_time =
+            get_top_tracks_with_stats(&conn, Timeframe::AllTime, 10, TopSort::Time).unwrap();
         assert_eq!(by_plays[0].track.id, t2);
         assert_eq!(by_plays[0].play_count, 2);
         assert_eq!(by_time[0].track.id, t1);
@@ -3740,7 +3937,8 @@ mod tests {
     #[test]
     fn test_top_artists_with_stats_empty() {
         let conn = setup_memory_db();
-        let result = get_top_artists_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        let result =
+            get_top_artists_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert!(result.is_empty());
     }
 
@@ -3749,7 +3947,8 @@ mod tests {
         let conn = setup_memory_db();
         let track_id = insert_basic_track(&conn);
         insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 100.0);
-        let result = get_top_artists_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        let result =
+            get_top_artists_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].artist.name, "Test Artist");
         assert_eq!(result[0].play_count, 1);
@@ -3765,9 +3964,29 @@ mod tests {
         // Track 2 with a different artist
         let t2_path = "/music/other.mp3";
         let t2 = update_track(
-            &conn, t2_path, "Other Song", 200, Some(2024), 2000, 6000,
-            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            t2_path,
+            "Other Song",
+            200,
+            Some(2024),
+            2000,
+            6000,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let artist2_id = get_or_create_artist(&conn, "Second Artist").unwrap();
         set_track_artists(&conn, t2, &[artist2_id]).unwrap();
         let album_id = get_or_create_album(&conn, "Other Album", None, None).unwrap();
@@ -3775,7 +3994,8 @@ mod tests {
 
         insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 100.0);
-        let result = get_top_artists_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        let result =
+            get_top_artists_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 2);
         // Equal play counts tie-break by listening time, then name.
         assert_eq!(result[0].artist.name, "Second Artist");
@@ -3789,7 +4009,8 @@ mod tests {
     #[test]
     fn test_top_albums_with_stats_empty() {
         let conn = setup_memory_db();
-        let result = get_top_albums_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        let result =
+            get_top_albums_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert!(result.is_empty());
     }
 
@@ -3798,7 +4019,8 @@ mod tests {
         let conn = setup_memory_db();
         let track_id = insert_basic_track(&conn);
         insert_play_at(&conn, track_id, "2024-01-15 10:00:00", "ALBUM", 50.0);
-        let result = get_top_albums_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        let result =
+            get_top_albums_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].album.name, "Test Album");
         assert_eq!(result[0].play_count, 1);
@@ -3812,9 +4034,29 @@ mod tests {
         let t1 = insert_basic_track(&conn); // "Test Album"
         let t2_path = "/music/other.mp3";
         let t2 = update_track(
-            &conn, t2_path, "Other Song", 200, Some(2024), 2000, 6000,
-            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            t2_path,
+            "Other Song",
+            200,
+            Some(2024),
+            2000,
+            6000,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let artist_id = get_or_create_artist(&conn, "Artist").unwrap();
         set_track_artists(&conn, t2, &[artist_id]).unwrap();
         let album2_id = get_or_create_album(&conn, "Other Album", None, None).unwrap();
@@ -3822,7 +4064,8 @@ mod tests {
 
         insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0);
         insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 100.0);
-        let result = get_top_albums_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
+        let result =
+            get_top_albums_with_stats(&conn, Timeframe::AllTime, 10, TopSort::default()).unwrap();
         assert_eq!(result.len(), 2);
     }
 
@@ -3875,8 +4118,27 @@ mod tests {
         let conn = setup_memory_db();
         let t1 = insert_basic_track(&conn); // 200s
         let t2 = update_track(
-            &conn, "/music/other.mp3", "Other Song", 100, Some(2024), 2000, 6000,
-            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
+            &conn,
+            "/music/other.mp3",
+            "Other Song",
+            100,
+            Some(2024),
+            2000,
+            6000,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
         let rock = get_or_create_genre(&conn, "Rock").unwrap();
@@ -3886,10 +4148,10 @@ mod tests {
         insert_play_at(&conn, t1, "2024-01-15 10:00:00", "ALBUM", 100.0); // 200s
         insert_play_at(&conn, t2, "2024-01-15 10:00:00", "ALBUM", 50.0); // 50s
         insert_play_at(&conn, t2, "2024-01-16 10:00:00", "ALBUM", 50.0); // 50s
-        let by_plays = get_top_genres_with_stats(&conn, Timeframe::AllTime, 10, TopSort::Plays)
-            .unwrap();
-        let by_time = get_top_genres_with_stats(&conn, Timeframe::AllTime, 10, TopSort::Time)
-            .unwrap();
+        let by_plays =
+            get_top_genres_with_stats(&conn, Timeframe::AllTime, 10, TopSort::Plays).unwrap();
+        let by_time =
+            get_top_genres_with_stats(&conn, Timeframe::AllTime, 10, TopSort::Time).unwrap();
         assert_eq!(by_plays[0].genre.name, "Rock");
         assert_eq!(by_plays[0].play_count, 2);
         assert_eq!(by_time[0].genre.name, "Pop");
@@ -4222,13 +4484,53 @@ mod tests {
         let a = insert_basic_track(&conn);
         // Two tracks from ArtistY / AlbumY with 4 + 3 plays = 7 total.
         let b = update_track(
-            &conn, "/music/b.mp3", "Song B", 200, None, 0, 1000,
-            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            "/music/b.mp3",
+            "Song B",
+            200,
+            None,
+            0,
+            1000,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let c = update_track(
-            &conn, "/music/c.mp3", "Song C", 200, None, 0, 1000,
-            None, None, None, 0, None, 0, "", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            "/music/c.mp3",
+            "Song C",
+            200,
+            None,
+            0,
+            1000,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let artist_x = get_or_create_artist(&conn, "ArtistX").unwrap();
         let artist_y = get_or_create_artist(&conn, "ArtistY").unwrap();
         set_track_artists(&conn, a, &[artist_x]).unwrap();
@@ -4347,8 +4649,27 @@ mod tests {
     fn test_stats_overview_quality_and_completion() {
         let conn = setup_memory_db();
         update_track(
-            &conn, "/music/song.flac", "Song", 200, None, 0, 5000,
-            None, None, Some(1400), 44100, Some(16), 2, "flac", None, None, None, None, None, None, None,
+            &conn,
+            "/music/song.flac",
+            "Song",
+            200,
+            None,
+            0,
+            5000,
+            None,
+            None,
+            Some(1400),
+            44100,
+            Some(16),
+            2,
+            "flac",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
         let track_id = get_track_id_by_path(&conn, "/music/song.flac").unwrap();
@@ -4366,13 +4687,51 @@ mod tests {
     fn test_format_distribution_quality_aggregates() {
         let conn = setup_memory_db();
         update_track(
-            &conn, "/music/a.flac", "A", 100, None, 0, 1000,
-            None, None, Some(1200), 48000, Some(24), 2, "flac", None, None, None, None, None, None, None,
+            &conn,
+            "/music/a.flac",
+            "A",
+            100,
+            None,
+            0,
+            1000,
+            None,
+            None,
+            Some(1200),
+            48000,
+            Some(24),
+            2,
+            "flac",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
         update_track(
-            &conn, "/music/b.flac", "B", 100, None, 0, 1000,
-            None, None, Some(800), 44100, Some(16), 2, "flac", None, None, None, None, None, None, None,
+            &conn,
+            "/music/b.flac",
+            "B",
+            100,
+            None,
+            0,
+            1000,
+            None,
+            None,
+            Some(800),
+            44100,
+            Some(16),
+            2,
+            "flac",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .unwrap();
         let result = get_format_distribution(&conn).unwrap();
@@ -4397,13 +4756,53 @@ mod tests {
     fn test_format_distribution_single_format() {
         let conn = setup_memory_db();
         update_track(
-            &conn, "/music/song1.mp3", "Song 1", 100, None, 0, 1000,
-            None, None, None, 0, None, 0, "mp3", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            "/music/song1.mp3",
+            "Song 1",
+            100,
+            None,
+            0,
+            1000,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "mp3",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         update_track(
-            &conn, "/music/song2.mp3", "Song 2", 200, None, 0, 2000,
-            None, None, None, 0, None, 0, "mp3", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            "/music/song2.mp3",
+            "Song 2",
+            200,
+            None,
+            0,
+            2000,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "mp3",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let result = get_format_distribution(&conn).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].format, "mp3");
@@ -4416,13 +4815,53 @@ mod tests {
     fn test_format_distribution_multiple_formats() {
         let conn = setup_memory_db();
         update_track(
-            &conn, "/music/song1.mp3", "Song 1", 100, None, 0, 1000,
-            None, None, None, 0, None, 0, "mp3", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            "/music/song1.mp3",
+            "Song 1",
+            100,
+            None,
+            0,
+            1000,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "mp3",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         update_track(
-            &conn, "/music/song2.flac", "Song 2", 200, None, 0, 2000,
-            None, None, None, 0, None, 0, "flac", None, None, None, None, None, None, None,
-        ).unwrap();
+            &conn,
+            "/music/song2.flac",
+            "Song 2",
+            200,
+            None,
+            0,
+            2000,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "flac",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let result = get_format_distribution(&conn).unwrap();
         assert_eq!(result.len(), 2);
         for stat in &result {
@@ -4434,7 +4873,30 @@ mod tests {
     #[test]
     fn test_format_distribution_uppercase_extension() {
         let conn = setup_memory_db();
-        update_track(&conn, "/music/song.MP3", "Song", 100, None, 0, 1000, None, None, None, 0, None, 0, "mp3", None, None, None, None, None, None, None).unwrap();
+        update_track(
+            &conn,
+            "/music/song.MP3",
+            "Song",
+            100,
+            None,
+            0,
+            1000,
+            None,
+            None,
+            None,
+            0,
+            None,
+            0,
+            "mp3",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         let result = get_format_distribution(&conn).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].format, "mp3");

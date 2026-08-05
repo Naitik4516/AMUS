@@ -103,8 +103,8 @@ impl SyncManager {
                 let handle_for_fetch = app_handle.clone();
                 let _ = tokio::task::spawn_blocking(move || {
                     if let Ok(conn) = pool.get() {
-                        let fetch_pic =
-                            get_setting(&handle_for_fetch, "autoFetchArtistPic", true).unwrap_or(true);
+                        let fetch_pic = get_setting(&handle_for_fetch, "autoFetchArtistPic", true)
+                            .unwrap_or(true);
                         if fetch_pic {
                             if let Ok(artists) = db::get_artists_needing_fetch(&conn) {
                                 if !artists.is_empty() {
@@ -187,8 +187,11 @@ impl SyncManager {
         .map_err(|e| format!("failed to create watcher: {e}"))?;
 
         let pool = app_handle.state::<DbPool>();
-        let conn = pool.get().map_err(|e| format!("failed to get db connection: {e}"))?;
-        let source_dirs = db::get_source_dirs(&conn).map_err(|e| format!("failed to get source dirs: {e}"))?;
+        let conn = pool
+            .get()
+            .map_err(|e| format!("failed to get db connection: {e}"))?;
+        let source_dirs =
+            db::get_source_dirs(&conn).map_err(|e| format!("failed to get source dirs: {e}"))?;
 
         for dir in source_dirs {
             let path = Path::new(&dir);
@@ -328,11 +331,10 @@ async fn flush_pending_scan(app_handle: &AppHandle, pending: &mut Vec<PathBuf>) 
     let _ = tokio::task::spawn_blocking(move || {
         if let Ok(mut conn) = pool.get() {
             if let Ok(blacklist_entries) = db::get_scan_blacklist(&conn) {
-                let blacklist: std::collections::HashMap<String, (i64, String)> =
-                    blacklist_entries
-                        .into_iter()
-                        .map(|e| (e.path, (e.mtime, e.reason)))
-                        .collect();
+                let blacklist: std::collections::HashMap<String, (i64, String)> = blacklist_entries
+                    .into_iter()
+                    .map(|e| (e.path, (e.mtime, e.reason)))
+                    .collect();
 
                 let mut filtered = paths_to_scan;
                 filtered.retain(|p| {
@@ -344,9 +346,7 @@ async fn flush_pending_scan(app_handle: &AppHandle, pending: &mut Vec<PathBuf>) 
                         let current_mtime = std::fs::metadata(p)
                             .ok()
                             .and_then(|m| m.modified().ok())
-                            .and_then(|t| {
-                                t.duration_since(std::time::UNIX_EPOCH).ok()
-                            })
+                            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                             .map(|d| d.as_secs() as i64)
                             .unwrap_or(0);
                         if current_mtime == bl_mtime {

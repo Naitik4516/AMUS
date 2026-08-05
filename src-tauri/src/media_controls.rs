@@ -153,9 +153,6 @@ fn update_controls(payload: &serde_json::Value, _app: &AppHandle) {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
             mgr.last_is_playing = is_playing;
-            // Preserve the last known position instead of resetting to zero —
-            // StateChanged fires on every play/pause and would otherwise wipe
-            // the progress reported by Position events.
             let progress = Some(MediaPosition(mgr.last_progress));
             if is_playing {
                 mgr.controls

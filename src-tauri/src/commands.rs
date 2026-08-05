@@ -7,8 +7,8 @@ use crate::player::source::{PlaybackSource, RepeatMode};
 use crate::scanner;
 use crate::startup::StartupStatus;
 use crate::sync::SyncManager;
-use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
+use std::sync::mpsc::SyncSender;
 use std::time::Duration;
 use tauri::Emitter;
 use tauri::Manager;
@@ -218,10 +218,12 @@ pub async fn get_favorite_tracks(pool: State<'_, DbPool>) -> Result<Vec<Track>> 
 // ---------------------------------------------------------------------------
 
 pub fn send(handle: &State<PlayerHandle>, cmd: PlayerCommand) -> Result<()> {
-    handle.0.try_send(cmd).map_err(|e| Error::Audio(match e {
-        std::sync::mpsc::TrySendError::Full(_) => "command queue full".into(),
-        std::sync::mpsc::TrySendError::Disconnected(_) => "player disconnected".into(),
-    }))
+    handle.0.try_send(cmd).map_err(|e| {
+        Error::Audio(match e {
+            std::sync::mpsc::TrySendError::Full(_) => "command queue full".into(),
+            std::sync::mpsc::TrySendError::Disconnected(_) => "player disconnected".into(),
+        })
+    })
 }
 
 #[tauri::command]
@@ -365,15 +367,8 @@ pub fn reorder_queue(handle: State<PlayerHandle>, queue_id: i64, new_index: usiz
 }
 
 #[tauri::command]
-pub fn reorder_context(
-    handle: State<PlayerHandle>,
-    from_rel: usize,
-    to_rel: usize,
-) -> Result<()> {
-    send(
-        &handle,
-        PlayerCommand::ReorderContext { from_rel, to_rel },
-    )
+pub fn reorder_context(handle: State<PlayerHandle>, from_rel: usize, to_rel: usize) -> Result<()> {
+    send(&handle, PlayerCommand::ReorderContext { from_rel, to_rel })
 }
 
 #[tauri::command]
@@ -423,10 +418,12 @@ pub async fn get_current_state(handle: State<'_, PlayerHandle>) -> Result<Player
     handle
         .0
         .try_send(PlayerCommand::GetState(tx))
-        .map_err(|e| Error::Audio(match e {
-            std::sync::mpsc::TrySendError::Full(_) => "command queue full".into(),
-            std::sync::mpsc::TrySendError::Disconnected(_) => "player disconnected".into(),
-        }))?;
+        .map_err(|e| {
+            Error::Audio(match e {
+                std::sync::mpsc::TrySendError::Full(_) => "command queue full".into(),
+                std::sync::mpsc::TrySendError::Disconnected(_) => "player disconnected".into(),
+            })
+        })?;
     tokio::time::timeout(Duration::from_secs(5), rx)
         .await
         .map_err(|_| Error::Unknown("player did not respond within 5s".into()))?
@@ -612,6 +609,26 @@ pub async fn save_image(
 }
 
 #[tauri::command]
+pub async fn fetch_artist_image(
+    artist_id: i64,
+    artist_name: String,
+    app_handle: tauri::AppHandle,
+    pool: State<'_, DbPool>,
+) -> Result<Option<String>> {
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| Error::Unknown(e.to_string()))?;
+    let pool = pool.inner().clone();
+    crate::artist_pic_fetcher::fetch_single_artist_image(artist_id, &artist_name, &app_dir, pool.clone())
+        .await
+        .map_err(|e| Error::Unknown(e.to_string()))?;
+
+    let conn = pool.get().map_err(Error::Pool)?;
+    Ok(db::get_artist(&conn, artist_id)?.profile_image)
+}
+
+#[tauri::command]
 pub async fn update_artist(artist: Artist, pool: State<'_, DbPool>) -> Result<Artist> {
     let conn = pool.get().map_err(Error::Pool)?;
     db::update_artist(&conn, artist)
@@ -709,14 +726,17 @@ pub async fn update_track_lyrics(
     pool: State<'_, DbPool>,
 ) -> Result<()> {
     let conn = pool.get().map_err(Error::Pool)?;
-    db::set_track_lyrics(&conn, track_id, plain_lyrics.as_deref(), synced_lyrics.as_deref(), &source)
+    db::set_track_lyrics(
+        &conn,
+        track_id,
+        plain_lyrics.as_deref(),
+        synced_lyrics.as_deref(),
+        &source,
+    )
 }
 
 #[tauri::command]
-pub async fn fetch_lyrics_from_lrclib(
-    track_id: i64,
-    pool: State<'_, DbPool>,
-) -> Result<bool> {
+pub async fn fetch_lyrics_from_lrclib(track_id: i64, pool: State<'_, DbPool>) -> Result<bool> {
     let conn = pool.get().map_err(Error::Pool)?;
     let track = db::get_track_by_id(&conn, track_id)?;
 
@@ -726,12 +746,9 @@ pub async fn fetch_lyrics_from_lrclib(
         .map(|a| a.name.as_str())
         .unwrap_or("Unknown Artist");
 
-    let result = crate::lyrics_fetcher::fetch_lyrics(
-        artist_name,
-        &track.title,
-        track.duration_seconds,
-    )
-    .await?;
+    let result =
+        crate::lyrics_fetcher::fetch_lyrics(artist_name, &track.title, track.duration_seconds)
+            .await?;
 
     match result {
         Some(lyrics) => {
@@ -761,22 +778,21 @@ pub async fn get_genres(pool: State<'_, DbPool>) -> Result<Vec<Genre>> {
 }
 
 #[tauri::command]
-pub async fn get_tracks_by_genre(
-    genre_id: i64,
-    pool: State<'_, DbPool>,
-) -> Result<Vec<Track>> {
+pub async fn get_tracks_by_genre(genre_id: i64, pool: State<'_, DbPool>) -> Result<Vec<Track>> {
     let conn = pool.get().map_err(Error::Pool)?;
     db::get_tracks_by_genre(&conn, genre_id)
 }
 
 #[tauri::command]
-pub async fn create_genre(
-    name: String,
-    pool: State<'_, DbPool>,
-) -> Result<Genre> {
+pub async fn create_genre(name: String, pool: State<'_, DbPool>) -> Result<Genre> {
     let conn = pool.get().map_err(Error::Pool)?;
     let id = db::get_or_create_genre(&conn, &name)?;
-    Ok(Genre { id, name, thumbnail: None, ..Default::default() })
+    Ok(Genre {
+        id,
+        name,
+        thumbnail: None,
+        ..Default::default()
+    })
 }
 
 #[tauri::command]
@@ -817,11 +833,7 @@ pub async fn set_track_artists(
 }
 
 #[tauri::command]
-pub async fn set_track_album(
-    track_id: i64,
-    album_id: i64,
-    pool: State<'_, DbPool>,
-) -> Result<()> {
+pub async fn set_track_album(track_id: i64, album_id: i64, pool: State<'_, DbPool>) -> Result<()> {
     let conn = pool.get().map_err(Error::Pool)?;
     let track_number = db::get_track_number(&conn, track_id)?.unwrap_or(1);
     db::set_track_album(&conn, track_id, album_id, track_number)
@@ -840,6 +852,47 @@ pub async fn set_track_genre(
 #[tauri::command]
 pub fn get_startup_status(startup: State<'_, Arc<StartupStatus>>) -> Option<String> {
     startup.get()
+}
+
+/// Whether the in-app updater can actually install updates on this system.
+///
+/// AUR (and other package-manager) installs ship the binary extracted from the
+/// `.deb`, so the updater tries `dpkg -i` — which needs root (and a polkit
+/// agent) or simply doesn't exist on Arch. Those updates always fail, so the
+/// frontend shows a "use your package manager" warning instead.
+#[tauri::command]
+pub fn get_update_install_support() -> bool {
+    #[cfg(not(target_os = "linux"))]
+    {
+        return true;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let is_arch = std::fs::read_to_string("/etc/os-release")
+            .map(|content| {
+                content.lines().any(|line| {
+                    line.starts_with("ID=")
+                        && matches!(
+                            line.trim_start_matches("ID=").trim(),
+                            "arch"
+                                | "manjaro"
+                                | "endeavouros"
+                                | "cachyos"
+                                | "garuda"
+                                | "artix"
+                                | "archlabs"
+                                | "archcraft"
+                        )
+                })
+            })
+            .unwrap_or(false);
+        let is_deb_bundle = matches!(
+            tauri::utils::platform::bundle_type(),
+            Some(tauri::utils::config::BundleType::Deb)
+        );
+        return !(is_arch && is_deb_bundle);
+    }
 }
 
 #[tauri::command]

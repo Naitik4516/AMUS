@@ -20,13 +20,10 @@ const FETCH_WARNING_EVENT: &str = "artist-fetch-warning";
 const LASTFM_BASE: &str = "https://www.last.fm";
 const DEEZER_API: &str = "https://api.deezer.com";
 
-/// Prevents scanner and startup-sync batches from fetching concurrently.
 static FETCH_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug)]
 enum FetchError {
-    /// No image exists on any reachable source — counts toward the
-    /// fetch_attempts blacklist so it isn't retried forever.
     NoImageFound(String),
     Network(String),
     Http { code: u16, url: String },
@@ -87,13 +84,7 @@ struct FetchWarning {
 }
 
 fn emit_warning(app_handle: &AppHandle, level: &'static str, message: String) {
-    let _ = app_handle.emit(
-        FETCH_WARNING_EVENT,
-        FetchWarning {
-            level,
-            message,
-        },
-    );
+    let _ = app_handle.emit(FETCH_WARNING_EVENT, FetchWarning { level, message });
 }
 
 fn sanitize_filename(name: &str) -> String {
@@ -111,7 +102,11 @@ fn maybe_downscale(img: &image::DynamicImage) -> image::DynamicImage {
     if img.height() > MAX_IMAGE_HEIGHT {
         let ratio = MAX_IMAGE_HEIGHT as f32 / img.height() as f32;
         let width = ((img.width() as f32 * ratio).round() as u32).max(1);
-        img.resize(width, MAX_IMAGE_HEIGHT, image::imageops::FilterType::Triangle)
+        img.resize(
+            width,
+            MAX_IMAGE_HEIGHT,
+            image::imageops::FilterType::Triangle,
+        )
     } else {
         img.clone()
     }
@@ -140,10 +135,7 @@ async fn probe_sources(client: &Client) -> Sources {
     Sources { lastfm, deezer }
 }
 
-async fn get_lastfm_image_url(
-    client: &Client,
-    artist: &str,
-) -> Result<Option<String>, FetchError> {
+async fn get_lastfm_image_url(client: &Client, artist: &str) -> Result<Option<String>, FetchError> {
     let encoded_name = urlencoding::encode(artist);
     let target_url = format!("{LASTFM_BASE}/music/{}/+images", encoded_name);
 
@@ -154,8 +146,6 @@ async fn get_lastfm_image_url(
         .await
         .map_err(|e| FetchError::Network(e.to_string()))?;
 
-    // 404 just means the artist has no page on last.fm — fall through to
-    // the next source. Anything else non-2xx is treated as a hard failure.
     if response.status() == primp::StatusCode::NOT_FOUND {
         return Ok(None);
     }
@@ -187,10 +177,7 @@ async fn get_lastfm_image_url(
     Ok(None)
 }
 
-async fn get_deezer_image_url(
-    client: &Client,
-    artist: &str,
-) -> Result<Option<String>, FetchError> {
+async fn get_deezer_image_url(client: &Client, artist: &str) -> Result<Option<String>, FetchError> {
     let encoded_name = urlencoding::encode(artist);
     let target_url = format!("{DEEZER_API}/search/artist?q={}", encoded_name);
 
@@ -279,9 +266,7 @@ async fn process_artist_image(
     }
 
     if download_exceeds_cap(response.content_length(), 0) {
-        return Err(FetchError::TooLarge(
-            response.content_length().unwrap_or(0),
-        ));
+        return Err(FetchError::TooLarge(response.content_length().unwrap_or(0)));
     }
 
     let image_bytes: Vec<u8> = response
@@ -388,9 +373,15 @@ pub async fn fetch_artist_images(
     let failures = Arc::new(AtomicUsize::new(0));
 
     stream::iter(artists.iter().map(|(&id, name)| (id, name.clone())))
-        .for_each_concurrent(
-            MAX_CONCURRENT_DOWNLOADS,
-            {
+        .for_each_concurrent(MAX_CONCURRENT_DOWNLOADS, {
+            let client = client.clone();
+            let pool = pool.clone();
+            let images_dir = images_dir.clone();
+            let completed = Arc::clone(&completed);
+            let successes = Arc::clone(&successes);
+            let failures = Arc::clone(&failures);
+            let app_handle = app_handle.clone();
+            move |(artist_id, artist_name)| {
                 let client = client.clone();
                 let pool = pool.clone();
                 let images_dir = images_dir.clone();
@@ -398,68 +389,59 @@ pub async fn fetch_artist_images(
                 let successes = Arc::clone(&successes);
                 let failures = Arc::clone(&failures);
                 let app_handle = app_handle.clone();
-                move |(artist_id, artist_name)| {
-                    let client = client.clone();
-                    let pool = pool.clone();
-                    let images_dir = images_dir.clone();
-                    let completed = Arc::clone(&completed);
-                    let successes = Arc::clone(&successes);
-                    let failures = Arc::clone(&failures);
-                    let app_handle = app_handle.clone();
-                    async move {
-                        let skipped = artist_name.is_empty() || artist_name == "Unknown Artist";
-                        if !skipped {
-                            match process_artist_image(
-                                &client,
-                                artist_id,
-                                &artist_name,
-                                &images_dir,
-                                &pool,
-                                sources,
-                            )
-                            .await
-                            {
-                                Ok(_) => {
-                                    successes.fetch_add(1, Ordering::SeqCst);
-                                }
-                                Err(e) => {
-                                    failures.fetch_add(1, Ordering::SeqCst);
-                                    if e.is_permanent() {
-                                        tracing::info!(
-                                            artist = %artist_name,
-                                            error = %e,
-                                            "no artist image found on any source"
-                                        );
-                                        let pool = pool.clone();
-                                        let _ = tokio::task::spawn_blocking(move || {
-                                            if let Ok(conn) = pool.get() {
-                                                let _ = db::report_fetch_failure(&conn, artist_id);
-                                            }
-                                        })
-                                        .await;
-                                    } else {
-                                        tracing::warn!(
-                                            artist = %artist_name,
-                                            error = %e,
-                                            "transient artist image fetch failure"
-                                        );
-                                    }
+                async move {
+                    let skipped = artist_name.is_empty() || artist_name == "Unknown Artist";
+                    if !skipped {
+                        match process_artist_image(
+                            &client,
+                            artist_id,
+                            &artist_name,
+                            &images_dir,
+                            &pool,
+                            sources,
+                        )
+                        .await
+                        {
+                            Ok(_) => {
+                                successes.fetch_add(1, Ordering::SeqCst);
+                            }
+                            Err(e) => {
+                                failures.fetch_add(1, Ordering::SeqCst);
+                                if e.is_permanent() {
+                                    tracing::info!(
+                                        artist = %artist_name,
+                                        error = %e,
+                                        "no artist image found on any source"
+                                    );
+                                    let pool = pool.clone();
+                                    let _ = tokio::task::spawn_blocking(move || {
+                                        if let Ok(conn) = pool.get() {
+                                            let _ = db::report_fetch_failure(&conn, artist_id);
+                                        }
+                                    })
+                                    .await;
+                                } else {
+                                    tracing::warn!(
+                                        artist = %artist_name,
+                                        error = %e,
+                                        "transient artist image fetch failure"
+                                    );
                                 }
                             }
                         }
-                        let idx = completed.fetch_add(1, Ordering::SeqCst) + 1;
-                        let _ = app_handle.emit(
-                            "fetch-progress",
-                            ScanProgress {
-                                current: idx,
-                                total,
-                                message: format!("Fetching artist image: {artist_name}"),
-                            },
-                        );
                     }
+                    let idx = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                    let _ = app_handle.emit(
+                        "fetch-progress",
+                        ScanProgress {
+                            current: idx,
+                            total,
+                            message: format!("Fetching artist image: {artist_name}"),
+                        },
+                    );
                 }
-            },
-        )
+            }
+        })
         .await;
 
     let failures = failures.load(Ordering::SeqCst);
@@ -474,6 +456,31 @@ pub async fn fetch_artist_images(
     }
 
     Ok(())
+}
+
+pub async fn fetch_single_artist_image(
+    artist_id: i64,
+    artist: &str,
+    app_dir: &Path,
+    pool: Pool<SqliteConnectionManager>,
+) -> Result<String, Box<dyn Error>> {
+    let images_dir = app_dir.join("artists");
+    tokio::fs::create_dir_all(&images_dir).await?;
+
+    let client = Client::builder().impersonate(Impersonate::Random).build()?;
+
+    let sources = probe_sources(&client).await;
+    if !sources.any() {
+        return Err(
+            "No internet connection, or artist photo services (last.fm, Deezer) are blocked."
+                .to_string()
+                .into(),
+        );
+    }
+
+    process_artist_image(&client, artist_id, artist, &images_dir, &pool, sources)
+        .await
+        .map_err(|e| Box::<dyn Error>::from(e.to_string()))
 }
 
 #[cfg(test)]
@@ -493,7 +500,13 @@ mod tests {
     fn fetch_error_classification() {
         assert!(FetchError::NoImageFound("x".into()).is_permanent());
         assert!(!FetchError::Network("err".into()).is_permanent());
-        assert!(!FetchError::Http { code: 500, url: "u".into() }.is_permanent());
+        assert!(
+            !FetchError::Http {
+                code: 500,
+                url: "u".into()
+            }
+            .is_permanent()
+        );
         assert!(!FetchError::TooLarge(1).is_permanent());
         assert!(!FetchError::Decode("e".into()).is_permanent());
         assert!(!FetchError::Write("e".into()).is_permanent());

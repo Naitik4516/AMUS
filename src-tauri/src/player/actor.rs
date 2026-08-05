@@ -99,18 +99,13 @@ pub struct PlayerActor {
     muted: bool,
     volume_before_mute: f32,
     autoplay_enabled: bool,
-    /// True after one autoplay chain failed to load, so we don't loop
-    /// trying new recommendation chains on consecutive failures.
     autoplay_chain_failed: bool,
     now_playing: Option<NowPlaying>,
     has_track_loaded: bool,
-    /// Counter driving periodic Position emissions for OS media controls.
     position_emit_counter: u32,
 }
 
 const TICK_INTERVAL: Duration = Duration::from_millis(250);
-/// Emit a Position event every N ticks (~5s) so OS media controls show
-/// a live progress while a track is playing.
 const POSITION_EMIT_EVERY_TICKS: u32 = 20;
 
 impl PlayerActor {
@@ -124,8 +119,7 @@ impl PlayerActor {
                     Ok(e) => Some(e),
                     Err(e) => {
                         tracing::error!(error = %e, "failed to init audio engine");
-                        // Keep the actor alive in degraded mode so commands still
-                        // respond; playback will report an error instead.
+                        // Keep the actor alive in degraded mode so commands still respond; playback will report an error instead.
                         emit(
                             &app,
                             PlayerEvent::Error {
@@ -170,8 +164,8 @@ impl PlayerActor {
 
     fn run(&mut self) {
         loop {
-            let is_active = self.has_track_loaded
-                && self.engine.as_ref().is_some_and(|e| !e.is_paused());
+            let is_active =
+                self.has_track_loaded && self.engine.as_ref().is_some_and(|e| !e.is_paused());
             let cmd = if is_active {
                 match self.rx.recv_timeout(TICK_INTERVAL) {
                     Ok(c) => c,
@@ -185,217 +179,238 @@ impl PlayerActor {
                 }
             };
 
-            match cmd {
-                PlayerCommand::LoadContext {
-                    tracks,
-                    source,
-                    start_index,
-                    context_label,
-                } => {
-                    self.finalize_now_playing();
-                    self.autoplay_chain_failed = false;
-                    self.queue
-                        .load_context(tracks, source, start_index, context_label);
-                    self.load_current_into_engine(true);
-                }
-                PlayerCommand::PlayPause => self.toggle_play_pause(),
-                PlayerCommand::Play => self.handle_play(),
-                PlayerCommand::Pause => self.handle_pause(),
-                PlayerCommand::Stop => self.close_player(),
-                PlayerCommand::Next => self.handle_next(),
-                PlayerCommand::Previous => self.handle_previous(),
-                PlayerCommand::Seek(pos) => self.handle_seek(pos),
-                PlayerCommand::SeekRelative(delta) => {
-                    let (pos, _) = self
-                        .engine
-                        .as_ref()
-                        .map_or((0.0, true), |e| e.state());
-                    self.handle_seek((pos + delta).max(0.0));
-                }
-                PlayerCommand::SetVolume(v) => self.apply_volume(v),
-                PlayerCommand::AdjustVolume(delta) => {
-                    self.apply_volume(self.volume + delta);
-                }
-                PlayerCommand::ToggleMute => self.toggle_mute(),
-                PlayerCommand::SetRepeat(mode) => {
-                    self.queue.set_repeat(mode);
-                    self.emit_repeat_shuffle();
-                }
-                PlayerCommand::ToggleShuffle => {
-                    self.queue.set_shuffle(!self.queue.shuffle_enabled());
-                    self.emit_repeat_shuffle();
-                }
-                PlayerCommand::EnqueueNext(track) => {
-                    if let Some(conn) = self.conn() {
-                        if let Ok(db_id) = playback::queue_insert_front(&conn, track.id) {
-                            self.queue.enqueue_next(db_id, track);
-                            self.emit_queue_changed();
-                        }
+            let keep_running = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut shutting_down = false;
+                match cmd {
+                    PlayerCommand::LoadContext {
+                        tracks,
+                        source,
+                        start_index,
+                        context_label,
+                    } => {
+                        self.finalize_now_playing();
+                        self.autoplay_chain_failed = false;
+                        self.queue
+                            .load_context(tracks, source, start_index, context_label);
+                        self.load_current_into_engine(true);
                     }
-                }
-                PlayerCommand::EnqueueEnd(track) => {
-                    if let Some(conn) = self.conn() {
-                        if let Ok(db_id) = playback::queue_insert_back(&conn, track.id) {
-                            self.queue.enqueue_end(db_id, track);
-                            self.emit_queue_changed();
-                        }
+                    PlayerCommand::PlayPause => self.toggle_play_pause(),
+                    PlayerCommand::Play => self.handle_play(),
+                    PlayerCommand::Pause => self.handle_pause(),
+                    PlayerCommand::Stop => self.close_player(),
+                    PlayerCommand::Next => self.handle_next(),
+                    PlayerCommand::Previous => self.handle_previous(),
+                    PlayerCommand::Seek(pos) => self.handle_seek(pos),
+                    PlayerCommand::SeekRelative(delta) => {
+                        let (pos, _) = self.engine.as_ref().map_or((0.0, true), |e| e.state());
+                        self.handle_seek((pos + delta).max(0.0));
                     }
-                }
-                PlayerCommand::EnqueueEndMany(tracks) => {
-                    if let Some(mut conn) = self.conn() {
-                        if let Ok(db_ids) = playback::queue_insert_back_many(&mut conn, &tracks) {
-                            for (db_id, track) in db_ids.into_iter().zip(tracks) {
-                                self.queue.enqueue_end(db_id, track);
+                    PlayerCommand::SetVolume(v) => self.apply_volume(v),
+                    PlayerCommand::AdjustVolume(delta) => {
+                        self.apply_volume(self.volume + delta);
+                    }
+                    PlayerCommand::ToggleMute => self.toggle_mute(),
+                    PlayerCommand::SetRepeat(mode) => {
+                        self.queue.set_repeat(mode);
+                        self.emit_repeat_shuffle();
+                    }
+                    PlayerCommand::ToggleShuffle => {
+                        self.queue.set_shuffle(!self.queue.shuffle_enabled());
+                        self.emit_repeat_shuffle();
+                    }
+                    PlayerCommand::EnqueueNext(track) => {
+                        if let Some(conn) = self.conn() {
+                            if let Ok(db_id) = playback::queue_insert_front(&conn, track.id) {
+                                self.queue.enqueue_next(db_id, track);
+                                self.emit_queue_changed();
                             }
-                            self.emit_queue_changed();
                         }
                     }
-                }
-                PlayerCommand::RemoveFromQueue(db_id) => {
-                    self.queue.remove_from_user_queue(db_id);
-                    if let Some(conn) = self.conn() {
-                        let _ = playback::queue_remove(&conn, db_id);
+                    PlayerCommand::EnqueueEnd(track) => {
+                        if let Some(conn) = self.conn() {
+                            if let Ok(db_id) = playback::queue_insert_back(&conn, track.id) {
+                                self.queue.enqueue_end(db_id, track);
+                                self.emit_queue_changed();
+                            }
+                        }
                     }
-                    self.emit_queue_changed();
-                }
-                PlayerCommand::RemoveFromContext(track_id) => {
-                    use crate::player::queue::RemoveFromContextOutcome;
-                    match self.queue.remove_from_context(track_id) {
-                        Some(RemoveFromContextOutcome::RemovedCurrent {
-                            resume: Some(_),
-                        }) => {
-                            // Keep playing: record the partial listen, then load the
-                            // next track (as chosen by the queue's playback order).
+                    PlayerCommand::EnqueueEndMany(tracks) => {
+                        if let Some(mut conn) = self.conn() {
+                            if let Ok(db_ids) = playback::queue_insert_back_many(&mut conn, &tracks)
+                            {
+                                for (db_id, track) in db_ids.into_iter().zip(tracks) {
+                                    self.queue.enqueue_end(db_id, track);
+                                }
+                                self.emit_queue_changed();
+                            }
+                        }
+                    }
+                    PlayerCommand::RemoveFromQueue(db_id) => {
+                        self.queue.remove_from_user_queue(db_id);
+                        if let Some(conn) = self.conn() {
+                            let _ = playback::queue_remove(&conn, db_id);
+                        }
+                        self.emit_queue_changed();
+                    }
+                    PlayerCommand::RemoveFromContext(track_id) => {
+                        use crate::player::queue::RemoveFromContextOutcome;
+                        match self.queue.remove_from_context(track_id) {
+                            Some(RemoveFromContextOutcome::RemovedCurrent { resume: Some(_) }) => {
+                                // Keep playing: record the partial listen, then load the
+                                // next track (as chosen by the queue's playback order).
+                                self.finalize_now_playing();
+                                self.load_current_into_engine(true);
+                            }
+                            Some(RemoveFromContextOutcome::RemovedCurrent { resume: None }) => {
+                                // The removed track was the last one in the context.
+                                self.finalize_now_playing();
+                                if self.autoplay_enabled {
+                                    self.try_autoplay();
+                                } else {
+                                    self.stop_playback();
+                                }
+                            }
+                            _ => {}
+                        }
+                        self.emit_queue_changed();
+                    }
+                    PlayerCommand::ClearQueue => {
+                        self.queue.clear_queue();
+                        if let Some(conn) = self.conn() {
+                            let _ = playback::queue_clear_all(&conn);
+                        }
+                        self.emit_queue_changed();
+                    }
+                    PlayerCommand::ReorderQueue {
+                        queue_id,
+                        new_index,
+                    } => {
+                        self.queue.reorder_queue(queue_id, new_index);
+                        if let Some(conn) = self.conn() {
+                            let _ = playback::queue_reorder(&conn, queue_id, new_index);
+                        }
+                        self.emit_queue_changed();
+                    }
+                    PlayerCommand::ReorderContext { from_rel, to_rel } => {
+                        self.queue.reorder_context(from_rel, to_rel);
+                        self.emit_queue_changed();
+                    }
+                    PlayerCommand::SetAutoplay(v) => self.autoplay_enabled = v,
+                    PlayerCommand::PlayTrackFromContext(track_id) => {
+                        if self.queue.jump_to_track(track_id) {
+                            // Record the partial listen of the track we're leaving.
                             self.finalize_now_playing();
                             self.load_current_into_engine(true);
                         }
-                        Some(RemoveFromContextOutcome::RemovedCurrent { resume: None }) => {
-                            // The removed track was the last one in the context.
-                            self.finalize_now_playing();
-                            if self.autoplay_enabled {
-                                self.try_autoplay();
-                            } else {
-                                self.stop_playback();
-                            }
-                        }
-                        _ => {}
                     }
-                    self.emit_queue_changed();
-                }
-                PlayerCommand::ClearQueue => {
-                    self.queue.clear_queue();
-                    if let Some(conn) = self.conn() {
-                        let _ = playback::queue_clear_all(&conn);
-                    }
-                    self.emit_queue_changed();
-                }
-                PlayerCommand::ReorderQueue {
-                    queue_id,
-                    new_index,
-                } => {
-                    self.queue.reorder_queue(queue_id, new_index);
-                    if let Some(conn) = self.conn() {
-                        let _ = playback::queue_reorder(&conn, queue_id, new_index);
-                    }
-                    self.emit_queue_changed();
-                }
-                PlayerCommand::ReorderContext { from_rel, to_rel } => {
-                    self.queue.reorder_context(from_rel, to_rel);
-                    self.emit_queue_changed();
-                }
-                PlayerCommand::SetAutoplay(v) => self.autoplay_enabled = v,
-                PlayerCommand::PlayTrackFromContext(track_id) => {
-                    if self.queue.jump_to_track(track_id) {
-                        // Record the partial listen of the track we're leaving.
+                    PlayerCommand::RestoreSession {
+                        context_tracks,
+                        source,
+                        start_index,
+                        context_label,
+                        user_queue_tracks,
+                        position_sec,
+                        volume,
+                        repeat,
+                        shuffle,
+                    } => {
                         self.finalize_now_playing();
-                        self.load_current_into_engine(true);
-                    }
-                }
-                PlayerCommand::RestoreSession {
-                    context_tracks,
-                    source,
-                    start_index,
-                    context_label,
-                    user_queue_tracks,
-                    position_sec,
-                    volume,
-                    repeat,
-                    shuffle,
-                } => {
-                    self.finalize_now_playing();
-                    self.autoplay_chain_failed = false;
-                    self.queue.clear_queue();
-                    if let Some(conn) = self.conn() {
-                        let _ = playback::queue_clear_all(&conn);
-                    }
-                    self.queue
-                        .load_context(context_tracks, source, start_index, context_label);
-                    // load current track with autoplay=false to prevent transient playback before seek
-                    self.load_current_into_engine(false);
-                    if !user_queue_tracks.is_empty() {
-                        if let Some(mut conn) = self.conn() {
-                            if let Ok(db_ids) =
-                                playback::queue_insert_back_many(&mut conn, &user_queue_tracks)
-                            {
-                                for (db_id, track) in db_ids.into_iter().zip(user_queue_tracks) {
-                                    self.queue.enqueue_end(db_id, track);
+                        self.autoplay_chain_failed = false;
+                        self.queue.clear_queue();
+                        if let Some(conn) = self.conn() {
+                            let _ = playback::queue_clear_all(&conn);
+                        }
+                        self.queue
+                            .load_context(context_tracks, source, start_index, context_label);
+                        // load current track with autoplay=false to prevent transient playback before seek
+                        self.load_current_into_engine(false);
+                        if !user_queue_tracks.is_empty() {
+                            if let Some(mut conn) = self.conn() {
+                                if let Ok(db_ids) =
+                                    playback::queue_insert_back_many(&mut conn, &user_queue_tracks)
+                                {
+                                    for (db_id, track) in db_ids.into_iter().zip(user_queue_tracks)
+                                    {
+                                        self.queue.enqueue_end(db_id, track);
+                                    }
                                 }
                             }
                         }
-                    }
-                    self.queue.set_repeat(repeat);
-                    self.queue.set_shuffle(shuffle);
-                    self.emit_repeat_shuffle();
-                    self.volume = volume.clamp(0.0, 1.0);
-                    if let Some(engine) = self.engine.as_ref() {
-                        engine.set_volume(self.volume);
-                    }
-                    emit(
-                        &self.app,
-                        PlayerEvent::VolumeChanged {
-                            volume: self.volume,
-                        },
-                    );
-                    self.emit_queue_changed();
-                    if let Some(engine) = self.engine.as_ref() {
-                        let _ = engine.seek(Duration::from_secs_f64(position_sec.max(0.0)));
-                    }
-                    if let Some(np) = &mut self.now_playing {
-                        np.max_position_reached = np.max_position_reached.max(position_sec);
-                    }
-                    // Since session is restored, we trigger play if it was loaded
-                    if self.has_track_loaded {
+                        self.queue.set_repeat(repeat);
+                        self.queue.set_shuffle(shuffle);
+                        self.emit_repeat_shuffle();
+                        self.volume = volume.clamp(0.0, 1.0);
                         if let Some(engine) = self.engine.as_ref() {
-                            engine.play();
+                            engine.set_volume(self.volume);
                         }
-                        emit(&self.app, PlayerEvent::StateChanged { is_playing: true });
+                        emit(
+                            &self.app,
+                            PlayerEvent::VolumeChanged {
+                                volume: self.volume,
+                            },
+                        );
+                        self.emit_queue_changed();
+                        if let Some(engine) = self.engine.as_ref() {
+                            let _ = engine.seek(Duration::from_secs_f64(position_sec.max(0.0)));
+                        }
+                        if let Some(np) = &mut self.now_playing {
+                            np.max_position_reached = np.max_position_reached.max(position_sec);
+                        }
+                        if self.has_track_loaded {
+                            if let Some(engine) = self.engine.as_ref() {
+                                engine.play();
+                            }
+                            emit(&self.app, PlayerEvent::StateChanged { is_playing: true });
+                        }
+                        emit(
+                            &self.app,
+                            PlayerEvent::Position {
+                                pos_sec: position_sec,
+                                at_epoch_ms: now_epoch_ms(),
+                                is_playing: self.has_track_loaded,
+                            },
+                        );
                     }
+                    PlayerCommand::GetState(reply) => {
+                        let _ = reply.send(self.snapshot());
+                    }
+                    PlayerCommand::Shutdown => {
+                        self.finalize_now_playing();
+                        shutting_down = true;
+                    }
+                    PlayerCommand::Tick => {
+                        self.on_tick();
+                    }
+                }
+                !shutting_down
+            }));
+
+            match keep_running {
+                Ok(true) => {}
+                Ok(false) => break,
+                Err(payload) => {
+                    let panic_msg = payload
+                        .downcast_ref::<&str>()
+                        .copied()
+                        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                        .unwrap_or("unknown panic");
+                    tracing::error!(
+                        panic = panic_msg,
+                        "player actor: command handler panicked; keeping actor alive"
+                    );
                     emit(
                         &self.app,
-                        PlayerEvent::Position {
-                            pos_sec: position_sec,
-                            at_epoch_ms: now_epoch_ms(),
-                            is_playing: self.has_track_loaded,
+                        PlayerEvent::Error {
+                            message: format!("internal player error: {panic_msg}"),
+                            track_id: None,
                         },
                     );
-                }
-                PlayerCommand::GetState(reply) => {
-                    let _ = reply.send(self.snapshot());
-                }
-                PlayerCommand::Shutdown => {
-                    self.finalize_now_playing();
-                    break;
-                }
-                PlayerCommand::Tick => {
-                    self.on_tick();
                 }
             }
         }
     }
 
     fn load_current_into_engine(&mut self, autoplay: bool) {
-        // Bound the loop so a context full of broken/missing files cannot recurse
-        // into a stack overflow. One autoplay chain (20 tracks) is the max extension.
         let max_attempts = self.queue.context_len() + self.queue.user_queue().len() + 20;
         let mut attempts: usize = 0;
 
@@ -555,7 +570,6 @@ impl PlayerActor {
         let clamped = v.clamp(0.0, 1.0);
         self.volume = clamped;
         if self.muted {
-            // Unmute when volume is set explicitly while muted
             self.muted = false;
         }
         if let Some(engine) = self.engine.as_ref() {
@@ -609,8 +623,6 @@ impl PlayerActor {
     }
 
     fn try_autoplay(&mut self) {
-        // Only ever attempt one autoplay chain per playback session: if the
-        // recommendations fail to load we stop instead of looping forever.
         if !self.autoplay_enabled || self.autoplay_chain_failed {
             self.stop_playback();
             return;
@@ -659,9 +671,6 @@ impl PlayerActor {
     }
 
     fn handle_previous(&mut self) {
-        // Use the actual playback position rather than wall-clock time since
-        // starting the track: pausing for minutes must not make "previous"
-        // restart the current track.
         let (pos, _) = self.engine.as_ref().map_or((0.0, true), |e| e.state());
         self.finalize_now_playing();
         match self.queue.previous(pos) {
@@ -725,9 +734,10 @@ impl PlayerActor {
             );
         }
 
-        let track_ended = self.now_playing.as_ref().is_some_and(|np| {
-            is_finished && np.max_position_reached >= np.duration_sec - 0.5
-        });
+        let track_ended = self
+            .now_playing
+            .as_ref()
+            .is_some_and(|np| is_finished && np.max_position_reached >= np.duration_sec - 0.5);
 
         if track_ended {
             self.handle_next();
