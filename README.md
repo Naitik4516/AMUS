@@ -181,13 +181,6 @@ paru -S amus
 yay -S amus
 ```
 
-> [!WARNING]
-> **AUR Updates Notice:** Direct pushes to the AUR package are currently paused. If the AUR package is outdated, install the `.deb` package using `debtap`:
-> 1. Download the `.deb` file from Releases.
-> 2. Convert and edit: `debtap AMUS_*_amd64.deb`
-> 3. Remove `depend = gtk` in `.PKGINFO` when prompted by your editor.
-> 4. Install the package: `sudo pacman -U amus-*-x86_64.pkg.tar.zst`
-
 ---
 
 ## 🛠️ Build & Run from Source
