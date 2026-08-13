@@ -1,5 +1,5 @@
 # Maintainer: Naitik4516 <https://github.com/Naitik4516>
-pkgname=amus
+pkgname=amus-bin
 pkgver=0.0.0
 pkgrel=1
 pkgdesc="A fast, privacy-focused local music player built for users who own their music library"
